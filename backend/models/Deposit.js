@@ -68,10 +68,10 @@ Deposit.init({
     defaultValue: 0
   },
   loanId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING(20),
     allowNull: true,
     references: { model: 'loans', key: 'id' }
-  },
+},
   chamaaPaymentAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
