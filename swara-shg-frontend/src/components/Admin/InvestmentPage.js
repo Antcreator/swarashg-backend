@@ -1,0 +1,519 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { investmentAPI, loansAPI, finesAPI } from '../../Service/Api';
+import { useIsStaff } from '../Protected Route/Protectedroute';
+import Navbar from '../Navbar/navbar';
+import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock } from 'lucide-react';
+
+// ── Month ordering (Principal first, then Dec → Nov) ─────────────
+const MONTHS = [
+  { name: 'Principal', num: 0,  isPrincipal: true  },   // synthetic "row 0"
+  { name: 'December',  num: 12, isPrincipal: false },
+  { name: 'January',   num: 1,  isPrincipal: false },
+  { name: 'February',  num: 2,  isPrincipal: false },
+  { name: 'March',     num: 3,  isPrincipal: false },
+  { name: 'April',     num: 4,  isPrincipal: false },
+  { name: 'May',       num: 5,  isPrincipal: false },
+  { name: 'June',      num: 6,  isPrincipal: false },
+  { name: 'July',      num: 7,  isPrincipal: false },
+  { name: 'August',    num: 8,  isPrincipal: false },
+  { name: 'September', num: 9,  isPrincipal: false },
+  { name: 'October',   num: 10, isPrincipal: false },
+  { name: 'November',  num: 11, isPrincipal: false },
+];
+
+// ── Column definitions ─────────────────────────────────────────
+// Cols 1-3: auto-populated (read-only). Cols 4-10: editable.
+const AUTO_COLS = [1, 2, 3];          // Loans, Savings Fines, Chamaa Fines
+const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
+const COLS      = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+const FIXED_COL_NAMES = {
+  col1: 'Loans',
+  col2: 'Savings Fines',
+  col3: 'Chamaa Fines',
+};
+
+const defaultEditColNames = () => {
+  const c = {};
+  EDIT_COLS.forEach(i => { c[`col${i}`] = ''; });
+  return c;
+};
+
+// Build a blank row for a given month entry
+const blankRow = ({ name, num, isPrincipal }) => {
+  const row = { month: num, monthName: name, isPrincipal: isPrincipal || false, id: null, notes: '' };
+  COLS.forEach(i => { row[`investment${i}Amount`] = ''; });
+  return row;
+};
+
+const defaultRows = () => MONTHS.map(blankRow);
+
+const InvestmentPage = () => {
+  const isStaff     = useIsStaff();
+  const currentYear = new Date().getFullYear();
+
+  const [year, setYear]                   = useState(currentYear);
+  const [rows, setRows]                   = useState(defaultRows());
+  const [editColNames, setEditColNames]   = useState(defaultEditColNames());
+  const [editingColIdx, setEditingColIdx] = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [saving, setSaving]               = useState(false);
+  const [toast, setToast]                 = useState(null);
+
+  // ── Auto-populated data ──────────────────────────────────────
+  const [autoData, setAutoData] = useState({
+    // month (1-12) → { loans: 0, savingsFines: 0, chamaaFines: 0 }
+    byMonth: {},
+    // Principal row values
+    principal: { loans: 0, savingsFines: 0, chamaaFines: 0 },
+  });
+
+  // ── Fetch auto-populated data ──────────────────────────────
+  const fetchAutoData = useCallback(async () => {
+    try {
+      // 1. Loans for the selected year
+      const loansRes = await loansAPI.getAll({ _nocache: Date.now() });
+      const allLoans = (loansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
+
+      // Principal row — col1: sum of loan principals (amount received)
+      const principalLoansTotal = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+      // Monthly loan repayments (totalRepayment grouped by disbursement month)
+      const loansByMonth = {};
+      allLoans.forEach(loan => {
+        if (!loan.disbursementDate) return;
+        const d = new Date(loan.disbursementDate);
+        if (d.getFullYear() !== year) return;
+        const m = d.getMonth() + 1; // 1-12
+        loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0);
+      });
+
+      // 2. Fines for the selected year
+      const finesRes  = await finesAPI.getAll({ year });
+      const allFines  = finesRes.data.fines || [];
+
+      // Group fines by month
+      const savingsByMonth = {};
+      const chamaaByMonth  = {};
+      allFines.forEach(f => {
+        if (Number(f.year) !== year) return;
+        const m = Number(f.month);
+        if (f.fineType === 'savings_late') {
+          savingsByMonth[m] = (savingsByMonth[m] || 0) + Number(f.amount || 0);
+        } else if (f.fineType === 'chamaa_late') {
+          chamaaByMonth[m]  = (chamaaByMonth[m] || 0)  + Number(f.amount || 0);
+        }
+      });
+
+      // Principal row — col2/col3: all-time totals (or year totals — using year totals here)
+      const principalSavingsFines = allFines.filter(f => f.fineType === 'savings_late').reduce((s, f) => s + Number(f.amount || 0), 0);
+      const principalChamaaFines  = allFines.filter(f => f.fineType === 'chamaa_late').reduce((s, f) => s + Number(f.amount || 0), 0);
+
+      // Merge into byMonth
+      const byMonth = {};
+      for (let m = 1; m <= 12; m++) {
+        byMonth[m] = {
+          loans:        loansByMonth[m]  || 0,
+          savingsFines: savingsByMonth[m] || 0,
+          chamaaFines:  chamaaByMonth[m]  || 0,
+        };
+      }
+
+      setAutoData({
+        byMonth,
+        principal: {
+          loans:        principalLoansTotal,
+          savingsFines: principalSavingsFines,
+          chamaaFines:  principalChamaaFines,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to fetch auto data:', err);
+    }
+  }, [year]);
+
+  // ── Fetch saved investment rows ──────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res     = await investmentAPI.getAll(year);
+      const rawRows = res.data.rows || [];
+
+      // Build sorted rows matching MONTHS order
+      const sorted = MONTHS.map(m => {
+        const saved = rawRows.find(r => r.month === m.num);
+        const base  = blankRow(m);
+        if (saved) {
+          EDIT_COLS.forEach(i => { base[`investment${i}Amount`] = saved[`investment${i}Amount`] ?? ''; });
+          base.id    = saved.id;
+          base.notes = saved.notes || '';
+        }
+        return base;
+      });
+
+      setRows(sorted);
+
+      // Restore editable col names only (cols 4-10)
+      const savedColNames = res.data.colNames || {};
+      const restored = defaultEditColNames();
+      EDIT_COLS.forEach(i => { restored[`col${i}`] = savedColNames[`col${i}`] || ''; });
+      setEditColNames(restored);
+    } catch {
+      showToast('Failed to load investment data', 'error');
+      setRows(defaultRows());
+    } finally {
+      setLoading(false);
+    }
+  }, [year]);
+
+  useEffect(() => {
+    fetchAutoData();
+    fetchData();
+  }, [fetchAutoData, fetchData]);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleCellChange = (month, field, value) => {
+    setRows(prev => prev.map(r => r.month === month ? { ...r, [field]: value } : r));
+  };
+
+  const handleEditColNameChange = (key, value) => {
+    setEditColNames(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Only send editable cols; auto-cols are derived, not stored
+      const colNames = { ...FIXED_COL_NAMES, ...editColNames };
+      await investmentAPI.save({ year, rows, colNames });
+      showToast('Investments saved successfully');
+      await fetchData();
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Helper: resolve col label ─────────────────────────────
+  const colLabel = (i) => {
+    if (AUTO_COLS.includes(i)) return FIXED_COL_NAMES[`col${i}`];
+    return editColNames[`col${i}`] || `Investment ${i}`;
+  };
+
+  // ── Auto value for a row/col ──────────────────────────────
+  // Principal row: only col 1 (Loans) has a value; cols 2 & 3 are intentionally blank.
+  const autoValue = (row, col) => {
+    if (row.isPrincipal) {
+      if (col === 1) return autoData.principal.loans || 0;
+      return 0; // Savings Fines & Chamaa Fines: no value on Principal row
+    }
+    const src = autoData.byMonth[row.month] || {};
+    if (col === 1) return src.loans        || 0;
+    if (col === 2) return src.savingsFines || 0;
+    if (col === 3) return src.chamaaFines  || 0;
+    return 0;
+  };
+
+  // ── Row total (auto cols + editable cols) ─────────────────
+  const rowTotal = (row) => {
+    const autoSum = AUTO_COLS.reduce((s, i) => s + autoValue(row, i), 0);
+    const editSum = EDIT_COLS.reduce((s, i) => s + (Number(row[`investment${i}Amount`]) || 0), 0);
+    return autoSum + editSum;
+  };
+
+  // ── Col totals — Principal row is excluded from all column sums ──
+  const colTotals = COLS.map(i => {
+    if (AUTO_COLS.includes(i)) {
+      return rows.filter(r => !r.isPrincipal).reduce((sum, r) => sum + autoValue(r, i), 0);
+    }
+    return rows.filter(r => !r.isPrincipal).reduce((sum, r) => sum + (Number(r[`investment${i}Amount`]) || 0), 0);
+  });
+  const grandTotal = colTotals.reduce((a, b) => a + b, 0);
+
+  const fmtKES = (v) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(v || 0);
+  const fmtNum = (v) => new Intl.NumberFormat('en-KE', { minimumFractionDigits: 0 }).format(v || 0);
+
+  const yearOptions = [];
+  for (let y = currentYear; y >= 2020; y--) yearOptions.push(y);
+
+  // ── Export CSV ────────────────────────────────────────────
+  const exportCSV = () => {
+    const headers = ['Month', ...COLS.map(i => colLabel(i)), 'Row Total'];
+    const csvRows = rows.map(r => [
+      r.monthName,
+      ...COLS.map(i => AUTO_COLS.includes(i) ? autoValue(r, i) : (r[`investment${i}Amount`] || 0)),
+      rowTotal(r),
+    ]);
+    csvRows.push(['TOTAL', ...colTotals, grandTotal]);
+    const csv  = [headers, ...csvRows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `investments_${year}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Export PDF ────────────────────────────────────────────
+  const exportPDF = () => {
+    const win        = window.open('', '_blank');
+    const theadCells = `<th>Month</th>${COLS.map(i => `<th>${colLabel(i)}</th>`).join('')}<th>Total</th>`;
+    const tbodyRows  = rows.map((r, ri) => `
+      <tr style="background:${r.isPrincipal ? '#f3e5f5' : ri % 2 === 0 ? 'white' : '#f9f9f9'}${r.isPrincipal ? ';font-weight:700' : ''}">
+        <td style="font-weight:600;text-align:left">${r.monthName}</td>
+        ${COLS.map(i => {
+          const val = AUTO_COLS.includes(i) ? autoValue(r, i) : (Number(r[`investment${i}Amount`]) || 0);
+          const color = AUTO_COLS.includes(i) ? '#1565c0' : '#7b1fa2';
+          return `<td style="color:${color};font-weight:600">${fmtNum(val)}</td>`;
+        }).join('')}
+        <td style="font-weight:700">${fmtNum(rowTotal(r))}</td>
+      </tr>`).join('');
+    const totalRow = `
+      <tr style="background:#1a1a2e;color:white;font-weight:bold">
+        <td>TOTALS</td>
+        ${colTotals.map(t => `<td>${fmtNum(t)}</td>`).join('')}
+        <td>${fmtNum(grandTotal)}</td>
+      </tr>`;
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>Investments ${year}</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:10px;margin:20px;color:#1a1a2e}
+        h1{font-size:16px;margin-bottom:4px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#1a1a2e;color:white;padding:6px 6px;text-align:center;font-size:9px}
+        td{padding:5px 6px;border-bottom:1px solid #e0e0e0;text-align:center}
+        @media print{@page{size:landscape}}
+      </style>
+    </head><body>
+      <h1>Investment Records — ${year}</h1>
+      <p style="color:#666;margin:0 0 14px">Generated: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} · Grand Total: ${fmtNum(grandTotal)}</p>
+      <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
+      <script>window.onload=()=>{window.print();}<script>
+    </body></html>`);
+    win.document.close();
+  };
+
+  const amtSt = {
+    width: '100%', padding: '5px 6px', border: '1px solid #ddd',
+    borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box', textAlign: 'right',
+  };
+
+  // ── Row background ────────────────────────────────────────
+  const rowBg = (row, idx) =>
+    row.isPrincipal ? '#f3e5f5' : idx % 2 === 0 ? 'white' : '#fafafa';
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8f9fa' }}>
+      <Navbar />
+      <div style={{ padding: '24px', fontFamily: 'sans-serif' }}>
+
+        {/* ── Header ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
+            <h1 style={{ margin: '6px 0 0', fontSize: '24px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <TrendingUp size={24} /> Investment Records
+            </h1>
+            <p style={{ margin: '4px 0 0', color: '#666' }}>Track monthly investments for {year}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={year} onChange={e => setYear(Number(e.target.value))}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px' }}>
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <button onClick={exportCSV} style={{ padding: '8px 16px', background: '#388e3c', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Download size={14} /> CSV
+            </button>
+            <button onClick={exportPDF} style={{ padding: '8px 16px', background: '#c62828', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Printer size={14} /> PDF
+            </button>
+            {!isStaff && (
+              <button onClick={handleSave} disabled={saving}
+                style={{ padding: '8px 20px', background: '#7b1fa2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '14px', opacity: saving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Save size={14} /> {saving ? 'Saving...' : 'Save'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Table ── */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>Loading...</div>
+        ) : (
+          <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid #e0e0e0', background: 'white' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                {/* Auto-col indicator row */}
+                <tr style={{ background: '#1565c0' }}>
+                  <th style={{ padding: '4px 14px', background: '#1a1a2e', position: 'sticky', left: 0, zIndex: 2 }} />
+                  {COLS.map(i => (
+                    <th key={i} style={{
+                      padding: '4px 8px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em',
+                      color: AUTO_COLS.includes(i) ? '#ffffff' : 'transparent',
+                      background: AUTO_COLS.includes(i) ? '#1565c0' : '#1a1a2e',
+                      textAlign: 'center',
+                    }}>
+                      {AUTO_COLS.includes(i) ? '🔒 AUTO' : ''}
+                    </th>
+                  ))}
+                  <th style={{ background: '#1a1a2e', padding: '4px' }} />
+                </tr>
+
+                {/* Main header row */}
+                <tr style={{ background: '#1a1a2e' }}>
+                  <th style={{ padding: '12px 14px', color: 'white', textAlign: 'left', fontWeight: 600, minWidth: '110px', position: 'sticky', left: 0, background: '#1a1a2e', zIndex: 2 }}>
+                    Month
+                  </th>
+                  {COLS.map(i => {
+                    const isAuto = AUTO_COLS.includes(i);
+                    return (
+                      <th key={i} style={{ padding: '12px 8px', color: 'white', textAlign: 'center', fontWeight: 600, minWidth: '120px', background: isAuto ? '#1e3a5f' : '#1a1a2e' }}>
+                        {isAuto ? (
+                          // Fixed, non-editable label
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '12px' }}>
+                            <Lock size={11} style={{ opacity: 0.7 }} />
+                            {FIXED_COL_NAMES[`col${i}`]}
+                          </span>
+                        ) : (
+                          // Editable col name (cols 4-10)
+                          !isStaff && editingColIdx === i ? (
+                            <input
+                              autoFocus
+                              value={editColNames[`col${i}`]}
+                              onChange={e => handleEditColNameChange(`col${i}`, e.target.value)}
+                              onBlur={() => setEditingColIdx(null)}
+                              onKeyDown={e => e.key === 'Enter' && setEditingColIdx(null)}
+                              style={{ background: 'transparent', border: 'none', borderBottom: '2px solid white', color: 'white', fontSize: '12px', width: '100px', outline: 'none', textAlign: 'center' }}
+                              placeholder={`Investment ${i}`}
+                            />
+                          ) : (
+                            <span
+                              onClick={() => !isStaff && setEditingColIdx(i)}
+                              style={{ cursor: isStaff ? 'default' : 'pointer', borderBottom: isStaff ? 'none' : '1px dashed rgba(255,255,255,0.4)', paddingBottom: '2px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title={isStaff ? '' : 'Click to rename'}
+                            >
+                              {colLabel(i)}{!isStaff && <Pencil size={10} style={{ opacity: 0.7 }} />}
+                            </span>
+                          )
+                        )}
+                      </th>
+                    );
+                  })}
+                  <th style={{ padding: '12px 14px', color: 'white', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    Total
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {rows.map((row, idx) => {
+                  const rt = rowTotal(row);
+                  const bg = rowBg(row, idx);
+                  return (
+                    <tr key={`${row.month}-${idx}`} style={{ background: bg, borderBottom: '1px solid #f0f0f0' }}>
+                      {/* Month label */}
+                      <td style={{
+                        padding: '10px 14px', fontWeight: row.isPrincipal ? 800 : 600,
+                        color: row.isPrincipal ? '#7b1fa2' : '#1a1a2e',
+                        whiteSpace: 'nowrap', position: 'sticky', left: 0, background: bg, zIndex: 1,
+                        borderRight: '2px solid #e0e0e0',
+                        fontStyle: row.isPrincipal ? 'italic' : 'normal',
+                        letterSpacing: row.isPrincipal ? '0.02em' : 'normal',
+                      }}>
+                        {row.isPrincipal && (
+                          <span style={{ fontSize: '10px', display: 'block', color: '#9c27b0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 1 }}>
+                            All-time
+                          </span>
+                        )}
+                        {row.monthName}
+                      </td>
+
+                      {/* Columns */}
+                      {COLS.map(i => {
+                        const isAuto = AUTO_COLS.includes(i);
+                        if (isAuto) {
+                          // Read-only auto-populated cell
+                          const val = autoValue(row, i);
+                          return (
+                            <td key={i} style={{ padding: '6px 8px', background: row.isPrincipal ? '#ede7f6' : '#f0f7ff', borderRight: '1px solid #bbdefb' }}>
+                              <span style={{
+                                display: 'block', textAlign: 'right',
+                                color: val > 0 ? '#1565c0' : '#bbb',
+                                fontWeight: val > 0 ? 700 : 400,
+                                fontSize: '13px',
+                              }}>
+                                {val > 0 ? fmtKES(val) : '—'}
+                              </span>
+                            </td>
+                          );
+                        }
+
+                        // Editable cell (cols 4-10) — locked for Principal row
+                        if (row.isPrincipal) {
+                          return (
+                            <td key={i} style={{ padding: '6px 8px', background: '#ede7f6' }}>
+                              <span style={{ display: 'block', textAlign: 'right', color: '#bbb', fontSize: '13px' }}>—</span>
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td key={i} style={{ padding: '6px 8px' }}>
+                            {isStaff ? (
+                              <span style={{ display: 'block', textAlign: 'right', color: row[`investment${i}Amount`] ? '#7b1fa2' : '#bbb', fontWeight: 600, fontSize: '13px' }}>
+                                {row[`investment${i}Amount`] ? fmtKES(Number(row[`investment${i}Amount`])) : '—'}
+                              </span>
+                            ) : (
+                              <input
+                                type="number" min="0"
+                                value={row[`investment${i}Amount`]}
+                                onChange={e => handleCellChange(row.month, `investment${i}Amount`, e.target.value)}
+                                placeholder="0"
+                                style={amtSt}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+
+                      {/* Row total */}
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: rt > 0 ? (row.isPrincipal ? '#7b1fa2' : '#1a1a2e') : '#bbb', whiteSpace: 'nowrap' }}>
+                        {rt > 0 ? fmtKES(rt) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+
+              <tfoot>
+                <tr style={{ background: '#1a1a2e', color: 'white', fontWeight: 700 }}>
+                  <td style={{ padding: '12px 14px', position: 'sticky', left: 0, background: '#1a1a2e' }}>TOTALS</td>
+                  {colTotals.map((t, i) => (
+                    <td key={i} style={{ padding: '12px 8px', textAlign: 'right', color: AUTO_COLS.includes(i + 1) ? '#90caf9' : '#ce93d8' }}>
+                      {fmtNum(t)}
+                    </td>
+                  ))}
+                  <td style={{ padding: '12px 14px', textAlign: 'right', color: '#ce93d8' }}>{fmtNum(grandTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, padding: '14px 20px', borderRadius: '8px', fontWeight: 600, fontSize: '14px', boxShadow: '0 4px 16px rgba(0,0,0,0.18)', background: toast.type === 'error' ? '#c62828' : '#2e7d32', color: 'white', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {toast.type === 'error' ? <XCircle size={16} /> : <CheckCircle size={16} />} {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default InvestmentPage;

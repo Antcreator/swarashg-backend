@@ -1,0 +1,81 @@
+.wd-table input:focus,
+.wd-table select:focus {
+  border-color: #1976d2 !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.12);
+}
+
+.wd-table input:hover,
+.wd-table select:hover {
+  border-color: #cbd5e1 !important;
+  background: #f8fafc !important;
+}
+
+/* ── Row hover highlight ── */
+.wd-table tbody tr:hover {
+  background: #f0f9ff !important;
+}
+
+/* ── Expense row tint ── */
+.wd-table tbody tr.expense-row {
+  background: #fff5f5;
+}
+.wd-table tbody tr.expense-row:hover {
+  background: #fee2e2 !important;
+}
+
+/* ── Number input — hide arrows ── */
+.wd-table input[type='number']::-webkit-inner-spin-button,
+.wd-table input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.wd-table input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: none;
+}
+
+/* ── Sticky row number column ── */
+.wd-table th:first-child,
+.wd-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+}
+.wd-table th:first-child {
+  background: #1a1a2e;
+  z-index: 3;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .wd-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  .wd-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .wd-filters {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  .wd-filters input {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+  .wd-summary-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .wd-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .wd-actions button span {
+    display: none;
+  }
+}

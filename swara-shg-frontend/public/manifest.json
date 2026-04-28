@@ -1,0 +1,18 @@
+{
+  "short_name": "Swara SHG",
+  "name": "Swara Self Help Group Management System",
+  "icons": [
+    {
+      "src": "logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#2c5f2d",
+  "background_color": "#ffffff",
+  "description": "Manage members, savings, loans, and chamaa cycles for your Self Help Group",
+  "orientation": "portrait-primary"
+}
