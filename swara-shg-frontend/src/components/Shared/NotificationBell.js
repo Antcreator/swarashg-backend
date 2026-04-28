@@ -19,6 +19,9 @@ const NOTIFICATION_ROUTES = {
 
 const DEFAULT_ROUTE = '/member/my-loans';
 
+// Detect if the device is touch/mobile
+const isMobile = () => window.innerWidth <= 480;
+
 const NotificationBell = () => {
   const navigate    = useNavigate();
   const { toasts, toast, dismiss } = useToast();
@@ -29,8 +32,16 @@ const NotificationBell = () => {
   const [showDropdown, setShowDropdown]   = useState(false);
   const [loading, setLoading]             = useState(false);
   const [deletingId, setDeletingId]       = useState(null);
+  const [mobile, setMobile]               = useState(isMobile());
 
   const dropdownRef = useRef(null);
+
+  // Track viewport changes
+  useEffect(() => {
+    const onResize = () => setMobile(isMobile());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // ── Poll unread count every 30s ──
   useEffect(() => {
@@ -40,8 +51,9 @@ const NotificationBell = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Close on outside click ──
+  // ── Close on outside click (desktop only) ──
   useEffect(() => {
+    if (mobile) return; // mobile uses backdrop overlay instead
     const handler = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setShowDropdown(false);
@@ -49,7 +61,17 @@ const NotificationBell = () => {
     };
     if (showDropdown) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showDropdown]);
+  }, [showDropdown, mobile]);
+
+  // ── Prevent body scroll when dropdown open on mobile ──
+  useEffect(() => {
+    if (mobile && showDropdown) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobile, showDropdown]);
 
   const fetchUnreadCount = async () => {
     try {
@@ -179,6 +201,20 @@ const NotificationBell = () => {
       <ToastContainer toasts={toasts} dismiss={dismiss} />
       <ConfirmDialog />
 
+      {/* Mobile backdrop */}
+      {mobile && showDropdown && (
+        <div
+          onClick={() => setShowDropdown(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            zIndex: 9998,
+            animation: 'nb-fade-in 0.2s ease',
+          }}
+        />
+      )}
+
       <div className="nb-root" ref={dropdownRef}>
         {/* ── Bell button ── */}
         <button
@@ -217,6 +253,17 @@ const NotificationBell = () => {
                 {notifications.length > 0 && (
                   <button className="nb-action-btn nb-action-btn--danger" onClick={handleClearAll} title="Clear all">
                     <Trash2 size={14} strokeWidth={2} />
+                  </button>
+                )}
+                {/* Mobile close button in header */}
+                {mobile && (
+                  <button
+                    className="nb-action-btn"
+                    onClick={() => setShowDropdown(false)}
+                    title="Close"
+                    style={{ marginLeft: 2 }}
+                  >
+                    <XCircle size={14} strokeWidth={2} />
                   </button>
                 )}
               </div>
@@ -288,6 +335,9 @@ const NotificationBell = () => {
           </div>
         )}
       </div>
+
+      {/* Fade-in keyframe for backdrop */}
+      <style>{`@keyframes nb-fade-in { from { opacity: 0 } to { opacity: 1 } }`}</style>
     </>
   );
 };
