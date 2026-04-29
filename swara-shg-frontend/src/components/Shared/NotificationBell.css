@@ -557,7 +557,6 @@
 
   .nb-item-msg {
     font-size: 12px;
-    -webkit-line-clamp: 2;
   }
 
   .nb-item-icon {

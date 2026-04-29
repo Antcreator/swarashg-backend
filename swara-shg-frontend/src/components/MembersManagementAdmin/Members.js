@@ -14,6 +14,9 @@ const Members = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
+  // ── per-field error state ──────────────────────────────────────
+  const [formErrors, setFormErrors] = useState({});
+
   const [formData, setFormData] = useState({
     email: '', password: '', firstName: '', lastName: '',
     phone: '',
@@ -40,6 +43,8 @@ const Members = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormErrors({});   // clear previous errors
+
     try {
       const res = await membersAPI.create({
         email:      formData.email,
@@ -56,14 +61,15 @@ const Members = () => {
         if (newMemberId) {
           await registrationFeeAPI.save({
             memberId: newMemberId,
-            amount: fee,
-            notes: 'Recorded at registration',
+            amount:   fee,
+            notes:    'Recorded at registration',
           });
         }
       }
 
       alert('Member created successfully');
       setShowModal(false);
+      setFormErrors({});
       setFormData({
         email: '', password: '', firstName: '', lastName: '',
         phone: '',
@@ -71,8 +77,23 @@ const Members = () => {
         registrationFee: '',
       });
       fetchMembers();
+
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to create member');
+      const message = error.response?.data?.message || '';
+
+      // ── Show inline error only on the email field for duplicate emails ──
+      if (
+        message.toLowerCase().includes('email') &&
+        (message.toLowerCase().includes('already') ||
+         message.toLowerCase().includes('exists')  ||
+         message.toLowerCase().includes('taken')   ||
+         error.response?.status === 409)
+      ) {
+        setFormErrors({ email: 'This email is already registered. Please use a different email.' });
+      } else {
+        // Any other error (server error, validation, etc.) → generic alert
+        alert(message || 'Failed to create member');
+      }
     }
   };
 
@@ -160,16 +181,16 @@ const Members = () => {
                   <tr key={member.id}>
                     <td>
                       <span style={{
-                        fontFamily:      'monospace',
-                        fontWeight:      700,
-                        background:      '#f0f4ff',
-                        color:           '#1a3a8f',
-                        padding:         '2px 8px',
-                        borderRadius:    '6px',
-                        fontSize:        '13px',
-                        letterSpacing:   '0.04em',
-                        border:          '1px solid #c7d4f7',
-                        whiteSpace:      'nowrap',
+                        fontFamily:    'monospace',
+                        fontWeight:    700,
+                        background:    '#f0f4ff',
+                        color:         '#1a3a8f',
+                        padding:       '2px 8px',
+                        borderRadius:  '6px',
+                        fontSize:      '13px',
+                        letterSpacing: '0.04em',
+                        border:        '1px solid #c7d4f7',
+                        whiteSpace:    'nowrap',
                       }}>
                         {member.memberId}
                       </span>
@@ -215,10 +236,9 @@ const Members = () => {
 
         {/* ── ADD MEMBER MODAL ── */}
         {showModal && !isStaff && (
-          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-overlay" onClick={() => { setShowModal(false); setFormErrors({}); }}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h2>Add New Member</h2>
-              
 
               <form onSubmit={handleSubmit}>
                 <div className="form-row">
@@ -248,8 +268,24 @@ const Members = () => {
                     type="email"
                     value={formData.email}
                     required
-                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    // clear the email error as soon as the user starts typing a new address
+                    onChange={e => {
+                      setFormData({ ...formData, email: e.target.value });
+                      if (formErrors.email) setFormErrors({ ...formErrors, email: '' });
+                    }}
+                    style={formErrors.email ? { borderColor: '#e53935' } : {}}
                   />
+                  {/* inline error — only shown for duplicate email */}
+                  {formErrors.email && (
+                    <p style={{
+                      color:      '#e53935',
+                      fontSize:   '12px',
+                      marginTop:  '4px',
+                      marginBottom: 0,
+                    }}>
+                      {formErrors.email}
+                    </p>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -304,7 +340,7 @@ const Members = () => {
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setShowModal(false)}
+                    onClick={() => { setShowModal(false); setFormErrors({}); }}
                   >
                     Cancel
                   </button>
@@ -323,7 +359,6 @@ const Members = () => {
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h2>Edit Member: {editingMember.firstName} {editingMember.lastName}</h2>
 
-              {/* Show the immutable member ID */}
               <div style={{
                 background:   '#f0f4ff',
                 border:       '1px solid #c7d4f7',

@@ -34,7 +34,6 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
   const [errors, setErrors]           = useState({});
   const [submitting, setSubmitting]   = useState(false);
 
-  // ── Duplicate-code check state ───────────────────────────────
   const [memberCodes, setMemberCodes] = useState(new Set());
 
   const [dismissedIds, setDismissedIds] = useState(() => {
@@ -64,7 +63,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
     chamaaFine: '', agmFee: '', others: '',
   });
 
-  const derivedCode = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
+  const derivedCode    = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
   const isDuplicateCode = derivedCode.length === 10 && memberCodes.has(derivedCode);
 
   const fetchActiveLoans = useCallback(async () => {
@@ -93,6 +92,12 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
     fetchActiveLoans();
     fetchMemberCodes();
   }, [fetchActiveLoans, fetchMemberCodes]);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -159,7 +164,6 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
         { duration: 5000 }
       );
 
-      // Brief delay so the success toast is visible before modal closes
       setTimeout(() => { onSuccess(); }, 900);
 
     } catch (err) {
@@ -205,301 +209,350 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
 
   return (
     <>
-      {/* Toast portal — sits above the modal overlay via z-index 9999 */}
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content deposit-modal" onClick={e => e.stopPropagation()}>
+      <div className="dm-overlay" onClick={onClose}>
+        <div className="dm-content" onClick={e => e.stopPropagation()}>
 
-          {/* Header */}
-          <div className="modal-header">
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CreditCard size={20} />
+          {/* ── Header ── */}
+          <div className="dm-header">
+            <h2 className="dm-header__title">
+              <CreditCard size={18} />
               {isViewMode ? 'Deposit Status' : 'Make a Deposit'}
             </h2>
-            <button className="close-button" onClick={onClose}>
+            <button className="dm-header__close" onClick={onClose} aria-label="Close">
               <X size={18} />
             </button>
           </div>
 
-          {/* Rejected Deposits */}
-          {hasRejections && visibleRejections.length > 0 && (
-            <div style={{ padding: '0 20px 20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h4 style={{ color: '#c62828', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <XCircle size={16} /> Rejected Deposits
-                </h4>
-                {visibleRejections.length > 1 && (
-                  <button onClick={dismissAll} style={{
-                    background: 'none', border: '1px solid #f44336', color: '#f44336',
-                    borderRadius: '6px', padding: '4px 10px', fontSize: '12px',
-                    cursor: 'pointer', fontWeight: 600,
-                  }}>Dismiss All</button>
-                )}
-              </div>
-              {visibleRejections.map(d => (
-                <div key={d.id} style={{
-                  background: '#fff5f5', border: '2px solid #f44336',
-                  borderRadius: '8px', padding: '16px', marginBottom: '12px', position: 'relative',
-                }}>
-                  <button onClick={() => dismissRejection(d.id)} title="Dismiss" style={{
-                    position: 'absolute', top: '10px', right: '10px',
-                    background: '#f44336', color: 'white', border: 'none',
-                    borderRadius: '50%', width: '22px', height: '22px',
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <X size={12} />
-                  </button>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', paddingRight: '28px' }}>
-                    <div>
-                      <strong style={{ fontSize: '16px' }}>{fmt(d.totalAmount)}</strong>
-                      <span style={{ marginLeft: '10px', fontSize: '13px', color: '#666' }}>Code: {d.mpesaCode}</span>
-                    </div>
-                    <span style={{ fontSize: '12px', color: '#999' }}>
-                      {d.rejectedAt ? new Date(d.rejectedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-                    </span>
-                  </div>
-                  <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: '6px', padding: '10px 14px', marginBottom: '12px' }}>
-                    <p style={{ margin: 0, fontSize: '13px', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                      <AlertTriangle size={14} style={{ color: '#c62828', marginTop: '1px', flexShrink: 0 }} />
-                      <span><strong style={{ color: '#c62828' }}>Rejection Reason: </strong><span style={{ color: '#333' }}>{d.rejectionReason}</span></span>
-                    </p>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}><strong>Original Distribution:</strong></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '13px' }}>
-                    {summaryRows.filter(r => Number(d[r.key]) > 0).map(r => (
-                      <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', borderRadius: '4px', gap: '6px' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CategoryIcon name={r.icon} />{r.label}
-                        </span>
-                        <strong>{fmt(d[r.key])}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!isViewMode && (
-                <p style={{ fontSize: '13px', color: '#666', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Info size={13} /> You can submit a new deposit below.
-                </p>
-              )}
-            </div>
-          )}
+          {/* ── Scrollable body ── */}
+          <div className="dm-body">
 
-          {/* View Mode */}
-          {isViewMode && (
-            <div style={{ padding: '20px' }}>
-              <div style={{ background: '#fff3e0', border: '2px solid #ff9800', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                <strong style={{ color: '#e65100', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={16} /> Awaiting Admin Approval
-                </strong>
-                <p style={{ margin: '8px 0 0', fontSize: '14px', color: '#666' }}>
-                  Your deposit of <strong>{fmt(pendingDeposit.totalAmount)}</strong> (Code: {pendingDeposit.mpesaCode}) has been submitted and is pending admin approval.
-                </p>
-              </div>
-              <h4 style={{ marginBottom: '10px' }}>Distribution Breakdown</h4>
-              {summaryRows.filter(r => Number(pendingDeposit[r.key]) > 0).map(r => (
-                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #eee', fontSize: '14px' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CategoryIcon name={r.icon} />{r.label}
-                  </span>
-                  <strong>{fmt(pendingDeposit[r.key])}</strong>
-                </div>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontWeight: 'bold' }}>
-                <span>Total</span><span>{fmt(pendingDeposit.totalAmount)}</span>
-              </div>
-              <button className="btn-secondary" style={{ marginTop: '20px', width: '100%' }} onClick={onClose}>Close</button>
-            </div>
-          )}
-
-          {/* Step Indicator + Forms */}
-          {!isViewMode && (
-            <>
-              <div style={{ display: 'flex', padding: '0 20px 16px', gap: '8px' }}>
-                {['Deposit Info', 'Distribute Funds'].map((label, i) => (
-                  <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{
-                      height: '4px', borderRadius: '2px', marginBottom: '6px',
-                      background: step > i ? '#4caf50' : step === i + 1 ? '#1976d2' : '#ddd',
-                    }} />
-                    <span style={{ fontSize: '12px', fontWeight: step === i + 1 ? 700 : 400, color: step === i + 1 ? '#1976d2' : step > i ? '#4caf50' : '#999', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      {step > i ? <CheckCircle size={12} /> : <span>{i + 1}.</span>} {label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Step 1 */}
-              {step === 1 && (
-                <form onSubmit={handleNext} className="deposit-form">
-                  <div className="form-section">
-                    <h3>Deposit Information</h3>
-                    <p className="section-note">Enter your M-PESA deposit details</p>
-
-                    <div className="form-group">
-                      <label>Total Amount Deposited *</label>
-                      <input type="number" name="totalAmount" value={formData.totalAmount}
-                        onChange={handleChange} placeholder="Enter total amount" min="1" required />
-                      {errors.totalAmount && <span className="error-text">{errors.totalAmount}</span>}
-                    </div>
-
-                    <div className="form-group">
-                      <label>M-PESA Message *</label>
-                      <textarea
-                        name="mpesaMessage"
-                        value={formData.mpesaMessage}
-                        onChange={handleChange}
-                        placeholder="Paste the full M-PESA confirmation message here e.g. QF7XHKJ9L2 Confirmed. KES 5,000 sent to..."
-                        rows="4"
-                        style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '13px' }}
-                      />
-                      {formData.mpesaMessage.trim() && (
-                        <div style={{
-                          marginTop: '6px', padding: '8px 12px',
-                          background: isDuplicateCode ? '#fff8e1'
-                            : derivedCode.length >= 10 ? '#e8f5e9' : '#fff8e1',
-                          border: `1px solid ${isDuplicateCode ? '#f44336'
-                            : derivedCode.length >= 10 ? '#4caf50' : '#ffc107'}`,
-                          borderRadius: '6px', fontSize: '13px',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                        }}>
-                          {isDuplicateCode ? (
-                            <>
-                              <XCircle size={14} style={{ color: '#f44336', flexShrink: 0 }} />
-                              <span style={{ color: '#c62828' }}>
-                                Already submitted — code <strong style={{ fontFamily: 'monospace' }}>{derivedCode}</strong> exists in your history.
-                              </span>
-                            </>
-                          ) : derivedCode.length >= 10 ? (
-                            <>
-                              <CheckCircle size={14} style={{ color: '#4caf50', flexShrink: 0 }} />
-                              <span>Transaction code extracted: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}>{derivedCode}</strong></span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle size={14} style={{ color: '#ffc107', flexShrink: 0 }} />
-                              <span>Keep typing — need at least 10 characters for the code</span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {errors.mpesaMessage && (
-                        <span className="error-text" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <AlertCircle size={13} /> {errors.mpesaMessage}
-                        </span>
-                      )}
-                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Info size={12} /> Paste the complete SMS you received from M-PESA.
-                      </p>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Notes (Optional)</label>
-                      <textarea name="notes" value={formData.notes} onChange={handleChange}
-                        placeholder="Any additional notes..." rows="2" />
-                    </div>
-                  </div>
-                  <div className="modal-actions">
-                    <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-                    <button type="submit" className="btn-primary" disabled={isDuplicateCode} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      Next: Distribute <ChevronRight size={16} />
+            {/* ── Rejected deposits ── */}
+            {hasRejections && visibleRejections.length > 0 && (
+              <div className="dm-section">
+                <div className="dm-rejections__head">
+                  <h4 className="dm-rejections__title">
+                    <XCircle size={15} /> Rejected Deposits
+                  </h4>
+                  {visibleRejections.length > 1 && (
+                    <button className="dm-btn-dismiss-all" onClick={dismissAll}>
+                      Dismiss All
                     </button>
-                  </div>
-                </form>
-              )}
+                  )}
+                </div>
 
-              {/* Step 2 */}
-              {step === 2 && (
-                <form onSubmit={handleSubmit} className="deposit-form">
-                  <div style={{
-                    position: 'sticky', top: 0, zIndex: 10,
-                    background: unallocated < 0 ? '#ffebee' : unallocated === 0 ? '#e8f5e9' : '#e3f2fd',
-                    border: `2px solid ${unallocated < 0 ? '#f44336' : unallocated === 0 ? '#4caf50' : '#1976d2'}`,
-                    borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#666' }}>Deposit Amount</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{fmt(totalAmount)}</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '12px', color: '#666' }}>Allocated</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '16px', color: unallocated < 0 ? '#f44336' : '#333' }}>{fmt(distributed)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', color: '#666' }}>Remaining</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '18px', color: unallocated < 0 ? '#f44336' : unallocated === 0 ? '#4caf50' : '#1976d2' }}>
-                        {fmt(unallocated)}
-                      </div>
-                    </div>
-                  </div>
+                {visibleRejections.map(d => (
+                  <div key={d.id} className="dm-rejection-card">
+                    <button
+                      className="dm-rejection-card__close"
+                      onClick={() => dismissRejection(d.id)}
+                      aria-label="Dismiss"
+                    >
+                      <X size={11} />
+                    </button>
 
-                  <div className="form-section">
-                    <h3>Distribute {fmt(totalAmount)}</h3>
-                    <p className="section-note">Allocate your deposit across categories (total must not exceed deposit)</p>
-                    {errors.distribution && (
-                      <div className="error-banner" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <AlertCircle size={14} /> {errors.distribution}
+                    <div className="dm-rejection-card__top">
+                      <div>
+                        <strong className="dm-rejection-card__amount">{fmt(d.totalAmount)}</strong>
+                        <span className="dm-rejection-card__code">Code: {d.mpesaCode}</span>
                       </div>
-                    )}
-                    <div className="form-grid">
-                      {distributionRows.map(({ name, label, icon }) => (
-                        <div className="form-group" key={name}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <CategoryIcon name={icon} /> {label}
-                          </label>
-                          <input type="number" name={name} value={formData[name]}
-                            onChange={handleChange} placeholder="0" min="0" />
+                      <span className="dm-rejection-card__date">
+                        {d.rejectedAt
+                          ? new Date(d.rejectedAt).toLocaleDateString('en-GB', {
+                              day: '2-digit', month: 'short', year: 'numeric',
+                            })
+                          : ''}
+                      </span>
+                    </div>
+
+                    <div className="dm-rejection-card__reason">
+                      <AlertTriangle size={13} className="dm-rejection-card__reason-icon" />
+                      <span>
+                        <strong>Rejection Reason: </strong>{d.rejectionReason}
+                      </span>
+                    </div>
+
+                    <p className="dm-rejection-card__dist-label">Original Distribution:</p>
+                    <div className="dm-rejection-card__dist-grid">
+                      {summaryRows.filter(r => Number(d[r.key]) > 0).map(r => (
+                        <div key={r.label} className="dm-dist-row">
+                          <span className="dm-dist-row__label">
+                            <CategoryIcon name={r.icon} />{r.label}
+                          </span>
+                          <strong>{fmt(d[r.key])}</strong>
                         </div>
                       ))}
-
-                      <div className="form-group">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                          <FileText size={15} /> Loan Payment
-                        </label>
-                        <input type="number" name="loanPayment" value={formData.loanPayment}
-                          onChange={handleChange} placeholder="0" min="0" />
-                        {Number(formData.loanPayment) > 0 && (
-                          <select name="selectedLoanId" value={formData.selectedLoanId}
-                            onChange={handleChange} className="loan-select" required>
-                            <option value="">Select Loan</option>
-                            {activeLoans.length === 0
-                              ? <option disabled>No active loans</option>
-                              : activeLoans.map(l => (
-                                <option key={l.id} value={l.id}>
-                                  Loan #{l.id} — Balance: {fmt(l.remainingBalance)}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        {errors.selectedLoanId && (
-                          <span className="error-text" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <AlertCircle size={13} /> {errors.selectedLoanId}
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
+                ))}
 
-                  <div className="modal-actions">
-                    <button type="button" className="btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <ChevronLeft size={16} /> Back
-                    </button>
-                    <button type="submit" className="btn-primary"
-                      disabled={submitting || unallocated < 0 || distributed === 0}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Send size={15} />
-                      {submitting ? 'Submitting...' : 'Submit for Approval'}
-                    </button>
-                  </div>
-                  <p className="info-text" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Info size={13} /> Your deposit and distribution will be reviewed and approved by an admin.
+                {!isViewMode && (
+                  <p className="dm-info-note">
+                    <Info size={12} /> You can submit a new deposit below.
                   </p>
-                </form>
-              )}
-            </>
-          )}
+                )}
+              </div>
+            )}
+
+            {/* ── View Mode ── */}
+            {isViewMode && (
+              <div className="dm-section">
+                <div className="dm-pending-banner">
+                  <strong className="dm-pending-banner__title">
+                    <Clock size={15} /> Awaiting Admin Approval
+                  </strong>
+                  <p className="dm-pending-banner__body">
+                    Your deposit of <strong>{fmt(pendingDeposit.totalAmount)}</strong>{' '}
+                    (Code: {pendingDeposit.mpesaCode}) has been submitted and is pending admin approval.
+                  </p>
+                </div>
+
+                <h4 className="dm-sub-heading">Distribution Breakdown</h4>
+                {summaryRows.filter(r => Number(pendingDeposit[r.key]) > 0).map(r => (
+                  <div key={r.label} className="dm-summary-line">
+                    <span className="dm-summary-line__label">
+                      <CategoryIcon name={r.icon} />{r.label}
+                    </span>
+                    <strong>{fmt(pendingDeposit[r.key])}</strong>
+                  </div>
+                ))}
+                <div className="dm-summary-total">
+                  <span>Total</span>
+                  <span>{fmt(pendingDeposit.totalAmount)}</span>
+                </div>
+
+                <button className="dm-btn dm-btn--secondary dm-btn--full" onClick={onClose}>
+                  Close
+                </button>
+              </div>
+            )}
+
+            {/* ── Step forms ── */}
+            {!isViewMode && (
+              <>
+                {/* Step indicator */}
+                <div className="dm-steps">
+                  {['Deposit Info', 'Distribute Funds'].map((label, i) => (
+                    <div key={i} className="dm-step">
+                      <div className={`dm-step__bar ${step > i ? 'done' : step === i + 1 ? 'active' : ''}`} />
+                      <span className={`dm-step__label ${step === i + 1 ? 'active' : step > i ? 'done' : ''}`}>
+                        {step > i ? <CheckCircle size={11} /> : <span>{i + 1}.</span>}
+                        {label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Step 1 ── */}
+                {step === 1 && (
+                  <form onSubmit={handleNext} className="dm-form">
+                    <div className="dm-section">
+                      <h3 className="dm-section__heading">Deposit Information</h3>
+                      <p className="dm-section__note">Enter your M-PESA deposit details</p>
+
+                      <div className="dm-field">
+                        <label className="dm-label">Total Amount Deposited *</label>
+                        <input
+                          className={`dm-input ${errors.totalAmount ? 'dm-input--error' : ''}`}
+                          type="number"
+                          name="totalAmount"
+                          value={formData.totalAmount}
+                          onChange={handleChange}
+                          placeholder="Enter total amount"
+                          min="1"
+                          inputMode="numeric"
+                          required
+                        />
+                        {errors.totalAmount && (
+                          <span className="dm-error"><AlertCircle size={12} />{errors.totalAmount}</span>
+                        )}
+                      </div>
+
+                      <div className="dm-field">
+                        <label className="dm-label">M-PESA Message *</label>
+                        <textarea
+                          className={`dm-textarea ${errors.mpesaMessage ? 'dm-input--error' : ''}`}
+                          name="mpesaMessage"
+                          value={formData.mpesaMessage}
+                          onChange={handleChange}
+                          placeholder="Paste the full M-PESA confirmation message e.g. QF7XHKJ9L2 Confirmed. KES 5,000 sent to..."
+                          rows="4"
+                        />
+                        {formData.mpesaMessage.trim() && (
+                          <div className={`dm-code-preview ${
+                            isDuplicateCode       ? 'dm-code-preview--error'
+                            : derivedCode.length >= 10 ? 'dm-code-preview--success'
+                            : 'dm-code-preview--warn'
+                          }`}>
+                            {isDuplicateCode ? (
+                              <><XCircle size={13} /><span>Already submitted — code <strong>{derivedCode}</strong> exists in your history.</span></>
+                            ) : derivedCode.length >= 10 ? (
+                              <><CheckCircle size={13} /><span>Code extracted: <strong className="dm-mono">{derivedCode}</strong></span></>
+                            ) : (
+                              <><AlertCircle size={13} /><span>Keep typing — need at least 10 characters for the code</span></>
+                            )}
+                          </div>
+                        )}
+                        {errors.mpesaMessage && (
+                          <span className="dm-error"><AlertCircle size={12} />{errors.mpesaMessage}</span>
+                        )}
+                        <p className="dm-hint"><Info size={11} /> Paste the complete SMS you received from M-PESA.</p>
+                      </div>
+
+                      <div className="dm-field">
+                        <label className="dm-label">Notes (Optional)</label>
+                        <textarea
+                          className="dm-textarea"
+                          name="notes"
+                          value={formData.notes}
+                          onChange={handleChange}
+                          placeholder="Any additional notes..."
+                          rows="2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="dm-actions">
+                      <button type="button" className="dm-btn dm-btn--secondary" onClick={onClose}>
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="dm-btn dm-btn--primary"
+                        disabled={isDuplicateCode}
+                      >
+                        Next <ChevronRight size={15} />
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* ── Step 2 ── */}
+                {step === 2 && (
+                  <form onSubmit={handleSubmit} className="dm-form">
+
+                    {/* Sticky allocation tracker */}
+                    <div className={`dm-tracker ${
+                      unallocated < 0  ? 'dm-tracker--over'
+                      : unallocated === 0 ? 'dm-tracker--done'
+                      : 'dm-tracker--ok'
+                    }`}>
+                      <div className="dm-tracker__cell">
+                        <span className="dm-tracker__cell-label">Deposit</span>
+                        <span className="dm-tracker__cell-value">{fmt(totalAmount)}</span>
+                      </div>
+                      <div className="dm-tracker__cell dm-tracker__cell--center">
+                        <span className="dm-tracker__cell-label">Allocated</span>
+                        <span className={`dm-tracker__cell-value ${unallocated < 0 ? 'dm-tracker__cell-value--over' : ''}`}>
+                          {fmt(distributed)}
+                        </span>
+                      </div>
+                      <div className="dm-tracker__cell dm-tracker__cell--right">
+                        <span className="dm-tracker__cell-label">Remaining</span>
+                        <span className={`dm-tracker__cell-value dm-tracker__cell-value--lg ${
+                          unallocated < 0  ? 'dm-tracker__cell-value--over'
+                          : unallocated === 0 ? 'dm-tracker__cell-value--done'
+                          : ''
+                        }`}>{fmt(unallocated)}</span>
+                      </div>
+                    </div>
+
+                    <div className="dm-section">
+                      <h3 className="dm-section__heading">Distribute {fmt(totalAmount)}</h3>
+                      <p className="dm-section__note">Allocate across categories — total must not exceed deposit</p>
+
+                      {errors.distribution && (
+                        <div className="dm-error-banner">
+                          <AlertCircle size={13} /> {errors.distribution}
+                        </div>
+                      )}
+
+                      <div className="dm-dist-grid--form">
+                        {distributionRows.map(({ name, label, icon }) => (
+                          <div className="dm-field" key={name}>
+                            <label className="dm-label dm-label--icon">
+                              <CategoryIcon name={icon} size={13} /> {label}
+                            </label>
+                            <input
+                              className="dm-input"
+                              type="number"
+                              name={name}
+                              value={formData[name]}
+                              onChange={handleChange}
+                              placeholder="0"
+                              min="0"
+                              inputMode="numeric"
+                            />
+                          </div>
+                        ))}
+
+                        {/* Loan payment — full width on mobile */}
+                        <div className="dm-field dm-field--full">
+                          <label className="dm-label dm-label--icon">
+                            <FileText size={13} /> Loan Payment
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="loanPayment"
+                            value={formData.loanPayment}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                          {Number(formData.loanPayment) > 0 && (
+                            <select
+                              className="dm-select"
+                              name="selectedLoanId"
+                              value={formData.selectedLoanId}
+                              onChange={handleChange}
+                              required
+                            >
+                              <option value="">Select Loan</option>
+                              {activeLoans.length === 0
+                                ? <option disabled>No active loans</option>
+                                : activeLoans.map(l => (
+                                  <option key={l.id} value={l.id}>
+                                    Loan #{l.id} — Balance: {fmt(l.remainingBalance)}
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+                          {errors.selectedLoanId && (
+                            <span className="dm-error"><AlertCircle size={12} />{errors.selectedLoanId}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="dm-actions">
+                      <button
+                        type="button"
+                        className="dm-btn dm-btn--secondary"
+                        onClick={() => setStep(1)}
+                      >
+                        <ChevronLeft size={15} /> Back
+                      </button>
+                      <button
+                        type="submit"
+                        className="dm-btn dm-btn--primary"
+                        disabled={submitting || unallocated < 0 || distributed === 0}
+                      >
+                        <Send size={14} />
+                        {submitting ? 'Submitting…' : 'Submit'}
+                      </button>
+                    </div>
+
+                    <p className="dm-info-note dm-info-note--center">
+                      <Info size={12} /> Your deposit will be reviewed by an admin before processing.
+                    </p>
+                  </form>
+                )}
+              </>
+            )}
+          </div>{/* end dm-body */}
         </div>
       </div>
     </>
