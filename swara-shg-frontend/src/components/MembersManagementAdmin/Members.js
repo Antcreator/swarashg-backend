@@ -4,7 +4,7 @@ import { membersAPI, registrationFeeAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import './Members.css';
-import { Pencil, Trash2, BadgeCheck } from 'lucide-react';
+import { Pencil, Trash2, BadgeCheck, X } from 'lucide-react';
 
 const Members = () => {
   const isStaff = useIsStaff();
@@ -15,9 +15,7 @@ const Members = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [formErrors, setFormErrors]       = useState({});
   const [submitting, setSubmitting]       = useState(false);
-
-  // ── Success banner state ───────────────────────────────────────
-  const [successMsg, setSuccessMsg] = useState('');
+  const [successMsg, setSuccessMsg]       = useState('');
 
   const [formData, setFormData] = useState({
     email: '', password: '', firstName: '', lastName: '',
@@ -31,6 +29,16 @@ const Members = () => {
   });
 
   useEffect(() => { fetchMembers(); }, []);
+
+  // Lock body scroll when any modal is open
+  useEffect(() => {
+    if (showModal || showEditModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [showModal, showEditModal]);
 
   const fetchMembers = async () => {
     try {
@@ -48,7 +56,6 @@ const Members = () => {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  // ── Only returns true when the server explicitly signals a duplicate email ──
   const isDuplicateEmailError = (error) => {
     const status  = error.response?.status;
     const message = (error.response?.data?.message || '').toLowerCase();
@@ -64,13 +71,36 @@ const Members = () => {
     return false;
   };
 
+  const resetForm = () => {
+    setFormData({
+      email: '', password: '', firstName: '', lastName: '',
+      phone: '',
+      dateJoined: new Date().toISOString().split('T')[0],
+      registrationFee: '',
+    });
+    setFormErrors({});
+  };
+
+  const closeAddModal = () => {
+    setShowModal(false);
+    resetForm();
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingMember(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setFormErrors({});
     setSubmitting(true);
 
     // ── Step 1: Create the member ────────────────────────────────
-    let newMemberId = null;
+    let newMemberId   = null;
+    let registrationFee = Number(formData.registrationFee);
+
     try {
       const res = await membersAPI.create({
         email:      formData.email,
@@ -89,37 +119,29 @@ const Members = () => {
         alert(error.response?.data?.message || 'Failed to create member');
       }
       setSubmitting(false);
-      return; // stop here — member was NOT created
+      return;
     }
 
-    // ── Step 2: Record registration fee (optional, non-blocking) ─
-    const fee = Number(formData.registrationFee);
-    if (fee > 0 && newMemberId) {
-      try {
-        await registrationFeeAPI.save({
-          memberId: newMemberId,
-          amount:   fee,
-          notes:    'Recorded at registration',
-        });
-      } catch (feeError) {
-        // Fee failed but member was created — don't show an error,
-        // just warn in console. Admin can record fee separately.
-        console.warn('Registration fee recording failed (member was still created):', feeError);
-      }
-    }
-
-    // ── Step 3: Success — close modal and refresh list ───────────
+    // ── Step 2: Close modal + show success IMMEDIATELY ───────────
     setSubmitting(false);
-    setShowModal(false);
-    setFormErrors({});
-    setFormData({
-      email: '', password: '', firstName: '', lastName: '',
-      phone: '',
-      dateJoined: new Date().toISOString().split('T')[0],
-      registrationFee: '',
+
+    // Use requestAnimationFrame to ensure React flushes the state
+    // update on mobile before unmounting the modal
+    requestAnimationFrame(() => {
+      setShowModal(false);
+      resetForm();
+      showSuccess('Member added successfully!');
+      fetchMembers();
     });
-    fetchMembers();
-    showSuccess('Member added successfully!');
+
+    // ── Step 3: Save fee silently in the background ──────────────
+    if (registrationFee > 0 && newMemberId) {
+      registrationFeeAPI
+        .save({ memberId: newMemberId, amount: registrationFee, notes: 'Recorded at registration' })
+        .catch(feeError => {
+          console.warn('Registration fee recording failed (member was still created):', feeError);
+        });
+    }
   };
 
   const handleEdit = (member) => {
@@ -135,12 +157,15 @@ const Members = () => {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     try {
       await membersAPI.update(editingMember.id, editFormData);
-      setShowEditModal(false);
-      setEditingMember(null);
-      fetchMembers();
-      showSuccess('Member updated successfully!');
+      requestAnimationFrame(() => {
+        setShowEditModal(false);
+        setEditingMember(null);
+        fetchMembers();
+        showSuccess('Member updated successfully!');
+      });
     } catch (error) {
       alert(error.response?.data?.message || 'Failed to update member');
     }
@@ -164,9 +189,46 @@ const Members = () => {
       style: 'currency', currency: 'KES', minimumFractionDigits: 0,
     }).format(amount || 0);
 
-  const closeAddModal = () => {
-    setShowModal(false);
-    setFormErrors({});
+  // ── Shared modal styles ──────────────────────────────────────
+  const overlayStyle = {
+    position:        'fixed',
+    inset:           0,
+    background:      'rgba(0,0,0,0.55)',
+    zIndex:          1000,
+    display:         'flex',
+    alignItems:      'flex-end',      // bottom sheet on mobile
+    justifyContent:  'center',
+    padding:         0,
+    overflowY:       'auto',
+    WebkitOverflowScrolling: 'touch',
+  };
+
+  const contentStyle = {
+    background:      'white',
+    borderRadius:    '20px 20px 0 0',
+    width:           '100%',
+    maxHeight:       '92dvh',
+    overflowY:       'auto',
+    WebkitOverflowScrolling: 'touch',
+    padding:         '0 0 env(safe-area-inset-bottom)',
+    position:        'relative',
+  };
+
+  const modalHeaderStyle = {
+    display:         'flex',
+    justifyContent:  'space-between',
+    alignItems:      'center',
+    padding:         '18px 20px 14px',
+    borderBottom:    '1px solid #f0f0f0',
+    position:        'sticky',
+    top:             0,
+    background:      'white',
+    zIndex:          10,
+    borderRadius:    '20px 20px 0 0',
+  };
+
+  const formBodyStyle = {
+    padding: '16px 20px 24px',
   };
 
   return (
@@ -203,7 +265,6 @@ const Members = () => {
             color:        '#1b5e20',
             fontSize:     '14px',
             fontWeight:   600,
-            animation:    'fadeIn 0.3s ease',
           }}>
             <BadgeCheck size={18} color="#2e7d32" />
             {successMsg}
@@ -287,206 +348,265 @@ const Members = () => {
 
         {/* ── ADD MEMBER MODAL ── */}
         {showModal && !isStaff && (
-          <div className="modal-overlay" onClick={closeAddModal}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-              <h2>Add New Member</h2>
+          <div
+            style={overlayStyle}
+            onMouseDown={closeAddModal}   /* desktop */
+            onTouchStart={closeAddModal}  /* mobile — fires before click */
+          >
+            <div
+              style={contentStyle}
+              onMouseDown={e => e.stopPropagation()}
+              onTouchStart={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Sticky header with close button */}
+              <div style={modalHeaderStyle}>
+                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>
+                  Add New Member
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeAddModal}
+                  style={{
+                    background: '#f5f5f5', border: 'none',
+                    borderRadius: '50%', width: 32, height: 32,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', color: '#555',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                  aria-label="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
 
-              <form onSubmit={handleSubmit}>
-                <div className="form-row">
+              <div style={formBodyStyle}>
+                <form onSubmit={handleSubmit} onMouseDown={e => e.stopPropagation()}>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>First Name *</label>
+                      <input
+                        type="text"
+                        value={formData.firstName}
+                        required
+                        onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Last Name *</label>
+                      <input
+                        type="text"
+                        value={formData.lastName}
+                        required
+                        onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
                   <div className="form-group">
-                    <label>First Name *</label>
+                    <label>Email *</label>
                     <input
-                      type="text"
-                      value={formData.firstName}
+                      type="email"
+                      value={formData.email}
                       required
-                      onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                      onChange={e => {
+                        setFormData({ ...formData, email: e.target.value });
+                        if (formErrors.email) setFormErrors({});
+                      }}
+                      style={formErrors.email ? { borderColor: '#e53935' } : {}}
+                    />
+                    {formErrors.email && (
+                      <p style={{
+                        color: '#e53935', fontSize: '12px',
+                        marginTop: '4px', marginBottom: 0,
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        ⚠ {formErrors.email}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label>Password *</label>
+                    <input
+                      type="password"
+                      value={formData.password}
+                      required
+                      minLength="6"
+                      onChange={e => setFormData({ ...formData, password: e.target.value })}
                     />
                   </div>
+
                   <div className="form-group">
-                    <label>Last Name *</label>
+                    <label>Phone *</label>
                     <input
-                      type="text"
-                      value={formData.lastName}
+                      type="tel"
+                      value={formData.phone}
                       required
-                      onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
                     />
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label>Email *</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    required
-                    onChange={e => {
-                      setFormData({ ...formData, email: e.target.value });
-                      if (formErrors.email) setFormErrors({});
-                    }}
-                    style={formErrors.email ? { borderColor: '#e53935' } : {}}
-                  />
-                  {formErrors.email && (
-                    <p style={{
-                      color: '#e53935', fontSize: '12px',
-                      marginTop: '4px', marginBottom: 0,
-                      display: 'flex', alignItems: 'center', gap: '4px',
-                    }}>
-                      ⚠ {formErrors.email}
+                  <div className="form-group">
+                    <label>Date Joined</label>
+                    <input
+                      type="date"
+                      value={formData.dateJoined}
+                      onChange={e => setFormData({ ...formData, dateJoined: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>
+                      Registration Fee (KES){' '}
+                      <span style={{ color: '#888', fontWeight: 400 }}>— optional</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={formData.registrationFee}
+                      placeholder="Leave blank if not paid yet"
+                      onChange={e => setFormData({ ...formData, registrationFee: e.target.value })}
+                    />
+                    <p style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                      You can also record or update this later on the Registration Fees page.
                     </p>
-                  )}
-                </div>
+                  </div>
 
-                <div className="form-group">
-                  <label>Password *</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    required
-                    minLength="6"
-                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Phone *</label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    required
-                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Date Joined</label>
-                  <input
-                    type="date"
-                    value={formData.dateJoined}
-                    onChange={e => setFormData({ ...formData, dateJoined: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    Registration Fee (KES){' '}
-                    <span style={{ color: '#888', fontWeight: 400 }}>— optional</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={formData.registrationFee}
-                    placeholder="Leave blank if not paid yet"
-                    onChange={e => setFormData({ ...formData, registrationFee: e.target.value })}
-                  />
-                  <p style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                    You can also record or update this later on the Registration Fees page.
-                  </p>
-                </div>
-
-                <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={closeAddModal}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Creating…' : 'Create Member'}
-                  </button>
-                </div>
-              </form>
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={closeAddModal}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={submitting}
+                    >
+                      {submitting ? 'Creating…' : 'Create Member'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         )}
 
         {/* ── EDIT MEMBER MODAL ── */}
         {showEditModal && editingMember && !isStaff && (
-          <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-              <h2>Edit Member: {editingMember.firstName} {editingMember.lastName}</h2>
-
-              <div style={{
-                background:   '#f0f4ff',
-                border:       '1px solid #c7d4f7',
-                borderRadius: '8px',
-                padding:      '10px 14px',
-                marginBottom: '16px',
-                fontSize:     '13px',
-                color:        '#1a3a8f',
-                display:      'flex',
-                alignItems:   'center',
-                gap:          '8px',
-              }}>
-                <BadgeCheck size={16} color="#1a3a8f" />
-                <span>
-                  Member ID:{' '}
-                  <strong style={{ fontFamily: 'monospace', fontSize: '15px' }}>
-                    {editingMember.memberId}
-                  </strong>
-                  {' '}(cannot be changed)
-                </span>
+          <div
+            style={overlayStyle}
+            onMouseDown={closeEditModal}
+            onTouchStart={closeEditModal}
+          >
+            <div
+              style={contentStyle}
+              onMouseDown={e => e.stopPropagation()}
+              onTouchStart={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={modalHeaderStyle}>
+                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>
+                  Edit Member
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  style={{
+                    background: '#f5f5f5', border: 'none',
+                    borderRadius: '50%', width: 32, height: 32,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', color: '#555',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                  aria-label="Close"
+                >
+                  <X size={16} />
+                </button>
               </div>
 
-              <form onSubmit={handleEditSubmit}>
-                <div className="form-group">
-                  <label>First Name *</label>
-                  <input
-                    type="text"
-                    value={editFormData.firstName}
-                    required
-                    onChange={e => setEditFormData({ ...editFormData, firstName: e.target.value })}
-                  />
+              <div style={formBodyStyle}>
+                <div style={{
+                  background:   '#f0f4ff',
+                  border:       '1px solid #c7d4f7',
+                  borderRadius: '8px',
+                  padding:      '10px 14px',
+                  marginBottom: '16px',
+                  fontSize:     '13px',
+                  color:        '#1a3a8f',
+                  display:      'flex',
+                  alignItems:   'center',
+                  gap:          '8px',
+                }}>
+                  <BadgeCheck size={16} color="#1a3a8f" />
+                  <span>
+                    Member ID:{' '}
+                    <strong style={{ fontFamily: 'monospace', fontSize: '15px' }}>
+                      {editingMember.memberId}
+                    </strong>
+                    {' '}(cannot be changed)
+                  </span>
                 </div>
 
-                <div className="form-group">
-                  <label>Last Name *</label>
-                  <input
-                    type="text"
-                    value={editFormData.lastName}
-                    required
-                    onChange={e => setEditFormData({ ...editFormData, lastName: e.target.value })}
-                  />
-                </div>
+                <form onSubmit={handleEditSubmit} onMouseDown={e => e.stopPropagation()}>
+                  <div className="form-group">
+                    <label>First Name *</label>
+                    <input
+                      type="text"
+                      value={editFormData.firstName}
+                      required
+                      onChange={e => setEditFormData({ ...editFormData, firstName: e.target.value })}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Phone *</label>
-                  <input
-                    type="tel"
-                    value={editFormData.phone}
-                    required
-                    onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Last Name *</label>
+                    <input
+                      type="text"
+                      value={editFormData.lastName}
+                      required
+                      onChange={e => setEditFormData({ ...editFormData, lastName: e.target.value })}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Date Joined *</label>
-                  <input
-                    type="date"
-                    value={editFormData.dateJoined}
-                    required
-                    onChange={e => setEditFormData({ ...editFormData, dateJoined: e.target.value })}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Phone *</label>
+                    <input
+                      type="tel"
+                      value={editFormData.phone}
+                      required
+                      onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    />
+                  </div>
 
-                <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setShowEditModal(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn-primary">
-                    Update Member
-                  </button>
-                </div>
-              </form>
+                  <div className="form-group">
+                    <label>Date Joined *</label>
+                    <input
+                      type="date"
+                      value={editFormData.dateJoined}
+                      required
+                      onChange={e => setEditFormData({ ...editFormData, dateJoined: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={closeEditModal}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn-primary">
+                      Update Member
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         )}
