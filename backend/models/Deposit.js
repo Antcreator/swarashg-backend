@@ -24,7 +24,7 @@ Deposit.init({
     allowNull: false,
     unique: true
   },
-  mpesaMessage: {
+  mpesa_message: {
   type: DataTypes.TEXT,
   allowNull: true
   },
