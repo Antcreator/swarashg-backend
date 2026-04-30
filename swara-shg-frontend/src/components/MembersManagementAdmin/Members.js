@@ -4,7 +4,7 @@ import { membersAPI, registrationFeeAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import './Members.css';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, BadgeCheck } from 'lucide-react';
 
 const Members = () => {
   const isStaff = useIsStaff();
@@ -15,6 +15,9 @@ const Members = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [formErrors, setFormErrors]       = useState({});
   const [submitting, setSubmitting]       = useState(false);
+
+  // ── Success banner state ───────────────────────────────────────
+  const [successMsg, setSuccessMsg] = useState('');
 
   const [formData, setFormData] = useState({
     email: '', password: '', firstName: '', lastName: '',
@@ -40,15 +43,16 @@ const Members = () => {
     }
   };
 
+  const showSuccess = (msg) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
   // ── Only returns true when the server explicitly signals a duplicate email ──
   const isDuplicateEmailError = (error) => {
     const status  = error.response?.status;
     const message = (error.response?.data?.message || '').toLowerCase();
-
-    // HTTP 409 Conflict — the most explicit signal
     if (status === 409) return true;
-
-    // Sequelize unique-constraint bubbled as 400 AND message mentions email uniqueness
     if (
       status === 400 &&
       message.includes('email') &&
@@ -57,7 +61,6 @@ const Members = () => {
        message.includes('exists')  ||
        message.includes('taken'))
     ) return true;
-
     return false;
   };
 
@@ -66,6 +69,8 @@ const Members = () => {
     setFormErrors({});
     setSubmitting(true);
 
+    // ── Step 1: Create the member ────────────────────────────────
+    let newMemberId = null;
     try {
       const res = await membersAPI.create({
         email:      formData.email,
@@ -75,50 +80,46 @@ const Members = () => {
         phone:      formData.phone,
         dateJoined: formData.dateJoined,
       });
-
-      // Record registration fee if provided
-      const fee = Number(formData.registrationFee);
-      if (fee > 0) {
-        const newMemberId = res.data.member?.id || res.data.memberId;
-        if (newMemberId) {
-          await registrationFeeAPI.save({
-            memberId: newMemberId,
-            amount:   fee,
-            notes:    'Recorded at registration',
-          });
-        }
-      }
-
-      // ── Success path ─────────────────────────────────────────
-      alert('Member created successfully');
-      setShowModal(false);
-      setFormErrors({});
-      setFormData({
-        email: '', password: '', firstName: '', lastName: '',
-        phone: '',
-        dateJoined: new Date().toISOString().split('T')[0],
-        registrationFee: '',
-      });
-      fetchMembers();
-
+      newMemberId = res.data.member?.id || res.data.memberId;
     } catch (error) {
-      // Log the raw response so you can see exactly what the server sends
-      console.error(
-        'Create member failed →',
-        'status:', error.response?.status,
-        'body:',   error.response?.data
-      );
-
+      console.error('Create member failed →', 'status:', error.response?.status, 'body:', error.response?.data);
       if (isDuplicateEmailError(error)) {
-        setFormErrors({
-          email: 'This email is already registered. Please use a different email.',
-        });
+        setFormErrors({ email: 'This email is already registered. Please use a different email.' });
       } else {
         alert(error.response?.data?.message || 'Failed to create member');
       }
-    } finally {
       setSubmitting(false);
+      return; // stop here — member was NOT created
     }
+
+    // ── Step 2: Record registration fee (optional, non-blocking) ─
+    const fee = Number(formData.registrationFee);
+    if (fee > 0 && newMemberId) {
+      try {
+        await registrationFeeAPI.save({
+          memberId: newMemberId,
+          amount:   fee,
+          notes:    'Recorded at registration',
+        });
+      } catch (feeError) {
+        // Fee failed but member was created — don't show an error,
+        // just warn in console. Admin can record fee separately.
+        console.warn('Registration fee recording failed (member was still created):', feeError);
+      }
+    }
+
+    // ── Step 3: Success — close modal and refresh list ───────────
+    setSubmitting(false);
+    setShowModal(false);
+    setFormErrors({});
+    setFormData({
+      email: '', password: '', firstName: '', lastName: '',
+      phone: '',
+      dateJoined: new Date().toISOString().split('T')[0],
+      registrationFee: '',
+    });
+    fetchMembers();
+    showSuccess('Member added successfully!');
   };
 
   const handleEdit = (member) => {
@@ -136,10 +137,10 @@ const Members = () => {
     e.preventDefault();
     try {
       await membersAPI.update(editingMember.id, editFormData);
-      alert('Member updated successfully');
       setShowEditModal(false);
       setEditingMember(null);
       fetchMembers();
+      showSuccess('Member updated successfully!');
     } catch (error) {
       alert(error.response?.data?.message || 'Failed to update member');
     }
@@ -151,8 +152,8 @@ const Members = () => {
     )) return;
     try {
       await membersAPI.deletePermanent(member.id);
-      alert('Member deleted successfully');
       fetchMembers();
+      showSuccess('Member deleted successfully.');
     } catch (error) {
       alert(error.response?.data?.message || 'Failed to delete member');
     }
@@ -187,6 +188,27 @@ const Members = () => {
             </button>
           )}
         </div>
+
+        {/* ── Success banner ── */}
+        {successMsg && (
+          <div style={{
+            display:      'flex',
+            alignItems:   'center',
+            gap:          '10px',
+            background:   '#e8f5e9',
+            border:       '1px solid #a5d6a7',
+            borderRadius: '10px',
+            padding:      '12px 18px',
+            marginBottom: '16px',
+            color:        '#1b5e20',
+            fontSize:     '14px',
+            fontWeight:   600,
+            animation:    'fadeIn 0.3s ease',
+          }}>
+            <BadgeCheck size={18} color="#2e7d32" />
+            {successMsg}
+          </div>
+        )}
 
         {loading ? (
           <div className="loading">Loading members…</div>
@@ -299,7 +321,6 @@ const Members = () => {
                     required
                     onChange={e => {
                       setFormData({ ...formData, email: e.target.value });
-                      // Clear the email error the moment the user edits it
                       if (formErrors.email) setFormErrors({});
                     }}
                     style={formErrors.email ? { borderColor: '#e53935' } : {}}
@@ -308,6 +329,7 @@ const Members = () => {
                     <p style={{
                       color: '#e53935', fontSize: '12px',
                       marginTop: '4px', marginBottom: 0,
+                      display: 'flex', alignItems: 'center', gap: '4px',
                     }}>
                       ⚠ {formErrors.email}
                     </p>
@@ -401,7 +423,7 @@ const Members = () => {
                 alignItems:   'center',
                 gap:          '8px',
               }}>
-                <span style={{ fontSize: '16px' }}>🪪</span>
+                <BadgeCheck size={16} color="#1a3a8f" />
                 <span>
                   Member ID:{' '}
                   <strong style={{ fontFamily: 'monospace', fontSize: '15px' }}>
