@@ -98,8 +98,9 @@ const Members = () => {
     setSubmitting(true);
 
     // ── Step 1: Create the member ────────────────────────────────
-    let newMemberId   = null;
+    let newMemberId     = null;
     let registrationFee = Number(formData.registrationFee);
+    let feeToRecord     = registrationFee;
 
     try {
       const res = await membersAPI.create({
@@ -118,26 +119,25 @@ const Members = () => {
       } else {
         alert(error.response?.data?.message || 'Failed to create member');
       }
+      // ── Reset submitting so the button stops loading on error ──
       setSubmitting(false);
       return;
     }
 
-    // ── Step 2: Close modal + show success IMMEDIATELY ───────────
+    // ── Step 2: Close modal + reset button + show success ────────
+    // Order matters: close modal first, then reset submitting,
+    // then show the banner — all in one synchronous flush so React
+    // doesn't leave the button in a "loading" state on mobile.
+    setShowModal(false);
+    resetForm();
     setSubmitting(false);
-
-    // Use requestAnimationFrame to ensure React flushes the state
-    // update on mobile before unmounting the modal
-    requestAnimationFrame(() => {
-      setShowModal(false);
-      resetForm();
-      showSuccess('Member added successfully!');
-      fetchMembers();
-    });
+    showSuccess('Member added successfully!');
+    fetchMembers();
 
     // ── Step 3: Save fee silently in the background ──────────────
-    if (registrationFee > 0 && newMemberId) {
+    if (feeToRecord > 0 && newMemberId) {
       registrationFeeAPI
-        .save({ memberId: newMemberId, amount: registrationFee, notes: 'Recorded at registration' })
+        .save({ memberId: newMemberId, amount: feeToRecord, notes: 'Recorded at registration' })
         .catch(feeError => {
           console.warn('Registration fee recording failed (member was still created):', feeError);
         });
@@ -160,12 +160,10 @@ const Members = () => {
     e.stopPropagation();
     try {
       await membersAPI.update(editingMember.id, editFormData);
-      requestAnimationFrame(() => {
-        setShowEditModal(false);
-        setEditingMember(null);
-        fetchMembers();
-        showSuccess('Member updated successfully!');
-      });
+      setShowEditModal(false);
+      setEditingMember(null);
+      fetchMembers();
+      showSuccess('Member updated successfully!');
     } catch (error) {
       alert(error.response?.data?.message || 'Failed to update member');
     }
@@ -350,8 +348,8 @@ const Members = () => {
         {showModal && !isStaff && (
           <div
             style={overlayStyle}
-            onMouseDown={closeAddModal}   /* desktop */
-            onTouchStart={closeAddModal}  /* mobile — fires before click */
+            onMouseDown={closeAddModal}
+            onTouchStart={closeAddModal}
           >
             <div
               style={contentStyle}
