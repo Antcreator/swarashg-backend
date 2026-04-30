@@ -24,6 +24,10 @@ Deposit.init({
     allowNull: false,
     unique: true
   },
+  mpesaMessage: {
+  type: DataTypes.TEXT,
+  allowNull: true
+  },
 
   // ── Stage 1: Deposit Confirmation ───────────────────────────
   depositStatus: {
