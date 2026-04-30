@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { authAPI } from '../../Service/Api';
-
+import {
+  Lock, Eye, EyeOff, ArrowLeft, AlertCircle,
+  CheckCircle, Circle, ShieldCheck,
+} from 'lucide-react';
 
 const ForcePasswordChange = ({ onSuccess }) => {
   const [form, setForm]       = useState({ newPassword: '', confirmPassword: '' });
@@ -14,11 +17,11 @@ const ForcePasswordChange = ({ onSuccess }) => {
 
   const validate = () => {
     const errs = {};
-    if (!form.newPassword)                        errs.newPassword     = 'New password is required';
-    else if (form.newPassword.length < 8)         errs.newPassword     = 'Password must be at least 8 characters';
-    else if (!/[A-Z]/.test(form.newPassword))     errs.newPassword     = 'Must contain at least one uppercase letter';
-    else if (!/[0-9]/.test(form.newPassword))     errs.newPassword     = 'Must contain at least one number';
-    if (!form.confirmPassword)                    errs.confirmPassword = 'Please confirm your password';
+    if (!form.newPassword)                             errs.newPassword     = 'New password is required';
+    else if (form.newPassword.length < 8)              errs.newPassword     = 'Password must be at least 8 characters';
+    else if (!/[A-Z]/.test(form.newPassword))          errs.newPassword     = 'Must contain at least one uppercase letter';
+    else if (!/[0-9]/.test(form.newPassword))          errs.newPassword     = 'Must contain at least one number';
+    if (!form.confirmPassword)                         errs.confirmPassword = 'Please confirm your password';
     else if (form.newPassword !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -40,10 +43,8 @@ const ForcePasswordChange = ({ onSuccess }) => {
         confirmPassword: form.confirmPassword,
       });
       const { token, user } = res.data;
-
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
-
       onSuccess(user, token);
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to change password. Please try again.';
@@ -56,18 +57,24 @@ const ForcePasswordChange = ({ onSuccess }) => {
   const getStrength = (pwd) => {
     if (!pwd) return { level: 0, label: '', color: '#ddd' };
     let score = 0;
-    if (pwd.length >= 8)              score++;
-    if (pwd.length >= 12)             score++;
-    if (/[A-Z]/.test(pwd))            score++;
-    if (/[0-9]/.test(pwd))            score++;
-    if (/[^A-Za-z0-9]/.test(pwd))    score++;
+    if (pwd.length >= 8)           score++;
+    if (pwd.length >= 12)          score++;
+    if (/[A-Z]/.test(pwd))         score++;
+    if (/[0-9]/.test(pwd))         score++;
+    if (/[^A-Za-z0-9]/.test(pwd))  score++;
     if (score <= 1) return { level: score, label: 'Weak',   color: '#f44336' };
     if (score <= 3) return { level: score, label: 'Fair',   color: '#ff9800' };
     if (score === 4) return { level: score, label: 'Good',  color: '#2196f3' };
-    return              { level: score, label: 'Strong', color: '#4caf50' };
+    return               { level: score, label: 'Strong', color: '#4caf50' };
   };
 
   const strength = getStrength(form.newPassword);
+
+  const requirements = [
+    { label: 'At least 8 characters',        met: form.newPassword.length >= 8 },
+    { label: 'At least one uppercase letter', met: /[A-Z]/.test(form.newPassword) },
+    { label: 'At least one number',           met: /[0-9]/.test(form.newPassword) },
+  ];
 
   return (
     <div style={{
@@ -79,10 +86,10 @@ const ForcePasswordChange = ({ onSuccess }) => {
       <div style={{
         background: 'white', borderRadius: '16px',
         padding: '40px', width: '100%', maxWidth: '440px',
-        boxShadow: '0 20px 60px #2c5f2d',
+        boxShadow: '0 20px 60px rgba(44,95,45,0.4)',
       }}>
 
-        {/* Back to login */}
+        {/* ── Back to login ── */}
         <div style={{ marginBottom: '20px' }}>
           <Link
             to="/login"
@@ -92,48 +99,54 @@ const ForcePasswordChange = ({ onSuccess }) => {
             }}
             style={{
               fontSize: '13px', color: '#2c5f2d',
-              display: 'flex', alignItems: 'center', gap: '4px',
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
               fontWeight: 600, textDecoration: 'none',
             }}
           >
-            ← Back to Login
+            <ArrowLeft size={14} /> Back to Login
           </Link>
         </div>
 
-        {/* Lock icon + title */}
+        {/* ── Lock icon + title ── */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div style={{
             width: '64px', height: '64px', borderRadius: '50%',
-            background: '#e3f2fd', display: 'inline-flex',
+            background: '#e8f5e9', display: 'inline-flex',
             alignItems: 'center', justifyContent: 'center',
-            fontSize: '28px', marginBottom: '16px',
+            marginBottom: '16px',
           }}>
-            🔐
+            <Lock size={28} color="#2c5f2d" />
           </div>
           <h2 style={{ margin: '0 0 8px', color: '#2c5f2d', fontSize: '22px', fontWeight: 700 }}>
             Set Your Password
           </h2>
           <p style={{ margin: 0, color: '#666', fontSize: '14px', lineHeight: 1.5 }}>
-            Welcome, <strong>{currentUser.firstName || 'Member'}</strong>! Your account was created. Please set a personal password before continuing.
+            Welcome, <strong>{currentUser.firstName || 'Member'}</strong>! Your account was created.
+            Please set a personal password before continuing.
           </p>
         </div>
 
-        {/* Alert banner for general errors */}
+        {/* ── General error banner ── */}
         {errors.general && (
           <div style={{
             background: '#ffebee', border: '1px solid #ef9a9a',
             borderRadius: '8px', padding: '12px 16px', marginBottom: '20px',
             fontSize: '14px', color: '#c62828',
+            display: 'flex', alignItems: 'center', gap: '8px',
           }}>
-            ⚠️ {errors.general}
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            {errors.general}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
 
-          {/* New password */}
+          {/* ── New password ── */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#333', marginBottom: '6px' }}>
+            <label style={{
+              display: 'block', fontSize: '13px', fontWeight: 600,
+              color: '#333', marginBottom: '6px',
+            }}>
               New Password *
             </label>
             <div style={{ position: 'relative' }}>
@@ -159,10 +172,11 @@ const ForcePasswordChange = ({ onSuccess }) => {
                   position: 'absolute', right: '12px', top: '50%',
                   transform: 'translateY(-50%)',
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '16px', color: '#888', padding: 0,
+                  color: '#888', padding: 0, display: 'flex', alignItems: 'center',
                 }}
+                aria-label={showNew ? 'Hide password' : 'Show password'}
               >
-                {showNew ? '🙈' : '👁️'}
+                {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
 
@@ -185,15 +199,21 @@ const ForcePasswordChange = ({ onSuccess }) => {
             )}
 
             {errors.newPassword && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#f44336' }}>
-                {errors.newPassword}
+              <p style={{
+                margin: '4px 0 0', fontSize: '12px', color: '#f44336',
+                display: 'flex', alignItems: 'center', gap: '4px',
+              }}>
+                <AlertCircle size={12} /> {errors.newPassword}
               </p>
             )}
           </div>
 
-          {/* Confirm password */}
+          {/* ── Confirm password ── */}
           <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#2c5f2d', marginBottom: '6px' }}>
+            <label style={{
+              display: 'block', fontSize: '13px', fontWeight: 600,
+              color: '#2c5f2d', marginBottom: '6px',
+            }}>
               Confirm Password *
             </label>
             <div style={{ position: 'relative' }}>
@@ -218,10 +238,11 @@ const ForcePasswordChange = ({ onSuccess }) => {
                   position: 'absolute', right: '12px', top: '50%',
                   transform: 'translateY(-50%)',
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '16px', color: '#888', padding: 0,
+                  color: '#888', padding: 0, display: 'flex', alignItems: 'center',
                 }}
+                aria-label={showConfirm ? 'Hide password' : 'Show password'}
               >
-                {showConfirm ? '🙈' : '👁️'}
+                {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
 
@@ -230,36 +251,49 @@ const ForcePasswordChange = ({ onSuccess }) => {
               <p style={{
                 margin: '4px 0 0', fontSize: '12px',
                 color: form.newPassword === form.confirmPassword ? '#4caf50' : '#f44336',
+                display: 'flex', alignItems: 'center', gap: '4px',
               }}>
-                {form.newPassword === form.confirmPassword ? '✓ Passwords match' : '✗ Passwords do not match'}
+                {form.newPassword === form.confirmPassword
+                  ? <><CheckCircle size={12} /> Passwords match</>
+                  : <><AlertCircle  size={12} /> Passwords do not match</>
+                }
               </p>
             )}
 
             {errors.confirmPassword && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#f44336' }}>
-                {errors.confirmPassword}
+              <p style={{
+                margin: '4px 0 0', fontSize: '12px', color: '#f44336',
+                display: 'flex', alignItems: 'center', gap: '4px',
+              }}>
+                <AlertCircle size={12} /> {errors.confirmPassword}
               </p>
             )}
           </div>
 
-          {/* Requirements hint */}
+          {/* ── Requirements checklist ── */}
           <div style={{
             background: '#f8f9fa', borderRadius: '8px',
-            padding: '12px 14px', marginBottom: '24px', fontSize: '12px', color: '#2c5f2d',
+            padding: '12px 14px', marginBottom: '24px',
+            fontSize: '12px', color: '#2c5f2d',
           }}>
-            <strong style={{ display: 'block', marginBottom: '6px' }}>Password requirements:</strong>
-            {[
-              ['At least 8 characters',          form.newPassword.length >= 8],
-              ['At least one uppercase letter',   /[A-Z]/.test(form.newPassword)],
-              ['At least one number',             /[0-9]/.test(form.newPassword)],
-            ].map(([label, met]) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
-                <span style={{ color: met ? '#4caf50' : '#bbb', fontWeight: 700 }}>{met ? '✓' : '○'}</span>
+            <strong style={{ display: 'block', marginBottom: '8px' }}>
+              Password requirements:
+            </strong>
+            {requirements.map(({ label, met }) => (
+              <div key={label} style={{
+                display: 'flex', alignItems: 'center',
+                gap: '6px', marginTop: '4px',
+              }}>
+                {met
+                  ? <CheckCircle size={13} color="#4caf50" />
+                  : <Circle      size={13} color="#bbb" />
+                }
                 <span style={{ color: met ? '#2e7d32' : '#888' }}>{label}</span>
               </div>
             ))}
           </div>
 
+          {/* ── Submit ── */}
           <button
             type="submit"
             disabled={loading}
@@ -267,11 +301,15 @@ const ForcePasswordChange = ({ onSuccess }) => {
               width: '100%', padding: '13px',
               background: loading ? '#ccc' : '#2c5f2d',
               color: 'white', border: 'none', borderRadius: '8px',
-              fontSize: '15px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '15px', fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer',
               transition: 'background 0.2s',
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'center', gap: '8px',
             }}
           >
-            {loading ? 'Saving...' : '🔐 Set My Password & Continue'}
+            <ShieldCheck size={18} />
+            {loading ? 'Saving...' : 'Set My Password & Continue'}
           </button>
         </form>
 

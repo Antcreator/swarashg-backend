@@ -13,9 +13,8 @@ const Members = () => {
   const [showModal, setShowModal]         = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-
-  // ── per-field error state ──────────────────────────────────────
-  const [formErrors, setFormErrors] = useState({});
+  const [formErrors, setFormErrors]       = useState({});
+  const [submitting, setSubmitting]       = useState(false);
 
   const [formData, setFormData] = useState({
     email: '', password: '', firstName: '', lastName: '',
@@ -41,9 +40,31 @@ const Members = () => {
     }
   };
 
+  // ── Only returns true when the server explicitly signals a duplicate email ──
+  const isDuplicateEmailError = (error) => {
+    const status  = error.response?.status;
+    const message = (error.response?.data?.message || '').toLowerCase();
+
+    // HTTP 409 Conflict — the most explicit signal
+    if (status === 409) return true;
+
+    // Sequelize unique-constraint bubbled as 400 AND message mentions email uniqueness
+    if (
+      status === 400 &&
+      message.includes('email') &&
+      (message.includes('already') ||
+       message.includes('unique')  ||
+       message.includes('exists')  ||
+       message.includes('taken'))
+    ) return true;
+
+    return false;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormErrors({});   // clear previous errors
+    setFormErrors({});
+    setSubmitting(true);
 
     try {
       const res = await membersAPI.create({
@@ -55,6 +76,7 @@ const Members = () => {
         dateJoined: formData.dateJoined,
       });
 
+      // Record registration fee if provided
       const fee = Number(formData.registrationFee);
       if (fee > 0) {
         const newMemberId = res.data.member?.id || res.data.memberId;
@@ -67,6 +89,7 @@ const Members = () => {
         }
       }
 
+      // ── Success path ─────────────────────────────────────────
       alert('Member created successfully');
       setShowModal(false);
       setFormErrors({});
@@ -79,21 +102,22 @@ const Members = () => {
       fetchMembers();
 
     } catch (error) {
-      const message = error.response?.data?.message || '';
+      // Log the raw response so you can see exactly what the server sends
+      console.error(
+        'Create member failed →',
+        'status:', error.response?.status,
+        'body:',   error.response?.data
+      );
 
-      // ── Show inline error only on the email field for duplicate emails ──
-      if (
-        message.toLowerCase().includes('email') &&
-        (message.toLowerCase().includes('already') ||
-         message.toLowerCase().includes('exists')  ||
-         message.toLowerCase().includes('taken')   ||
-         error.response?.status === 409)
-      ) {
-        setFormErrors({ email: 'This email is already registered. Please use a different email.' });
+      if (isDuplicateEmailError(error)) {
+        setFormErrors({
+          email: 'This email is already registered. Please use a different email.',
+        });
       } else {
-        // Any other error (server error, validation, etc.) → generic alert
-        alert(message || 'Failed to create member');
+        alert(error.response?.data?.message || 'Failed to create member');
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -138,6 +162,11 @@ const Members = () => {
     new Intl.NumberFormat('en-KE', {
       style: 'currency', currency: 'KES', minimumFractionDigits: 0,
     }).format(amount || 0);
+
+  const closeAddModal = () => {
+    setShowModal(false);
+    setFormErrors({});
+  };
 
   return (
     <>
@@ -236,7 +265,7 @@ const Members = () => {
 
         {/* ── ADD MEMBER MODAL ── */}
         {showModal && !isStaff && (
-          <div className="modal-overlay" onClick={() => { setShowModal(false); setFormErrors({}); }}>
+          <div className="modal-overlay" onClick={closeAddModal}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h2>Add New Member</h2>
 
@@ -268,22 +297,19 @@ const Members = () => {
                     type="email"
                     value={formData.email}
                     required
-                    // clear the email error as soon as the user starts typing a new address
                     onChange={e => {
                       setFormData({ ...formData, email: e.target.value });
-                      if (formErrors.email) setFormErrors({ ...formErrors, email: '' });
+                      // Clear the email error the moment the user edits it
+                      if (formErrors.email) setFormErrors({});
                     }}
                     style={formErrors.email ? { borderColor: '#e53935' } : {}}
                   />
-                  {/* inline error — only shown for duplicate email */}
                   {formErrors.email && (
                     <p style={{
-                      color:      '#e53935',
-                      fontSize:   '12px',
-                      marginTop:  '4px',
-                      marginBottom: 0,
+                      color: '#e53935', fontSize: '12px',
+                      marginTop: '4px', marginBottom: 0,
                     }}>
-                      {formErrors.email}
+                      ⚠ {formErrors.email}
                     </p>
                   )}
                 </div>
@@ -340,12 +366,16 @@ const Members = () => {
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => { setShowModal(false); setFormErrors({}); }}
+                    onClick={closeAddModal}
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="btn-primary">
-                    Create Member
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Creating…' : 'Create Member'}
                   </button>
                 </div>
               </form>
