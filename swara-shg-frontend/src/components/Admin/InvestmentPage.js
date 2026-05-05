@@ -2,10 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { investmentAPI, loansAPI, finesAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
+// ── Import your real auth hook so we can read the logged-in user's name ──
+// Adjust this import path to wherever your auth context lives in your project
+import { useAuth } from '../../Context/AuthContext';
 import Navbar from '../Navbar/navbar';
 import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock, User } from 'lucide-react';
 
-// ── Month ordering (Principal first, then Dec → Nov) ─────────────
+// ── Month ordering (Principal first, then Dec → Nov) ─────────────────────────
 const MONTHS = [
   { name: 'Principal', num: 0,  isPrincipal: true  },
   { name: 'December',  num: 12, isPrincipal: false },
@@ -22,7 +25,9 @@ const MONTHS = [
   { name: 'November',  num: 11, isPrincipal: false },
 ];
 
-// ── Column definitions ─────────────────────────────────────────
+// ── Column definitions ────────────────────────────────────────────────────────
+// Cols 1–3: auto-populated from loans/fines data (read-only)
+// Cols 4–10: manually editable
 const AUTO_COLS = [1, 2, 3];
 const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
 const COLS      = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -41,13 +46,13 @@ const defaultEditColNames = () => {
 
 const blankRow = ({ name, num, isPrincipal }) => {
   const row = {
-    month: num,
-    monthName: name,
+    month:       num,
+    monthName:   name,
     isPrincipal: isPrincipal || false,
-    id: null,
-    notes: '',
-    editedBy: '',
-    editedAt: null,
+    id:          null,
+    notes:       '',
+    editedBy:    '',
+    editedAt:    null,
   };
   COLS.forEach(i => { row[`investment${i}Amount`] = ''; });
   return row;
@@ -55,10 +60,15 @@ const blankRow = ({ name, num, isPrincipal }) => {
 
 const defaultRows = () => MONTHS.map(blankRow);
 
+// ─────────────────────────────────────────────────────────────────────────────
 const InvestmentPage = () => {
-  const isStaff     = useIsStaff();
-  const currentYear = new Date().getFullYear();
+  const isStaff    = useIsStaff();
+  // Pull the logged-in user from your auth context.
+  // Adjust `.user?.name` to match whatever property holds the display name
+  // in your auth context (e.g. user?.username, user?.fullName, etc.)
+  const { user: authUser } = useAuth();
 
+  const currentYear = new Date().getFullYear();
   const [year, setYear]                   = useState(currentYear);
   const [rows, setRows]                   = useState(defaultRows());
   const [editColNames, setEditColNames]   = useState(defaultEditColNames());
@@ -66,15 +76,14 @@ const InvestmentPage = () => {
   const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
-
-  const [dirtyRows, setDirtyRows] = useState(new Set());
+  const [dirtyRows, setDirtyRows]         = useState(new Set());
 
   const [autoData, setAutoData] = useState({
-    byMonth: {},
+    byMonth:   {},
     principal: { loans: 0, savingsFines: 0, chamaaFines: 0 },
   });
 
-  // ── Fetch auto-populated data ──────────────────────────────
+  // ── Fetch auto-populated data (loans + fines) ─────────────────────────────
   const fetchAutoData = useCallback(async () => {
     try {
       const loansRes = await loansAPI.getAll({ _nocache: Date.now() });
@@ -91,8 +100,8 @@ const InvestmentPage = () => {
         loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0);
       });
 
-      const finesRes  = await finesAPI.getAll({ year });
-      const allFines  = finesRes.data.fines || [];
+      const finesRes = await finesAPI.getAll({ year });
+      const allFines = finesRes.data.fines || [];
 
       const savingsByMonth = {};
       const chamaaByMonth  = {};
@@ -102,12 +111,16 @@ const InvestmentPage = () => {
         if (f.fineType === 'savings_late') {
           savingsByMonth[m] = (savingsByMonth[m] || 0) + Number(f.amount || 0);
         } else if (f.fineType === 'chamaa_late') {
-          chamaaByMonth[m]  = (chamaaByMonth[m] || 0)  + Number(f.amount || 0);
+          chamaaByMonth[m]  = (chamaaByMonth[m]  || 0) + Number(f.amount || 0);
         }
       });
 
-      const principalSavingsFines = allFines.filter(f => f.fineType === 'savings_late').reduce((s, f) => s + Number(f.amount || 0), 0);
-      const principalChamaaFines  = allFines.filter(f => f.fineType === 'chamaa_late').reduce((s, f) => s + Number(f.amount || 0), 0);
+      const principalSavingsFines = allFines
+        .filter(f => f.fineType === 'savings_late')
+        .reduce((s, f) => s + Number(f.amount || 0), 0);
+      const principalChamaaFines = allFines
+        .filter(f => f.fineType === 'chamaa_late')
+        .reduce((s, f) => s + Number(f.amount || 0), 0);
 
       const byMonth = {};
       for (let m = 1; m <= 12; m++) {
@@ -131,7 +144,7 @@ const InvestmentPage = () => {
     }
   }, [year]);
 
-  // ── Fetch saved investment rows ──────────────────────────────
+  // ── Fetch saved investment rows ───────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -139,14 +152,17 @@ const InvestmentPage = () => {
       const rawRows = res.data.rows || [];
 
       const sorted = MONTHS.map(m => {
+        // The backend now returns month 0 for the Principal row
         const saved = rawRows.find(r => r.month === m.num);
         const base  = blankRow(m);
         if (saved) {
-          EDIT_COLS.forEach(i => { base[`investment${i}Amount`] = saved[`investment${i}Amount`] ?? ''; });
-          base.id       = saved.id;
-          base.notes    = saved.notes    || '';
-          base.editedBy = saved.editedBy || '';
-          base.editedAt = saved.editedAt || null;
+          EDIT_COLS.forEach(i => {
+            base[`investment${i}Amount`] = saved[`investment${i}Amount`] ?? '';
+          });
+          base.id       = saved.id       ?? null;
+          base.notes    = saved.notes    ?? '';
+          base.editedBy = saved.editedBy ?? ''; // the saved display name
+          base.editedAt = saved.editedAt ?? null;
         }
         return base;
       });
@@ -155,7 +171,7 @@ const InvestmentPage = () => {
       setDirtyRows(new Set());
 
       const savedColNames = res.data.colNames || {};
-      const restored = defaultEditColNames();
+      const restored      = defaultEditColNames();
       EDIT_COLS.forEach(i => { restored[`col${i}`] = savedColNames[`col${i}`] || ''; });
       setEditColNames(restored);
     } catch {
@@ -177,10 +193,7 @@ const InvestmentPage = () => {
   };
 
   const handleCellChange = (month, field, value) => {
-    setRows(prev => prev.map(r => {
-      if (r.month !== month) return r;
-      return { ...r, [field]: value };
-    }));
+    setRows(prev => prev.map(r => r.month !== month ? r : { ...r, [field]: value }));
     setDirtyRows(prev => new Set(prev).add(month));
   };
 
@@ -188,14 +201,22 @@ const InvestmentPage = () => {
     setEditColNames(prev => ({ ...prev, [key]: value }));
   };
 
-  // ── Save — FIX: removed undefined `res` reference; use a safe fallback for adminName ──
+  // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     try {
-      // TODO: replace 'Admin' with your real auth source, e.g. useAuth().user?.name
-      const adminName = 'Admin';
-      const now       = new Date().toISOString();
+      // Resolve the current user's display name from auth context.
+      // Falls back through common property names; update to match your schema.
+      const adminName =
+        authUser?.name ||
+        authUser?.fullName ||
+        authUser?.username ||
+        authUser?.email ||
+        'Admin';
 
+      const now = new Date().toISOString();
+
+      // Stamp editedBy / editedAt only on rows the user actually changed
       const stampedRows = rows.map(r => {
         if (dirtyRows.has(r.month)) {
           return { ...r, editedBy: adminName, editedAt: now };
@@ -207,6 +228,7 @@ const InvestmentPage = () => {
       await investmentAPI.save({ year, rows: stampedRows, colNames });
 
       showToast('Investments saved successfully');
+      // Re-fetch so the UI reflects what was persisted (including editedBy)
       await fetchData();
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to save', 'error');
@@ -215,6 +237,7 @@ const InvestmentPage = () => {
     }
   };
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const colLabel = (i) => {
     if (AUTO_COLS.includes(i)) return FIXED_COL_NAMES[`col${i}`];
     return editColNames[`col${i}`] || `Investment ${i}`;
@@ -222,7 +245,9 @@ const InvestmentPage = () => {
 
   const autoValue = (row, col) => {
     if (row.isPrincipal) {
-      if (col === 1) return autoData.principal.loans || 0;
+      if (col === 1) return autoData.principal.loans        || 0;
+      if (col === 2) return autoData.principal.savingsFines || 0;
+      if (col === 3) return autoData.principal.chamaaFines  || 0;
       return 0;
     }
     const src = autoData.byMonth[row.month] || {};
@@ -238,21 +263,25 @@ const InvestmentPage = () => {
     return autoSum + editSum;
   };
 
+  // Column totals exclude the Principal row to avoid double-counting
   const colTotals = COLS.map(i => {
+    const monthRows = rows.filter(r => !r.isPrincipal);
     if (AUTO_COLS.includes(i)) {
-      return rows.filter(r => !r.isPrincipal).reduce((sum, r) => sum + autoValue(r, i), 0);
+      return monthRows.reduce((sum, r) => sum + autoValue(r, i), 0);
     }
-    return rows.filter(r => !r.isPrincipal).reduce((sum, r) => sum + (Number(r[`investment${i}Amount`]) || 0), 0);
+    return monthRows.reduce((sum, r) => sum + (Number(r[`investment${i}Amount`]) || 0), 0);
   });
   const grandTotal = colTotals.reduce((a, b) => a + b, 0);
 
-  const fmtKES = (v) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(v || 0);
-  const fmtNum = (v) => new Intl.NumberFormat('en-KE', { minimumFractionDigits: 0 }).format(v || 0);
+  const fmtKES = (v) =>
+    new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(v || 0);
+  const fmtNum = (v) =>
+    new Intl.NumberFormat('en-KE', { minimumFractionDigits: 0 }).format(v || 0);
 
   const yearOptions = [];
   for (let y = currentYear; y >= 2020; y--) yearOptions.push(y);
 
-  // ── Export CSV ────────────────────────────────────────────
+  // ── Export CSV ────────────────────────────────────────────────────────────
   const exportCSV = () => {
     const headers = ['Month', ...COLS.map(i => colLabel(i)), 'Edited By', 'Row Total'];
     const csvRows = rows.map(r => [
@@ -270,7 +299,7 @@ const InvestmentPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  // ── Export PDF ────────────────────────────────────────────
+  // ── Export PDF ────────────────────────────────────────────────────────────
   const exportPDF = () => {
     const win        = window.open('', '_blank');
     const theadCells = `<th>Month</th>${COLS.map(i => `<th>${colLabel(i)}</th>`).join('')}<th>Edited By</th><th>Total</th>`;
@@ -311,20 +340,20 @@ const InvestmentPage = () => {
     win.document.close();
   };
 
+  // ── Styles ────────────────────────────────────────────────────────────────
   const amtSt = {
     width: '100%', padding: '5px 6px', border: '1px solid #ddd',
     borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box', textAlign: 'right',
   };
-
   const principalAmtSt = {
     ...amtSt,
     border: '1px solid #ce93d8',
     background: '#fdf6ff',
   };
-
   const rowBg = (row, idx) =>
     row.isPrincipal ? '#f3e5f5' : idx % 2 === 0 ? 'white' : '#fafafa';
 
+  // ── Edited-By cell renderer ───────────────────────────────────────────────
   const renderEditedByCell = (row) => {
     const isDirtyRow = dirtyRows.has(row.month);
     const name       = row.editedBy;
@@ -332,9 +361,16 @@ const InvestmentPage = () => {
       ? new Date(row.editedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
       : null;
 
+    const cellBase = {
+      padding: '6px 8px',
+      textAlign: 'center',
+      background: row.isPrincipal ? '#f3e5f5' : 'transparent',
+    };
+
+    // Row is dirty (unsaved changes)
     if (isDirtyRow && !saving) {
       return (
-        <td style={{ padding: '6px 8px', textAlign: 'center', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
+        <td style={cellBase}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', color: '#f57c00', fontStyle: 'italic' }}>
             <Pencil size={10} /> unsaved
           </span>
@@ -342,16 +378,16 @@ const InvestmentPage = () => {
       );
     }
 
+    // No editor recorded yet
     if (!name) {
       return (
-        <td style={{ padding: '6px 8px', textAlign: 'center', color: '#ccc', fontSize: '12px', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
-          —
-        </td>
+        <td style={{ ...cellBase, color: '#ccc', fontSize: '12px' }}>—</td>
       );
     }
 
+    // Has a saved editor name
     return (
-      <td style={{ padding: '6px 8px', textAlign: 'center', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
+      <td style={cellBase}>
         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -369,12 +405,13 @@ const InvestmentPage = () => {
     );
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f8f9fa' }}>
       <Navbar />
       <div style={{ padding: '24px', fontFamily: 'sans-serif' }}>
 
-        {/* ── Header ── */}
+        {/* ── Header ──────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
@@ -395,17 +432,29 @@ const InvestmentPage = () => {
               <Printer size={14} /> PDF
             </button>
             {!isStaff && (
-              <button onClick={handleSave} disabled={saving}
-                style={{ padding: '8px 20px', background: dirtyRows.size > 0 ? '#7b1fa2' : '#9e9e9e', color: 'white', border: 'none', borderRadius: '8px', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '14px', opacity: saving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'background 0.2s' }}>
-                <Save size={14} /> {saving ? 'Saving...' : `Save${dirtyRows.size > 0 ? ` (${dirtyRows.size})` : ''}`}
+              <button
+                onClick={handleSave}
+                disabled={saving || dirtyRows.size === 0}
+                style={{
+                  padding: '8px 20px',
+                  background: dirtyRows.size > 0 ? '#7b1fa2' : '#9e9e9e',
+                  color: 'white', border: 'none', borderRadius: '8px',
+                  cursor: (saving || dirtyRows.size === 0) ? 'not-allowed' : 'pointer',
+                  fontWeight: 700, fontSize: '14px',
+                  opacity: saving ? 0.7 : 1,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  transition: 'background 0.2s',
+                }}
+              >
+                <Save size={14} /> {saving ? 'Saving…' : `Save${dirtyRows.size > 0 ? ` (${dirtyRows.size})` : ''}`}
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Table ── */}
+        {/* ── Table ───────────────────────────────────────────────────────── */}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>Loading...</div>
+          <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>Loading…</div>
         ) : (
           <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid #e0e0e0', background: 'white' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -420,7 +469,9 @@ const InvestmentPage = () => {
                       background: AUTO_COLS.includes(i) ? '#1565c0' : '#1a1a2e',
                       textAlign: 'center',
                     }}>
-                      {AUTO_COLS.includes(i) ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={9} /> AUTO</span> : ''}
+                      {AUTO_COLS.includes(i)
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={9} /> AUTO</span>
+                        : ''}
                     </th>
                   ))}
                   <th style={{ background: '#1a1a2e', padding: '4px 8px', fontSize: '10px', color: 'transparent' }}>—</th>
@@ -466,7 +517,6 @@ const InvestmentPage = () => {
                     );
                   })}
 
-                  {/* Edited By column header */}
                   <th style={{ padding: '12px 10px', color: '#ce93d8', textAlign: 'center', fontWeight: 600, minWidth: '100px', background: '#1a1a2e', fontSize: '12px', whiteSpace: 'nowrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       <User size={12} style={{ opacity: 0.8 }} /> Edited By
@@ -487,9 +537,11 @@ const InvestmentPage = () => {
                     <tr key={`${row.month}-${idx}`} style={{ background: bg, borderBottom: '1px solid #f0f0f0' }}>
                       {/* Month label */}
                       <td style={{
-                        padding: '10px 14px', fontWeight: row.isPrincipal ? 800 : 600,
+                        padding: '10px 14px',
+                        fontWeight: row.isPrincipal ? 800 : 600,
                         color: row.isPrincipal ? '#7b1fa2' : '#1a1a2e',
-                        whiteSpace: 'nowrap', position: 'sticky', left: 0, background: bg, zIndex: 1,
+                        whiteSpace: 'nowrap',
+                        position: 'sticky', left: 0, background: bg, zIndex: 1,
                         borderRight: '2px solid #e0e0e0',
                         fontStyle: row.isPrincipal ? 'italic' : 'normal',
                         letterSpacing: row.isPrincipal ? '0.02em' : 'normal',
@@ -504,7 +556,10 @@ const InvestmentPage = () => {
 
                       {/* Columns */}
                       {COLS.map(i => {
-                        const isAuto = AUTO_COLS.includes(i);
+                        const isAuto   = AUTO_COLS.includes(i);
+                        const fieldKey = `investment${i}Amount`;
+                        const fieldVal = row[fieldKey];
+
                         if (isAuto) {
                           const val = autoValue(row, i);
                           return (
@@ -521,23 +576,23 @@ const InvestmentPage = () => {
                           );
                         }
 
-                        // FIX: removed unused `isDirty` and `showInput` variables
-                        const fieldKey = `investment${i}Amount`;
-                        const fieldVal = row[fieldKey];
-
                         return (
                           <td key={i} style={{ padding: '6px 8px', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
                             {isStaff ? (
+                              // Staff view: read-only display
                               <span style={{ display: 'block', textAlign: 'right', color: fieldVal ? '#7b1fa2' : '#bbb', fontWeight: 600, fontSize: '13px' }}>
                                 {fieldVal ? fmtKES(Number(fieldVal)) : '—'}
                               </span>
                             ) : saving ? (
+                              // Saving state: temporarily read-only
                               <span style={{ display: 'block', textAlign: 'right', color: '#bbb', fontWeight: 600, fontSize: '13px' }}>
                                 {fieldVal ? fmtKES(Number(fieldVal)) : '—'}
                               </span>
                             ) : (
+                              // Admin edit mode — works for ALL rows including Principal (month 0)
                               <input
-                                type="number" min="0"
+                                type="number"
+                                min="0"
                                 value={fieldVal}
                                 onChange={e => handleCellChange(row.month, fieldKey, e.target.value)}
                                 placeholder="0"
@@ -577,9 +632,15 @@ const InvestmentPage = () => {
         )}
       </div>
 
-      {/* ── Toast ── */}
+      {/* ── Toast ────────────────────────────────────────────────────────── */}
       {toast && (
-        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, padding: '14px 20px', borderRadius: '8px', fontWeight: 600, fontSize: '14px', boxShadow: '0 4px 16px rgba(0,0,0,0.18)', background: toast.type === 'error' ? '#c62828' : '#2e7d32', color: 'white', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999,
+          padding: '14px 20px', borderRadius: '8px', fontWeight: 600, fontSize: '14px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.type === 'error' ? '#c62828' : '#2e7d32',
+          color: 'white', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
           {toast.type === 'error' ? <XCircle size={16} /> : <CheckCircle size={16} />} {toast.msg}
         </div>
       )}
