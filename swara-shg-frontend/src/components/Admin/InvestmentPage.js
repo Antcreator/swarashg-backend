@@ -4,7 +4,7 @@ import { investmentAPI, loansAPI, finesAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 // ── Import your real auth hook so we can read the logged-in user's name ──
 // Adjust this import path to wherever your auth context lives in your project
-import { useAuth } from '../../Context/AuthContext';
+
 import Navbar from '../Navbar/navbar';
 import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock, User } from 'lucide-react';
 
@@ -66,7 +66,7 @@ const InvestmentPage = () => {
   // Pull the logged-in user from your auth context.
   // Adjust `.user?.name` to match whatever property holds the display name
   // in your auth context (e.g. user?.username, user?.fullName, etc.)
-  const { user: authUser } = useAuth();
+  const { user: authUser } = useIsStaff();
 
   const currentYear = new Date().getFullYear();
   const [year, setYear]                   = useState(currentYear);
