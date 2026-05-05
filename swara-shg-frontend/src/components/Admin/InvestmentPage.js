@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { investmentAPI, loansAPI, finesAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
-// ── Import your real auth hook so we can read the logged-in user's name ──
-// Adjust this import path to wherever your auth context lives in your project
 
 import Navbar from '../Navbar/navbar';
 import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock, User } from 'lucide-react';
@@ -25,9 +23,6 @@ const MONTHS = [
   { name: 'November',  num: 11, isPrincipal: false },
 ];
 
-// ── Column definitions ────────────────────────────────────────────────────────
-// Cols 1–3: auto-populated from loans/fines data (read-only)
-// Cols 4–10: manually editable
 const AUTO_COLS = [1, 2, 3];
 const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
 const COLS      = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -60,13 +55,46 @@ const blankRow = ({ name, num, isPrincipal }) => {
 
 const defaultRows = () => MONTHS.map(blankRow);
 
+// ── Resolve the logged-in admin's display name from localStorage ──────────────
+// The login endpoint returns { user: { firstName, lastName, email, role, ... } }
+// and the frontend typically stores this in localStorage under a key like
+// 'user' or 'authUser'. Adjust the key name below if yours differs.
+const getAdminDisplayName = () => {
+  try {
+    // Try common storage key names in order of preference
+    const keys = ['user', 'authUser', 'currentUser', 'loggedInUser'];
+    for (const key of keys) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      // Support both { firstName, lastName } and flat { name } shapes
+      if (parsed?.firstName || parsed?.lastName) {
+        return `${parsed.firstName || ''} ${parsed.lastName || ''}`.trim();
+      }
+      if (parsed?.name)     return parsed.name;
+      if (parsed?.fullName) return parsed.fullName;
+      if (parsed?.username) return parsed.username;
+      if (parsed?.email)    return parsed.email;
+    }
+    // Fallback: try token decode (works if JWT payload has name fields)
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload?.firstName || payload?.lastName) {
+        return `${payload.firstName || ''} ${payload.lastName || ''}`.trim();
+      }
+      if (payload?.name)  return payload.name;
+      if (payload?.email) return payload.email;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return 'Admin';
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 const InvestmentPage = () => {
-  const isStaff    = useIsStaff();
-  // Pull the logged-in user from your auth context.
-  // Adjust `.user?.name` to match whatever property holds the display name
-  // in your auth context (e.g. user?.username, user?.fullName, etc.)
-  const { user: authUser } = useIsStaff();
+  const isStaff = useIsStaff();
 
   const currentYear = new Date().getFullYear();
   const [year, setYear]                   = useState(currentYear);
@@ -152,7 +180,6 @@ const InvestmentPage = () => {
       const rawRows = res.data.rows || [];
 
       const sorted = MONTHS.map(m => {
-        // The backend now returns month 0 for the Principal row
         const saved = rawRows.find(r => r.month === m.num);
         const base  = blankRow(m);
         if (saved) {
@@ -161,7 +188,7 @@ const InvestmentPage = () => {
           });
           base.id       = saved.id       ?? null;
           base.notes    = saved.notes    ?? '';
-          base.editedBy = saved.editedBy ?? ''; // the saved display name
+          base.editedBy = saved.editedBy ?? '';
           base.editedAt = saved.editedAt ?? null;
         }
         return base;
@@ -205,14 +232,11 @@ const InvestmentPage = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Resolve the current user's display name from auth context.
-      // Falls back through common property names; update to match your schema.
-      const adminName =
-        authUser?.name ||
-        authUser?.fullName ||
-        authUser?.username ||
-        authUser?.email ||
-        'Admin';
+      // ── Resolve admin name from localStorage ──────────────────────────────
+      // The login response stores user info (firstName, lastName, etc.) in
+      // localStorage. getAdminDisplayName() reads those fields in order of
+      // preference and returns a human-readable name string.
+      const adminName = getAdminDisplayName();
 
       const now = new Date().toISOString();
 
@@ -228,7 +252,7 @@ const InvestmentPage = () => {
       await investmentAPI.save({ year, rows: stampedRows, colNames });
 
       showToast('Investments saved successfully');
-      // Re-fetch so the UI reflects what was persisted (including editedBy)
+      // Re-fetch so the UI reflects the persisted editedBy value
       await fetchData();
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to save', 'error');
@@ -589,7 +613,7 @@ const InvestmentPage = () => {
                                 {fieldVal ? fmtKES(Number(fieldVal)) : '—'}
                               </span>
                             ) : (
-                              // Admin edit mode — works for ALL rows including Principal (month 0)
+                              // Admin edit mode
                               <input
                                 type="number"
                                 min="0"
