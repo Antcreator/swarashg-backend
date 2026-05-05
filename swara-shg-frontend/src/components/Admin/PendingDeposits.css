@@ -448,7 +448,6 @@
   font-family: inherit;
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  -webkit-appearance: none;
 }
 
 .edit-input:focus {
@@ -637,7 +636,6 @@
   resize: vertical;
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  -webkit-appearance: none;
 }
 
 .modal-body textarea:focus {

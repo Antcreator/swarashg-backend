@@ -303,6 +303,13 @@ const InvestmentPage = () => {
     borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box', textAlign: 'right',
   };
 
+  // Principal row input style — slightly different background to match the purple theme
+  const principalAmtSt = {
+    ...amtSt,
+    border: '1px solid #ce93d8',
+    background: '#fdf6ff',
+  };
+
   // ── Row background ────────────────────────────────────────
   const rowBg = (row, idx) =>
     row.isPrincipal ? '#f3e5f5' : idx % 2 === 0 ? 'white' : '#fafafa';
@@ -453,17 +460,9 @@ const InvestmentPage = () => {
                           );
                         }
 
-                        // Editable cell (cols 4-10) — locked for Principal row
-                        if (row.isPrincipal) {
-                          return (
-                            <td key={i} style={{ padding: '6px 8px', background: '#ede7f6' }}>
-                              <span style={{ display: 'block', textAlign: 'right', color: '#bbb', fontSize: '13px' }}>—</span>
-                            </td>
-                          );
-                        }
-
+                        // Editable cell (cols 4-10) — now editable for ALL rows including Principal
                         return (
-                          <td key={i} style={{ padding: '6px 8px' }}>
+                          <td key={i} style={{ padding: '6px 8px', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
                             {isStaff ? (
                               <span style={{ display: 'block', textAlign: 'right', color: row[`investment${i}Amount`] ? '#7b1fa2' : '#bbb', fontWeight: 600, fontSize: '13px' }}>
                                 {row[`investment${i}Amount`] ? fmtKES(Number(row[`investment${i}Amount`])) : '—'}
@@ -474,7 +473,7 @@ const InvestmentPage = () => {
                                 value={row[`investment${i}Amount`]}
                                 onChange={e => handleCellChange(row.month, `investment${i}Amount`, e.target.value)}
                                 placeholder="0"
-                                style={amtSt}
+                                style={row.isPrincipal ? principalAmtSt : amtSt}
                               />
                             )}
                           </td>
