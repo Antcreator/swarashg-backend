@@ -8,7 +8,8 @@ const Investment = sequelize.define('Investment', {
     autoIncrement: true,
   },
   year:  { type: DataTypes.INTEGER, allowNull: false },
-  month: { type: DataTypes.INTEGER, allowNull: false }, // 1–12
+  // month 0 = "Principal" (all-time) row; 1–12 = calendar months
+  month: { type: DataTypes.INTEGER, allowNull: false },
 
   investment1Amount:  { type: DataTypes.DECIMAL(12, 2), allowNull: true, defaultValue: 0 },
   investment2Amount:  { type: DataTypes.DECIMAL(12, 2), allowNull: true, defaultValue: 0 },
@@ -21,8 +22,12 @@ const Investment = sequelize.define('Investment', {
   investment9Amount:  { type: DataTypes.DECIMAL(12, 2), allowNull: true, defaultValue: 0 },
   investment10Amount: { type: DataTypes.DECIMAL(12, 2), allowNull: true, defaultValue: 0 },
 
+  // Stores the display name of the person who last edited this row
+  editedBy: { type: DataTypes.STRING(150), allowNull: true, defaultValue: null },
+  // Keep recordedBy (FK to users) for audit purposes alongside the name
   recordedBy: { type: DataTypes.INTEGER, allowNull: true },
-  notes:      { type: DataTypes.TEXT,    allowNull: true },
+  editedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+  notes:    { type: DataTypes.TEXT, allowNull: true },
 }, {
   tableName: 'investments',
   freezeTableName: true,
