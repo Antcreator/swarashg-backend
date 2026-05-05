@@ -6,6 +6,7 @@ import Navbar from '../Navbar/navbar';
 import '../MembersManagementAdmin/Members.css';
 import {
   CheckCircle, AlertTriangle, CalendarDays, Lightbulb,
+  Pencil, Trash2, Plus, X, Save,
 } from 'lucide-react';
 
 const MONTHS = [
@@ -44,21 +45,25 @@ const evaluatePayment = (targetMonth, targetYear, paymentDateStr) => {
 
 const Savings = () => {
   const isStaff = useIsStaff();
-  const [savings,   setSavings]   = useState([]);
-  const [members,   setMembers]   = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [savings,     setSavings]     = useState([]);
+  const [members,     setMembers]     = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [showModal,   setShowModal]   = useState(false);
+  const [editingId,   setEditingId]   = useState(null);   // null = create, number = edit
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // saving id to confirm delete
+  const [actionLoading, setActionLoading] = useState(false);
 
   const today = new Date();
 
-  const [formData, setFormData] = useState({
+  const emptyForm = {
     memberId: '', amount: '',
     month: today.getMonth() + 1,
     year:  today.getFullYear(),
     paymentDate: today.toISOString().split('T')[0],
     notes: '',
-  });
+  };
 
+  const [formData, setFormData] = useState(emptyForm);
   const [paymentStatus, setPaymentStatus] = useState(null);
 
   useEffect(() => { fetchSavings(); fetchMembers(); }, []);
@@ -81,25 +86,80 @@ const Savings = () => {
 
   useEffect(() => { evaluateStatus(); }, [evaluateStatus]);
 
+  // ── Open modal for CREATE ──────────────────────────────────────────────────
+  const openCreate = () => {
+    setEditingId(null);
+    setFormData(emptyForm);
+    setPaymentStatus(null);
+    setShowModal(true);
+  };
+
+  // ── Open modal for EDIT ───────────────────────────────────────────────────
+  const openEdit = (saving) => {
+    setEditingId(saving.id);
+    setFormData({
+      memberId:    saving.memberId   ?? saving.member?.id ?? '',
+      amount:      saving.amount     ?? '',
+      month:       saving.month      ?? today.getMonth() + 1,
+      year:        saving.year       ?? today.getFullYear(),
+      paymentDate: saving.paymentDate
+        ? new Date(saving.paymentDate).toISOString().split('T')[0]
+        : today.toISOString().split('T')[0],
+      notes: saving.notes ?? '',
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setFormData(emptyForm);
+    setPaymentStatus(null);
+  };
+
+  // ── Submit: create or update ──────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setActionLoading(true);
     try {
-      const response = await savingsAPI.create({
+      const payload = {
         memberId:    Number(formData.memberId),
         amount:      Number(formData.amount),
         month:       Number(formData.month),
         year:        Number(formData.year),
         paymentDate: formData.paymentDate,
         notes:       formData.notes,
-      });
+      };
+
+      let response;
+      if (editingId) {
+        response = await savingsAPI.update(editingId, payload);
+      } else {
+        response = await savingsAPI.create(payload);
+      }
+
       alert(response.data.message);
       if (response.data.warning) alert(`WARNING: ${response.data.warning}`);
-      setShowModal(false);
-      setFormData({ memberId: '', amount: '', month: today.getMonth() + 1, year: today.getFullYear(), paymentDate: today.toISOString().split('T')[0], notes: '' });
-      setPaymentStatus(null);
+      closeModal();
       fetchSavings();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to record savings');
+      alert(err.response?.data?.message || `Failed to ${editingId ? 'update' : 'record'} savings`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async (id) => {
+    setActionLoading(true);
+    try {
+      await savingsAPI.delete(id);
+      setDeleteConfirm(null);
+      fetchSavings();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete savings record');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -155,6 +215,14 @@ const Savings = () => {
   const { windowStart: cws, windowEnd: cwe } = getSavingWindow(currentTargetMonth, currentTargetYear);
   const fmtShort = (d) => d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
 
+  // ── Icon button style helper ──────────────────────────────────────────────
+  const iconBtn = (bg, hoverBg) => ({
+    display: 'inline-flex', alignItems: 'center', gap: '5px',
+    padding: '5px 10px', border: 'none', borderRadius: '6px',
+    cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+    background: bg, color: 'white', transition: 'opacity 0.15s',
+  });
+
   return (
     <>
       <Navbar />
@@ -164,14 +232,19 @@ const Savings = () => {
         <div className="page-header">
           <h1>Savings Management</h1>
           {!isStaff && (
-            <button className="btn-primary" onClick={() => setShowModal(true)}>Record Savings</button>
+            <button
+              className="btn-primary"
+              onClick={openCreate}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={15} /> Record Savings
+            </button>
           )}
         </div>
 
         {/* Info Banner */}
         <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '2px solid #1976d2' }}>
-          
-          <div style={{ marginTop: '12px', padding: '10px 14px', background: '#bbdefb', borderRadius: '6px', fontSize: '13px', color: '#0d47a1', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <div style={{ marginTop: '4px', padding: '10px 14px', background: '#bbdefb', borderRadius: '6px', fontSize: '13px', color: '#0d47a1', display: 'flex', alignItems: 'center', gap: 7 }}>
             <CalendarDays size={14} /> <strong>Currently open:</strong> Saving for{' '}
             <strong>{getMonthName(currentTargetMonth)} {currentTargetYear}</strong>
             {' '}({fmtShort(cws)} – {fmtShort(cwe)})
@@ -186,12 +259,19 @@ const Savings = () => {
             <table>
               <thead>
                 <tr>
-                  <th>Member</th><th>Amount</th><th>Month / Year</th><th>Payment Date</th><th>Status</th><th>Fine</th><th>Notes</th>
+                  <th>Member</th>
+                  <th>Amount</th>
+                  <th>Month / Year</th>
+                  <th>Payment Date</th>
+                  <th>Status</th>
+                  <th>Fine</th>
+                  <th>Notes</th>
+                  {!isStaff && <th style={{ textAlign: 'center' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {savings.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: '#999' }}>No savings records yet.</td></tr>
+                  <tr><td colSpan={isStaff ? 7 : 8} style={{ textAlign: 'center', color: '#999' }}>No savings records yet.</td></tr>
                 ) : savings.map((saving) => (
                   <tr key={saving.id}>
                     <td>{saving.member?.firstName} {saving.member?.lastName}</td>
@@ -204,7 +284,30 @@ const Savings = () => {
                         ? <span style={{ color: '#c62828', fontWeight: 'bold' }}>{formatCurrency(saving.fineAmount)}</span>
                         : '—'}
                     </td>
-                    <td style={{ fontSize: '13px', maxWidth: '300px' }}>{saving.notes || '—'}</td>
+                    <td style={{ fontSize: '13px', maxWidth: '240px' }}>{saving.notes || '—'}</td>
+                    {!isStaff && (
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          {/* Edit */}
+                          <button
+                            style={iconBtn('#1976d2', '#1565c0')}
+                            onClick={() => openEdit(saving)}
+                            title="Edit record"
+                          >
+                            <Pencil size={13} /> Edit
+                          </button>
+
+                          {/* Delete */}
+                          <button
+                            style={iconBtn('#c62828', '#b71c1c')}
+                            onClick={() => setDeleteConfirm(saving.id)}
+                            title="Delete record"
+                          >
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -212,25 +315,74 @@ const Savings = () => {
           </div>
         )}
 
-        {/* Record Savings Modal */}
+        {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
+        {deleteConfirm !== null && (
+          <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '12px' }}>
+                <AlertTriangle size={22} color="#c62828" />
+                <h2 style={{ margin: 0, color: '#c62828' }}>Delete Savings Record?</h2>
+              </div>
+              <p style={{ color: '#555', fontSize: '14px', marginBottom: '20px' }}>
+                This action cannot be undone. The savings entry and any associated fine data will be permanently removed.
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  disabled={actionLoading}
+                >
+                  <X size={14} /> Cancel
+                </button>
+                <button
+                  style={{ ...iconBtn('#c62828'), padding: '9px 18px', fontSize: '14px', opacity: actionLoading ? 0.6 : 1 }}
+                  onClick={() => handleDelete(deleteConfirm)}
+                  disabled={actionLoading}
+                >
+                  <Trash2 size={14} /> {actionLoading ? 'Deleting…' : 'Yes, Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Create / Edit Modal ────────────────────────────────────────── */}
         {showModal && !isStaff && (
-          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-overlay" onClick={closeModal}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Record Savings</h2>
+              <h2>{editingId ? 'Edit Savings Record' : 'Record Savings'}</h2>
               <form onSubmit={handleSubmit}>
+
                 <div className="form-group">
                   <label>Member *</label>
-                  <select value={formData.memberId} onChange={(e) => setFormData({ ...formData, memberId: e.target.value })} required>
+                  <select
+                    value={formData.memberId}
+                    onChange={(e) => setFormData({ ...formData, memberId: e.target.value })}
+                    required
+                    disabled={!!editingId} // member shouldn't change on edit
+                  >
                     <option value="">Select Member</option>
                     {members.map((m) => (
-                      <option key={m.id} value={m.id}>{m.firstName} {m.lastName} (Savings: {formatCurrency(m.total_savings)})</option>
+                      <option key={m.id} value={m.id}>
+                        {m.firstName} {m.lastName} (Savings: {formatCurrency(m.total_savings)})
+                      </option>
                     ))}
                   </select>
+                  {editingId && (
+                    <p style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Member cannot be changed when editing.</p>
+                  )}
                 </div>
 
                 <div className="form-group">
                   <label>Amount (multiples of 1,000) *</label>
-                  <input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required min="1000" step="1000" placeholder="e.g. 1000, 2000, 5000" />
+                  <input
+                    type="number"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    required min="1000" step="1000"
+                    placeholder="e.g. 1000, 2000, 5000"
+                  />
                   {formData.amount && Number(formData.amount) % 1000 !== 0 && (
                     <p style={{ color: '#c62828', fontSize: '13px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: 5 }}>
                       <AlertTriangle size={13} /> Amount must be a multiple of 1,000
@@ -247,13 +399,23 @@ const Savings = () => {
                   </div>
                   <div className="form-group">
                     <label>Year *</label>
-                    <input type="number" value={formData.year} onChange={(e) => setFormData({ ...formData, year: Number(e.target.value) })} required min="2000" max="2100" />
+                    <input
+                      type="number"
+                      value={formData.year}
+                      onChange={(e) => setFormData({ ...formData, year: Number(e.target.value) })}
+                      required min="2000" max="2100"
+                    />
                   </div>
                 </div>
 
                 <div className="form-group">
                   <label>Payment Date *</label>
-                  <input type="date" value={formData.paymentDate} onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })} required />
+                  <input
+                    type="date"
+                    value={formData.paymentDate}
+                    onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
+                    required
+                  />
                   <p style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Lightbulb size={12} /> Window to save for a month: 11th of previous month → 10th of that month
                   </p>
@@ -263,12 +425,35 @@ const Savings = () => {
 
                 <div className="form-group">
                   <label>Notes</label>
-                  <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows="3" placeholder="Optional notes" />
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows="3"
+                    placeholder="Optional notes"
+                  />
                 </div>
 
                 <div className="modal-actions">
-                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn-primary">Record Savings</button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeModal}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    disabled={actionLoading}
+                  >
+                    <X size={14} /> Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: actionLoading ? 0.6 : 1 }}
+                    disabled={actionLoading}
+                  >
+                    {editingId
+                      ? <><Save size={14} /> {actionLoading ? 'Saving…' : 'Save Changes'}</>
+                      : <><Plus size={14} /> {actionLoading ? 'Recording…' : 'Record Savings'}</>
+                    }
+                  </button>
                 </div>
               </form>
             </div>
