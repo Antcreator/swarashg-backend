@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import Navbar from '../Navbar/navbar';
 import { seedCapitalAPI } from '../../Service/Api';
 import '../MembersManagementAdmin/Members.css';
-import { Sprout, Pencil, X, Save, AlertTriangle } from 'lucide-react';
+import {
+  Sprout, Pencil, Trash2, X, Save, AlertTriangle, ChevronDown, ChevronUp,
+} from 'lucide-react';
 
 const SeedCapitalPage = () => {
   const [data,    setData]    = useState([]);
@@ -11,12 +13,18 @@ const SeedCapitalPage = () => {
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState('');
 
-  // ── Edit modal state ───────────────────────────────────────────────────────
-  const [editingMember,  setEditingMember]  = useState(null); // full member object
-  const [editAmount,     setEditAmount]     = useState('');
-  const [editNotes,      setEditNotes]      = useState('');
+  // ── Which member's contributions are expanded ─────────────────────────────
+  const [expandedMember, setExpandedMember] = useState(null);
+
+  // ── Edit contribution modal ───────────────────────────────────────────────
+  const [editingContrib, setEditingContrib] = useState(null);
+  const [editForm,       setEditForm]       = useState({ amount: '', paymentDate: '', notes: '' });
   const [editLoading,    setEditLoading]    = useState(false);
   const [editError,      setEditError]      = useState('');
+
+  // ── Delete confirmation ───────────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -39,47 +47,78 @@ const SeedCapitalPage = () => {
   const fmt = (n) =>
     new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(n || 0);
 
+  const fmtDate = (d) =>
+    d ? new Date(d).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
   const filtered = data.filter(m =>
     `${m.firstName} ${m.lastName}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── Open / close edit modal ────────────────────────────────────────────────
-  const openEdit = (member) => {
-    setEditingMember(member);
-    setEditAmount(member.totalSeedCapital ?? '');
-    setEditNotes(member.notes ?? '');
+  // ── Edit helpers ──────────────────────────────────────────────────────────
+  const openEdit = (contrib) => {
+    setEditingContrib(contrib);
+    setEditForm({
+      amount:      contrib.amount      ?? '',
+      paymentDate: contrib.paymentDate ?? '',
+      notes:       contrib.notes       ?? '',
+    });
     setEditError('');
   };
 
   const closeEdit = () => {
-    setEditingMember(null);
-    setEditAmount('');
-    setEditNotes('');
+    setEditingContrib(null);
+    setEditForm({ amount: '', paymentDate: '', notes: '' });
     setEditError('');
   };
 
-  // ── Save edit ──────────────────────────────────────────────────────────────
   const handleEditSave = async (e) => {
     e.preventDefault();
-    if (!editAmount || isNaN(Number(editAmount)) || Number(editAmount) < 0) {
-      setEditError('Please enter a valid amount.');
+    if (!editForm.amount || Number(editForm.amount) <= 0) {
+      setEditError('Please enter a valid positive amount.');
+      return;
+    }
+    if (!editForm.paymentDate) {
+      setEditError('Payment date is required.');
       return;
     }
     setEditLoading(true);
     setEditError('');
     try {
-      await seedCapitalAPI.update(editingMember.id, {
-        totalSeedCapital: Number(editAmount),
-        notes: editNotes,
+      await seedCapitalAPI.update(editingContrib.id, {
+        amount:      Number(editForm.amount),
+        paymentDate: editForm.paymentDate,
+        notes:       editForm.notes,
       });
       closeEdit();
       fetchData();
     } catch (err) {
-      setEditError(err.response?.data?.message || 'Failed to update seed capital.');
+      setEditError(err.response?.data?.message || 'Failed to update contribution.');
     } finally {
       setEditLoading(false);
     }
   };
+
+  // ── Delete helpers ────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleteLoading(true);
+    try {
+      await seedCapitalAPI.delete(deleteConfirm);
+      setDeleteConfirm(null);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete contribution.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const iconBtn = (bg) => ({
+    display: 'inline-flex', alignItems: 'center', gap: '5px',
+    padding: '4px 10px', border: 'none', borderRadius: '6px',
+    cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+    background: bg, color: 'white', transition: 'opacity 0.15s',
+  });
 
   return (
     <>
@@ -112,7 +151,7 @@ const SeedCapitalPage = () => {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Main table */}
         {loading ? (
           <div className="loading">Loading seed capital data...</div>
         ) : (
@@ -126,7 +165,7 @@ const SeedCapitalPage = () => {
                   <th>Total Seed Capital</th>
                   <th>Contributions</th>
                   <th>Last Contribution</th>
-                  <th style={{ textAlign: 'center' }}>Actions</th>
+                  <th style={{ textAlign: 'center' }}>Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -134,33 +173,88 @@ const SeedCapitalPage = () => {
                   <tr>
                     <td colSpan="7" style={{ textAlign: 'center', padding: '40px' }}>No records found</td>
                   </tr>
-                ) : filtered.map((m, i) => (
-                  <tr key={m.id}>
-                    <td>{i + 1}</td>
-                    <td><strong>{m.firstName} {m.lastName}</strong></td>
-                    <td>{m.phone || '—'}</td>
-                    <td style={{ fontWeight: 'bold', color: '#2e7d32' }}>{fmt(m.totalSeedCapital)}</td>
-                    <td>{m.contributionCount || 0}</td>
-                    <td>{m.lastContribution ? new Date(m.lastContribution).toLocaleDateString() : '—'}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button
-                        onClick={() => openEdit(m)}
-                        title="Edit seed capital"
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '5px',
-                          padding: '5px 12px', border: 'none', borderRadius: '6px',
-                          cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-                          background: '#1976d2', color: 'white',
-                          transition: 'opacity 0.15s',
-                        }}
-                        onMouseOver={e => e.currentTarget.style.opacity = '0.85'}
-                        onMouseOut={e => e.currentTarget.style.opacity = '1'}
-                      >
-                        <Pencil size={13} /> Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                ) : filtered.map((m, i) => {
+                  const isExpanded = expandedMember === m.id;
+                  return (
+                    <React.Fragment key={m.id}>
+                      {/* Member summary row */}
+                      <tr>
+                        <td>{i + 1}</td>
+                        <td><strong>{m.firstName} {m.lastName}</strong></td>
+                        <td>{m.phone || '—'}</td>
+                        <td style={{ fontWeight: 'bold', color: '#2e7d32' }}>{fmt(m.totalSeedCapital)}</td>
+                        <td>{m.contributionCount || 0}</td>
+                        <td>{fmtDate(m.lastContribution)}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => setExpandedMember(isExpanded ? null : m.id)}
+                            style={iconBtn(isExpanded ? '#455a64' : '#1976d2')}
+                            title={isExpanded ? 'Collapse' : 'View & edit contributions'}
+                          >
+                            {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            {isExpanded ? 'Collapse' : 'View'}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Expanded per-contribution rows */}
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan="7" style={{ padding: 0, background: '#f9fbe7' }}>
+                            <div style={{ padding: '12px 24px 16px' }}>
+                              <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>
+                                Contributions — {m.firstName} {m.lastName}
+                              </p>
+                              {(!m.contributions || m.contributions.length === 0) ? (
+                                <p style={{ color: '#999', fontSize: '13px' }}>No contributions recorded yet.</p>
+                              ) : (
+                                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr style={{ background: '#dcedc8' }}>
+                                      <th style={{ padding: '7px 10px', textAlign: 'left',   fontWeight: 700 }}>Payment Date</th>
+                                      <th style={{ padding: '7px 10px', textAlign: 'right',  fontWeight: 700 }}>Amount</th>
+                                      <th style={{ padding: '7px 10px', textAlign: 'left',   fontWeight: 700 }}>Notes</th>
+                                      <th style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 700 }}>Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {m.contributions.map((c) => (
+                                      <tr key={c.id} style={{ borderBottom: '1px solid #e8f5e9' }}>
+                                        <td style={{ padding: '7px 10px' }}>{fmtDate(c.paymentDate)}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: '#2e7d32' }}>
+                                          {fmt(c.amount)}
+                                        </td>
+                                        <td style={{ padding: '7px 10px', color: '#666' }}>{c.notes || '—'}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                            <button
+                                              style={iconBtn('#1976d2')}
+                                              onClick={() => openEdit(c)}
+                                              title="Edit this contribution"
+                                            >
+                                              <Pencil size={12} /> Edit
+                                            </button>
+                                            <button
+                                              style={iconBtn('#c62828')}
+                                              onClick={() => setDeleteConfirm(c.id)}
+                                              title="Delete this contribution"
+                                            >
+                                              <Trash2 size={12} /> Delete
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
               {filtered.length > 0 && (
                 <tfoot>
@@ -170,8 +264,7 @@ const SeedCapitalPage = () => {
                       {fmt(filtered.reduce((s, m) => s + Number(m.totalSeedCapital || 0), 0))}
                     </td>
                     <td>{filtered.reduce((s, m) => s + Number(m.contributionCount || 0), 0)}</td>
-                    <td></td>
-                    <td></td>
+                    <td colSpan="2"></td>
                   </tr>
                 </tfoot>
               )}
@@ -179,41 +272,46 @@ const SeedCapitalPage = () => {
           </div>
         )}
 
-        {/* ── Edit Modal ─────────────────────────────────────────────────────── */}
-        {editingMember && (
+        {/* ── Edit Contribution Modal ─────────────────────────────────────── */}
+        {editingContrib && (
           <div className="modal-overlay" onClick={closeEdit}>
             <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '18px' }}>
                 <Sprout size={20} color="#2e7d32" />
-                <h2 style={{ margin: 0, fontSize: '18px' }}>
-                  Edit Seed Capital — {editingMember.firstName} {editingMember.lastName}
-                </h2>
+                <h2 style={{ margin: 0, fontSize: '18px' }}>Edit Contribution</h2>
               </div>
 
               <form onSubmit={handleEditSave}>
-
                 <div className="form-group">
-                  <label>Total Seed Capital (KES) *</label>
+                  <label>Amount (KES) *</label>
                   <input
                     type="number"
-                    min="0"
+                    min="1"
                     step="1"
-                    value={editAmount}
-                    onChange={e => { setEditAmount(e.target.value); setEditError(''); }}
+                    value={editForm.amount}
+                    onChange={e => { setEditForm(f => ({ ...f, amount: e.target.value })); setEditError(''); }}
                     required
-                    placeholder="e.g. 5000"
                     autoFocus
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Payment Date *</label>
+                  <input
+                    type="date"
+                    value={editForm.paymentDate}
+                    onChange={e => { setEditForm(f => ({ ...f, paymentDate: e.target.value })); setEditError(''); }}
+                    required
                   />
                 </div>
 
                 <div className="form-group">
                   <label>Notes</label>
                   <textarea
-                    value={editNotes}
-                    onChange={e => setEditNotes(e.target.value)}
+                    value={editForm.notes}
+                    onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
                     rows="3"
-                    placeholder="Optional notes about this edit"
+                    placeholder="Optional notes"
                   />
                 </div>
 
@@ -242,15 +340,44 @@ const SeedCapitalPage = () => {
                     type="submit"
                     className="btn-primary"
                     disabled={editLoading}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      opacity: editLoading ? 0.65 : 1,
-                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: editLoading ? 0.65 : 1 }}
                   >
                     <Save size={14} /> {editLoading ? 'Saving…' : 'Save Changes'}
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
+        {deleteConfirm !== null && (
+          <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '12px' }}>
+                <AlertTriangle size={22} color="#c62828" />
+                <h2 style={{ margin: 0, color: '#c62828' }}>Delete Contribution?</h2>
+              </div>
+              <p style={{ color: '#555', fontSize: '14px', marginBottom: '20px' }}>
+                This will permanently remove this seed capital contribution. The member's total will update automatically.
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={deleteLoading}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <X size={14} /> Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteLoading}
+                  style={{ ...iconBtn('#c62828'), padding: '9px 18px', fontSize: '14px', opacity: deleteLoading ? 0.6 : 1 }}
+                >
+                  <Trash2 size={14} /> {deleteLoading ? 'Deleting…' : 'Yes, Delete'}
+                </button>
+              </div>
             </div>
           </div>
         )}
