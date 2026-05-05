@@ -3,8 +3,8 @@ const { SeedCapital, Member } = require('../models');
 // ─── GET /seed-capital/stats ────────────────────────────────────
 const getSeedCapitalStats = async (req, res) => {
   try {
-    const total = await SeedCapital.sum('amount');
-    const count = await SeedCapital.count();
+    const total       = await SeedCapital.sum('amount');
+    const count       = await SeedCapital.count();
     const memberCount = await SeedCapital.count({ distinct: true, col: 'memberId' });
 
     return res.json({
@@ -18,7 +18,9 @@ const getSeedCapitalStats = async (req, res) => {
   }
 };
 
-// Returns all members with their total seed capital amounts
+// ─── GET /seed-capital ──────────────────────────────────────────
+// Returns all members with their aggregated seed capital + each
+// member's individual contribution rows (for the edit modal)
 const getAllSeedCapital = async (req, res) => {
   try {
     const members = await Member.findAll({
@@ -30,20 +32,31 @@ const getAllSeedCapital = async (req, res) => {
     const result = await Promise.all(members.map(async (m) => {
       const contributions = await SeedCapital.findAll({
         where: { memberId: m.id },
-        order: [['createdAt', 'DESC']],
+        order: [['paymentDate', 'DESC'], ['createdAt', 'DESC']],
       });
 
       const totalSeedCapital = contributions.reduce((sum, c) => sum + Number(c.amount || 0), 0);
-      const lastContribution = contributions.length > 0 ? contributions[0].createdAt : null;
+      const lastContribution = contributions.length > 0
+        ? contributions[0].paymentDate || contributions[0].createdAt
+        : null;
 
       return {
-        id: m.id,
-        firstName: m.firstName,
-        lastName: m.lastName,
-        phone: m.phone,
+        id:                m.id,
+        firstName:         m.firstName,
+        lastName:          m.lastName,
+        phone:             m.phone,
         totalSeedCapital,
         contributionCount: contributions.length,
         lastContribution,
+        // Include individual rows so the frontend can list and edit them
+        contributions:     contributions.map(c => ({
+          id:          c.id,
+          amount:      Number(c.amount),
+          paymentDate: c.paymentDate,
+          notes:       c.notes || '',
+          depositId:   c.depositId || null,
+          createdAt:   c.createdAt,
+        })),
       };
     }));
 
@@ -57,4 +70,109 @@ const getAllSeedCapital = async (req, res) => {
   }
 };
 
-module.exports = { getSeedCapitalStats, getAllSeedCapital };
+// ─── POST /seed-capital ─────────────────────────────────────────
+// Create a new seed capital contribution for a member
+const createSeedCapital = async (req, res) => {
+  const { memberId, amount, paymentDate, notes, depositId } = req.body;
+
+  if (!memberId || !amount || !paymentDate) {
+    return res.status(400).json({ message: 'memberId, amount, and paymentDate are required' });
+  }
+  if (Number(amount) <= 0) {
+    return res.status(400).json({ message: 'Amount must be greater than zero' });
+  }
+
+  try {
+    const member = await Member.findByPk(memberId);
+    if (!member) return res.status(404).json({ message: 'Member not found' });
+
+    const contribution = await SeedCapital.create({
+      memberId:    Number(memberId),
+      amount:      Number(amount),
+      paymentDate,
+      notes:       notes || null,
+      depositId:   depositId || null,
+    });
+
+    return res.status(201).json({
+      message:      'Seed capital contribution recorded successfully',
+      contribution: {
+        id:          contribution.id,
+        memberId:    contribution.memberId,
+        amount:      Number(contribution.amount),
+        paymentDate: contribution.paymentDate,
+        notes:       contribution.notes,
+      },
+    });
+  } catch (error) {
+    console.error('Create seed capital error:', error);
+    return res.status(500).json({ message: 'Failed to record seed capital contribution' });
+  }
+};
+
+// ─── PUT /seed-capital/:id ──────────────────────────────────────
+// Update a single seed capital contribution row by its own ID
+const updateSeedCapital = async (req, res) => {
+  const { id } = req.params;
+  const { amount, paymentDate, notes } = req.body;
+
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ message: 'A valid positive amount is required' });
+  }
+  if (!paymentDate) {
+    return res.status(400).json({ message: 'paymentDate is required' });
+  }
+
+  try {
+    const contribution = await SeedCapital.findByPk(id);
+    if (!contribution) {
+      return res.status(404).json({ message: 'Seed capital contribution not found' });
+    }
+
+    await contribution.update({
+      amount:      Number(amount),
+      paymentDate,
+      notes:       notes ?? contribution.notes,
+    });
+
+    return res.json({
+      message: 'Seed capital contribution updated successfully',
+      contribution: {
+        id:          contribution.id,
+        memberId:    contribution.memberId,
+        amount:      Number(contribution.amount),
+        paymentDate: contribution.paymentDate,
+        notes:       contribution.notes,
+      },
+    });
+  } catch (error) {
+    console.error('Update seed capital error:', error);
+    return res.status(500).json({ message: 'Failed to update seed capital contribution' });
+  }
+};
+
+// ─── DELETE /seed-capital/:id ───────────────────────────────────
+// Delete a single seed capital contribution row by its own ID
+const deleteSeedCapital = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const contribution = await SeedCapital.findByPk(id);
+    if (!contribution) {
+      return res.status(404).json({ message: 'Seed capital contribution not found' });
+    }
+
+    await contribution.destroy();
+    return res.json({ message: 'Seed capital contribution deleted successfully' });
+  } catch (error) {
+    console.error('Delete seed capital error:', error);
+    return res.status(500).json({ message: 'Failed to delete seed capital contribution' });
+  }
+};
+
+module.exports = {
+  getSeedCapitalStats,
+  getAllSeedCapital,
+  createSeedCapital,
+  updateSeedCapital,
+  deleteSeedCapital,
+};
