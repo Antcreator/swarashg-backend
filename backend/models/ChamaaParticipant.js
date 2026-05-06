@@ -32,9 +32,9 @@ const ChamaaParticipant = sequelize.define('ChamaaParticipant', {
   freezeTableName: true,
   timestamps: true,
   indexes: [
-    // ── REMOVED: { unique: true, fields: ['cycleId', 'memberId'] }
-    // A member can now hold multiple positions in the same cycle
+    // A member can hold multiple positions in the same cycle
     // (e.g. Mary at positions 1, 5, and 7).
+    // Only position must be unique per cycle — NOT (cycleId, memberId).
     { unique: true, fields: ['cycleId', 'position'] },
   ],
 });
