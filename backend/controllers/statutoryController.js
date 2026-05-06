@@ -9,10 +9,52 @@ const getAdminName = async (userId) => {
   } catch { return null; }
 };
 
+// ─── Helper: when admin overrides agmFee on statutory, reconcile agm_fees table ─
+// Strategy: upsert a single 'manual' agm_fees row tagged source='statutory_override'
+// so that the AGM Fee page reflects whatever the admin typed on the statutory page.
+const syncStatutoryAgmFeeToAgmFees = async (memberId, year, newTotal, adminId) => {
+  try {
+    // Sum all NON-override rows (deposit + regular manual) for this member+year
+    const depositTotal = Number(
+      await AgmFee.sum('amount', {
+        where: { memberId, year, source: ['deposit', 'manual'] },
+      }) || 0
+    );
+
+    const diff = newTotal - depositTotal;
+
+    // Find existing override row if any
+    const existing = await AgmFee.findOne({
+      where: { memberId, year, source: 'statutory_override' },
+    });
+
+    if (diff === 0) {
+      // No adjustment needed — remove override row if it exists
+      if (existing) await existing.destroy();
+    } else if (existing) {
+      existing.amount     = diff;
+      existing.recordedBy = adminId || null;
+      existing.notes      = `Adjusted via Statutory page (override)`;
+      await existing.save();
+    } else {
+      await AgmFee.create({
+        memberId,
+        amount:     diff,
+        year,
+        source:     'statutory_override',
+        recordedBy: adminId || null,
+        notes:      `Adjusted via Statutory page (override)`,
+      });
+    }
+  } catch (err) {
+    console.error('syncStatutoryAgmFeeToAgmFees error:', err);
+    // Non-fatal
+  }
+};
+
 // GET /statutory?year=2025
 const getAllStatutory = async (req, res) => {
   try {
-    // ✅ Guard: should never reach here without req.user, but belt-and-suspenders
     if (!req.user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
@@ -24,7 +66,6 @@ const getAllStatutory = async (req, res) => {
       ? { id: req.user.member_id, isActive: true }
       : { isActive: true };
 
-    // ✅ Guard: member role but no member_id linked — misconfigured account
     if (isMember && !req.user.member_id) {
       return res.status(403).json({ message: 'No member profile linked to this account' });
     }
@@ -60,11 +101,10 @@ const getAllStatutory = async (req, res) => {
         getAdminName(statutory?.editedBy),
       ]);
 
-      // ✅ If a statutory record exists and agmFee was explicitly saved on it, use that.
-      //    Otherwise fall back to the sum from agm_fees deposits.
+      // If a statutory record exists and agmFee was explicitly saved on it, use that.
+      // Otherwise fall back to the sum from agm_fees.
       const agmFeeDeposit = agmDepositMap[m.id] || 0;
       const agmFeeSaved   = statutory ? Number(statutory.agmFee) : null;
-      // null means "never set by admin" → show deposit value; 0 means admin explicitly set it to 0
       const agmFee = (agmFeeSaved !== null) ? agmFeeSaved : agmFeeDeposit;
 
       return {
@@ -77,7 +117,7 @@ const getAllStatutory = async (req, res) => {
         savingsFine,
         chamaaFine,
         agmFee,
-        agmFeeDeposit,          // ← sent to frontend so it can show "Deposit: KES X" hint
+        agmFeeDeposit,
         cautionaryFee:      statutory ? Number(statutory.cautionaryFee)      : 0,
         statutoryFee:       statutory ? Number(statutory.statutoryFee)       : 0,
         guarantorDeduction: statutory ? Number(statutory.guarantorDeduction) : 0,
@@ -100,7 +140,6 @@ const getAllStatutory = async (req, res) => {
 // PUT /statutory/:memberId
 const upsertStatutory = async (req, res) => {
   const { memberId } = req.params;
-  // ✅ agmFee is now accepted from the request body
   const { cautionaryFee, statutoryFee, guarantorDeduction, other, agmFee, notes, year } = req.body;
   const adminId = req.user?.id;
 
@@ -114,7 +153,7 @@ const upsertStatutory = async (req, res) => {
         statutoryFee:       statutoryFee       ?? 0,
         guarantorDeduction: guarantorDeduction ?? 0,
         other:              other              ?? 0,
-        agmFee:             agmFee             ?? null, // null = not yet overridden by admin
+        agmFee:             agmFee             ?? null,
         notes:              notes              ?? '',
         editedBy:           adminId            ?? null,
       },
@@ -125,10 +164,16 @@ const upsertStatutory = async (req, res) => {
       if (statutoryFee       !== undefined) record.statutoryFee       = statutoryFee;
       if (guarantorDeduction !== undefined) record.guarantorDeduction = guarantorDeduction;
       if (other              !== undefined) record.other              = other;
-      if (agmFee             !== undefined) record.agmFee             = agmFee; // ✅ persist it
+      if (agmFee             !== undefined) record.agmFee             = agmFee;
       if (notes              !== undefined) record.notes              = notes;
       record.editedBy = adminId ?? null;
       await record.save();
+    }
+
+    // ── When agmFee is explicitly set by admin, mirror it back to agm_fees table ──
+    // so the AGM Fee page always shows the same number.
+    if (agmFee !== undefined && agmFee !== null) {
+      await syncStatutoryAgmFeeToAgmFees(memberId, targetYear, Number(agmFee), adminId);
     }
 
     return res.json({ message: 'Statutory record saved', record });

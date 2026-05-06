@@ -1,4 +1,4 @@
-const { AgmFee, Member, User } = require('../models');
+const { AgmFee, Member, User, Statutory } = require('../models');
 
 // ─── GET /agm-fees/stats ────────────────────────────────────────
 const getAgmFeeStats = async (req, res) => {
@@ -29,13 +29,11 @@ const getAllAgmFees = async (req, res) => {
     });
 
     const result = await Promise.all(members.map(async (m) => {
-      // No includes — fetch raw then look up recorder names separately
       const contributions = await AgmFee.findAll({
         where: { memberId: m.id },
         order: [['createdAt', 'DESC']],
       });
 
-      // Collect unique recorder IDs and fetch names in one query
       const recorderIds = [...new Set(contributions.map(c => c.recordedBy).filter(Boolean))];
       const recorders   = recorderIds.length
         ? await User.findAll({ where: { id: recorderIds }, attributes: ['id', 'firstName', 'lastName'] })
@@ -77,6 +75,26 @@ const getAllAgmFees = async (req, res) => {
   }
 };
 
+// ─── Helper: recalculate total agm_fees for a member+year and sync to statutory ─
+const syncAgmFeeToStatutory = async (memberId, year) => {
+  try {
+    const total = Number(
+      await AgmFee.sum('amount', { where: { memberId, year } }) || 0
+    );
+
+    // Only update statutory if a record already exists for this member+year.
+    // If none exists yet, leave it alone — statutory will use agm_fees as fallback.
+    const statutory = await Statutory.findOne({ where: { memberId, year } });
+    if (statutory) {
+      statutory.agmFee = total;
+      await statutory.save();
+    }
+  } catch (err) {
+    console.error('syncAgmFeeToStatutory error:', err);
+    // Non-fatal — don't bubble up; the primary operation already succeeded.
+  }
+};
+
 // ─── POST /agm-fees ─────────────────────────────────────────────
 const createAgmFee = async (req, res) => {
   const { memberId, amount, year, notes } = req.body;
@@ -88,14 +106,19 @@ const createAgmFee = async (req, res) => {
     const member = await Member.findByPk(memberId);
     if (!member) return res.status(404).json({ message: 'Member not found' });
 
+    const targetYear = year || new Date().getFullYear();
+
     const record = await AgmFee.create({
       memberId,
       amount,
-      year:       year || new Date().getFullYear(),
+      year:       targetYear,
       source:     'manual',
       recordedBy: adminId,
       notes:      notes || '',
     });
+
+    // ── Sync the new total back to the statutory record (if one exists) ──
+    await syncAgmFeeToStatutory(memberId, targetYear);
 
     return res.status(201).json({
       message: `AGM fee of KES ${amount} recorded for ${member.firstName} ${member.lastName}`,
@@ -114,7 +137,13 @@ const deleteAgmFee = async (req, res) => {
     if (!record) return res.status(404).json({ message: 'AGM fee record not found' });
     if (record.source === 'deposit')
       return res.status(400).json({ message: 'Cannot delete a deposit-linked AGM fee. Reject the deposit instead.' });
+
+    const { memberId, year } = record;
     await record.destroy();
+
+    // ── Sync the reduced total back to the statutory record (if one exists) ──
+    await syncAgmFeeToStatutory(memberId, year);
+
     return res.json({ message: 'AGM fee deleted successfully' });
   } catch (error) {
     console.error('Delete AGM fee error:', error);
@@ -124,15 +153,20 @@ const deleteAgmFee = async (req, res) => {
 
 // ─── Internal: called from depositController on approval ────────
 const recordAgmFeeFromDeposit = async ({ memberId, amount, depositId, year, recordedBy }) => {
+  const targetYear = year || new Date().getFullYear();
+
   await AgmFee.create({
     memberId,
     amount,
-    year:       year || new Date().getFullYear(),
+    year:       targetYear,
     source:     'deposit',
     depositId:  depositId || null,
     recordedBy: recordedBy || null,
     notes:      `Paid via deposit #${depositId}`,
   });
+
+  // ── Sync the new total back to the statutory record (if one exists) ──
+  await syncAgmFeeToStatutory(memberId, targetYear);
 };
 
 module.exports = { getAgmFeeStats, getAllAgmFees, createAgmFee, deleteAgmFee, recordAgmFeeFromDeposit };
