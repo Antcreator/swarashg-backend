@@ -4,7 +4,7 @@ import Navbar from '../Navbar/navbar';
 import { seedCapitalAPI } from '../../Service/Api';
 import '../MembersManagementAdmin/Members.css';
 import {
-  Sprout, Pencil, Trash2, X, Save, AlertTriangle, ChevronDown, ChevronUp,
+  Sprout, Pencil, Trash2, X, Save, AlertTriangle, ChevronDown, ChevronUp, User,
 } from 'lucide-react';
 
 const SeedCapitalPage = () => {
@@ -13,16 +13,13 @@ const SeedCapitalPage = () => {
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState('');
 
-  // ── Which member's contributions are expanded ─────────────────────────────
   const [expandedMember, setExpandedMember] = useState(null);
 
-  // ── Edit contribution modal ───────────────────────────────────────────────
   const [editingContrib, setEditingContrib] = useState(null);
   const [editForm,       setEditForm]       = useState({ amount: '', paymentDate: '', notes: '' });
   const [editLoading,    setEditLoading]    = useState(false);
   const [editError,      setEditError]      = useState('');
 
-  // ── Delete confirmation ───────────────────────────────────────────────────
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -49,6 +46,9 @@ const SeedCapitalPage = () => {
 
   const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+  const fmtDateShort = (d) =>
+    d ? new Date(d).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: '2-digit' }) : null;
 
   const filtered = data.filter(m =>
     `${m.firstName} ${m.lastName}`.toLowerCase().includes(search.toLowerCase())
@@ -113,12 +113,52 @@ const SeedCapitalPage = () => {
     }
   };
 
+  // ── Shared styles ─────────────────────────────────────────────────────────
   const iconBtn = (bg) => ({
     display: 'inline-flex', alignItems: 'center', gap: '5px',
     padding: '4px 10px', border: 'none', borderRadius: '6px',
     cursor: 'pointer', fontSize: '12px', fontWeight: 600,
     background: bg, color: 'white', transition: 'opacity 0.15s',
+    whiteSpace: 'nowrap',
   });
+
+  const subTh = (align = 'left') => ({
+    padding: '8px 12px',
+    textAlign: align,
+    fontWeight: 700,
+    fontSize: '12px',
+    whiteSpace: 'nowrap',
+    background: '#dcedc8',
+    borderBottom: '2px solid #aed581',
+  });
+
+  const subTd = (align = 'left', extra = {}) => ({
+    padding: '8px 12px',
+    textAlign: align,
+    fontSize: '13px',
+    verticalAlign: 'middle',
+    borderBottom: '1px solid #e8f5e9',
+    ...extra,
+  });
+
+  // ── Edited-by badge ───────────────────────────────────────────────────────
+  const EditedByBadge = ({ editedBy, editedAt }) => {
+    if (!editedBy) return <span style={{ color: '#ccc', fontSize: '12px' }}>—</span>;
+    const ts = fmtDateShort(editedAt);
+    return (
+      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: '11px', fontWeight: 600, color: '#2e7d32',
+          background: '#e8f5e9', borderRadius: '12px',
+          padding: '2px 8px', whiteSpace: 'nowrap',
+        }}>
+          <User size={9} /> {editedBy}
+        </span>
+        {ts && <span style={{ fontSize: '9px', color: '#aaa', whiteSpace: 'nowrap' }}>{ts}</span>}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -156,15 +196,24 @@ const SeedCapitalPage = () => {
           <div className="loading">Loading seed capital data...</div>
         ) : (
           <div className="table-container">
-            <table>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '5%'  }} />
+                <col style={{ width: '23%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '15%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th style={{ textAlign: 'center' }}>#</th>
                   <th>Member Name</th>
                   <th>Phone</th>
-                  <th>Total Seed Capital</th>
-                  <th>Contributions</th>
-                  <th>Last Contribution</th>
+                  <th style={{ textAlign: 'right' }}>Total Seed Capital</th>
+                  <th style={{ textAlign: 'center' }}>Contributions</th>
+                  <th style={{ textAlign: 'center' }}>Last Contribution</th>
                   <th style={{ textAlign: 'center' }}>Details</th>
                 </tr>
               </thead>
@@ -179,12 +228,16 @@ const SeedCapitalPage = () => {
                     <React.Fragment key={m.id}>
                       {/* Member summary row */}
                       <tr>
-                        <td>{i + 1}</td>
-                        <td><strong>{m.firstName} {m.lastName}</strong></td>
+                        <td style={{ textAlign: 'center' }}>{i + 1}</td>
+                        <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <strong>{m.firstName} {m.lastName}</strong>
+                        </td>
                         <td>{m.phone || '—'}</td>
-                        <td style={{ fontWeight: 'bold', color: '#2e7d32' }}>{fmt(m.totalSeedCapital)}</td>
-                        <td>{m.contributionCount || 0}</td>
-                        <td>{fmtDate(m.lastContribution)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#2e7d32' }}>
+                          {fmt(m.totalSeedCapital)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{m.contributionCount || 0}</td>
+                        <td style={{ textAlign: 'center' }}>{fmtDate(m.lastContribution)}</td>
                         <td style={{ textAlign: 'center' }}>
                           <button
                             onClick={() => setExpandedMember(isExpanded ? null : m.id)}
@@ -197,56 +250,76 @@ const SeedCapitalPage = () => {
                         </td>
                       </tr>
 
-                      {/* Expanded per-contribution rows */}
+                      {/* Expanded per-contribution sub-table */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan="7" style={{ padding: 0, background: '#f9fbe7' }}>
-                            <div style={{ padding: '12px 24px 16px' }}>
+                          <td colSpan="7" style={{ padding: 0, background: '#f9fbe7', borderBottom: '2px solid #aed581' }}>
+                            <div style={{ padding: '14px 28px 18px' }}>
                               <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>
                                 Contributions — {m.firstName} {m.lastName}
                               </p>
+
                               {(!m.contributions || m.contributions.length === 0) ? (
                                 <p style={{ color: '#999', fontSize: '13px' }}>No contributions recorded yet.</p>
                               ) : (
-                                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                                  <thead>
-                                    <tr style={{ background: '#dcedc8' }}>
-                                      <th style={{ padding: '7px 10px', textAlign: 'left',   fontWeight: 700 }}>Payment Date</th>
-                                      <th style={{ padding: '7px 10px', textAlign: 'right',  fontWeight: 700 }}>Amount</th>
-                                      <th style={{ padding: '7px 10px', textAlign: 'left',   fontWeight: 700 }}>Notes</th>
-                                      <th style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 700 }}>Actions</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {m.contributions.map((c) => (
-                                      <tr key={c.id} style={{ borderBottom: '1px solid #e8f5e9' }}>
-                                        <td style={{ padding: '7px 10px' }}>{fmtDate(c.paymentDate)}</td>
-                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: '#2e7d32' }}>
-                                          {fmt(c.amount)}
-                                        </td>
-                                        <td style={{ padding: '7px 10px', color: '#666' }}>{c.notes || '—'}</td>
-                                        <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                                          <div style={{ display: 'inline-flex', gap: '6px' }}>
-                                            <button
-                                              style={iconBtn('#1976d2')}
-                                              onClick={() => openEdit(c)}
-                                              title="Edit this contribution"
-                                            >
-                                              <Pencil size={12} /> Edit
-                                            </button>
-                                            <button
-                                              style={iconBtn('#c62828')}
-                                              onClick={() => setDeleteConfirm(c.id)}
-                                              title="Delete this contribution"
-                                            >
-                                              <Trash2 size={12} /> Delete
-                                            </button>
-                                          </div>
-                                        </td>
+                                <div style={{ overflowX: 'auto' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: '640px' }}>
+                                    <colgroup>
+                                      <col style={{ width: '14%' }} /> {/* Payment Date */}
+                                      <col style={{ width: '14%' }} /> {/* Amount       */}
+                                      <col style={{ width: '22%' }} /> {/* Notes        */}
+                                      <col style={{ width: '24%' }} /> {/* Edited By    */}
+                                      <col style={{ width: '26%' }} /> {/* Actions      */}
+                                    </colgroup>
+                                    <thead>
+                                      <tr>
+                                        <th style={subTh('left')}>Payment Date</th>
+                                        <th style={subTh('right')}>Amount</th>
+                                        <th style={subTh('left')}>Notes</th>
+                                        <th style={subTh('center')}>
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                            <User size={11} /> Edited By
+                                          </span>
+                                        </th>
+                                        <th style={subTh('center')}>Actions</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </thead>
+                                    <tbody>
+                                      {m.contributions.map((c) => (
+                                        <tr key={c.id} style={{ background: 'white' }}>
+                                          <td style={subTd('left')}>{fmtDate(c.paymentDate)}</td>
+                                          <td style={subTd('right', { fontWeight: 600, color: '#2e7d32' })}>
+                                            {fmt(c.amount)}
+                                          </td>
+                                          <td style={subTd('left', { color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
+                                            {c.notes || '—'}
+                                          </td>
+                                          <td style={subTd('center')}>
+                                            <EditedByBadge editedBy={c.editedBy} editedAt={c.editedAt} />
+                                          </td>
+                                          <td style={subTd('center')}>
+                                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                              <button
+                                                style={iconBtn('#1976d2')}
+                                                onClick={() => openEdit(c)}
+                                                title="Edit this contribution"
+                                              >
+                                                <Pencil size={12} /> Edit
+                                              </button>
+                                              <button
+                                                style={iconBtn('#c62828')}
+                                                onClick={() => setDeleteConfirm(c.id)}
+                                                title="Delete this contribution"
+                                              >
+                                                <Trash2 size={12} /> Delete
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -260,10 +333,12 @@ const SeedCapitalPage = () => {
                 <tfoot>
                   <tr style={{ background: '#f5f5f5', fontWeight: 'bold' }}>
                     <td colSpan="3">Total</td>
-                    <td style={{ color: '#2e7d32' }}>
+                    <td style={{ textAlign: 'right', color: '#2e7d32' }}>
                       {fmt(filtered.reduce((s, m) => s + Number(m.totalSeedCapital || 0), 0))}
                     </td>
-                    <td>{filtered.reduce((s, m) => s + Number(m.contributionCount || 0), 0)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {filtered.reduce((s, m) => s + Number(m.contributionCount || 0), 0)}
+                    </td>
                     <td colSpan="2"></td>
                   </tr>
                 </tfoot>
