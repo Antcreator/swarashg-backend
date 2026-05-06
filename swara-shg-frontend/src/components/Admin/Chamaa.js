@@ -7,16 +7,16 @@ import { useIsStaff } from '../Protected Route/Protectedroute';
 
 const Chamaa = () => {
   const isStaff = useIsStaff();
-  const [cycles, setCycles]       = useState([]);
-  const [members, setMembers]     = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [cycles, setCycles]     = useState([]);
+  const [members, setMembers]   = useState([]);
+  const [loading, setLoading]   = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [expandedCycleId, setExpandedCycleId] = useState(null);
   const [participants, setParticipants]       = useState([]);
-  const [showContribModal, setShowContribModal] = useState(false);
+  const [showContribModal, setShowContribModal]   = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
 
-  // ─── position-editing state ───────────────────────────────────
+  // position-editing state
   const [editingPositionId, setEditingPositionId] = useState(null);
   const [positionDraft, setPositionDraft]         = useState('');
   const [positionSaving, setPositionSaving]       = useState(false);
@@ -27,14 +27,12 @@ const Chamaa = () => {
     paymentDate: new Date().toISOString().split('T')[0],
   });
 
-  // ─── create form ──────────────────────────────────────────────
-  // slotList: ordered array of memberId entries (duplicates allowed).
-  // Each entry represents one payout slot; the same member can appear
-  // multiple times (e.g. Mary at slots 1, 5, and 7).
   const createDefaults = {
     name: '', contributionAmount: '',
     startDate: new Date().toISOString().split('T')[0],
-    slotList: [],        // [ memberId, memberId, ... ] — order = position
+    // slotList is the ordered array: e.g. [Mary, Paul, James, Mary, Mary, Levis, Paul]
+    // Each index+1 = payout position; duplicates are fully allowed.
+    slotList: [],
   };
   const [createForm, setCreateForm] = useState(createDefaults);
 
@@ -51,13 +49,14 @@ const Chamaa = () => {
     finally { setLoading(false); }
   };
 
-  // ─── slot list helpers (create modal) ────────────────────────
-  // Add a new slot for a member (they may already have slots).
-  const addSlot = (memberId) => {
+  // ── slot list helpers ──────────────────────────────────────────
+
+  // Append a member to the bottom of the list (next available position).
+  const appendSlot = (memberId) => {
     setCreateForm((prev) => ({ ...prev, slotList: [...prev.slotList, memberId] }));
   };
 
-  // Remove the slot at a specific index in slotList.
+  // Remove the slot at a specific index.
   const removeSlot = (index) => {
     setCreateForm((prev) => ({
       ...prev,
@@ -65,25 +64,24 @@ const Chamaa = () => {
     }));
   };
 
-  // Move a slot up or down in the order (changes payout position).
+  // Move a slot up or down.
   const moveSlot = (index, direction) => {
-    const newList = [...createForm.slotList];
-    const swapIndex = index + direction;
-    if (swapIndex < 0 || swapIndex >= newList.length) return;
-    [newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]];
-    setCreateForm((prev) => ({ ...prev, slotList: newList }));
+    const list     = [...createForm.slotList];
+    const swapIdx  = index + direction;
+    if (swapIdx < 0 || swapIdx >= list.length) return;
+    [list[index], list[swapIdx]] = [list[swapIdx], list[index]];
+    setCreateForm((prev) => ({ ...prev, slotList: list }));
   };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    if (createForm.slotList.length === 0) { alert('Add at least one member slot'); return; }
+    if (createForm.slotList.length === 0) { alert('Add at least one member to the list'); return; }
     try {
       await chamaaAPI.createCycle({
         name: createForm.name,
         contributionAmount: Number(createForm.contributionAmount),
         startDate: createForm.startDate,
-        // Each entry (including duplicates) = one slot in order.
-        memberIds: createForm.slotList,
+        memberIds: createForm.slotList,   // order preserved; duplicates allowed
       });
       alert('Chamaa cycle created successfully');
       setShowCreateModal(false);
@@ -94,10 +92,7 @@ const Chamaa = () => {
 
   const toggleExpand = async (cycleId) => {
     if (expandedCycleId === cycleId) {
-      setExpandedCycleId(null);
-      setParticipants([]);
-      setEditingPositionId(null);
-      return;
+      setExpandedCycleId(null); setParticipants([]); setEditingPositionId(null); return;
     }
     try {
       const res = await chamaaAPI.getCycleById(cycleId);
@@ -151,59 +146,37 @@ const Chamaa = () => {
     try {
       await chamaaAPI.endCycle(cycleId);
       alert('Cycle ended');
-      setExpandedCycleId(null);
-      setParticipants([]);
-      fetchCycles();
+      setExpandedCycleId(null); setParticipants([]); fetchCycles();
     } catch (err) { alert(err.response?.data?.message || 'Failed to end cycle'); }
   };
 
-  // ─── position editing helpers ─────────────────────────────────
-  const startEditingPosition = (participant) => {
-    setEditingPositionId(participant.id);
-    setPositionDraft(String(participant.position));
-  };
-
-  const cancelEditingPosition = () => {
-    setEditingPositionId(null);
-    setPositionDraft('');
-  };
-
+  // position editing
+  const startEditingPosition = (p) => { setEditingPositionId(p.id); setPositionDraft(String(p.position)); };
+  const cancelEditingPosition = () => { setEditingPositionId(null); setPositionDraft(''); };
   const savePosition = async (participantId) => {
     const newPos = parseInt(positionDraft, 10);
-    if (!newPos || newPos < 1) {
-      alert('Position must be a positive number');
-      return;
-    }
-
+    if (!newPos || newPos < 1) { alert('Position must be a positive number'); return; }
     setPositionSaving(true);
     try {
       const res = await chamaaAPI.updateParticipantPosition(participantId, newPos);
       if (res.data.allParticipants) {
         setParticipants((prev) => {
-          const updatedMap = {};
-          res.data.allParticipants.forEach((p) => { updatedMap[p.id] = p; });
-          return prev
-            .map((p) => updatedMap[p.id]
-              ? { ...p, position: updatedMap[p.id].position }
-              : p)
-            .sort((a, b) => a.position - b.position);
+          const map = {};
+          res.data.allParticipants.forEach((p) => { map[p.id] = p; });
+          return prev.map((p) => map[p.id] ? { ...p, position: map[p.id].position } : p)
+                     .sort((a, b) => a.position - b.position);
         });
       }
-      setEditingPositionId(null);
-      setPositionDraft('');
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update position');
-    } finally {
-      setPositionSaving(false);
-    }
+      setEditingPositionId(null); setPositionDraft('');
+    } catch (err) { alert(err.response?.data?.message || 'Failed to update position'); }
+    finally { setPositionSaving(false); }
   };
-
-  const handlePositionKeyDown = (e, participantId) => {
-    if (e.key === 'Enter')  savePosition(participantId);
+  const handlePositionKeyDown = (e, id) => {
+    if (e.key === 'Enter')  savePosition(id);
     if (e.key === 'Escape') cancelEditingPosition();
   };
 
-  // ─── helpers ──────────────────────────────────────────────────
+  // helpers
   const formatCurrency = (amt) =>
     new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
@@ -212,17 +185,11 @@ const Chamaa = () => {
     return m ? `${m.firstName} ${m.lastName}` : `Member #${id}`;
   };
 
-  // Count how many slots a given member has in the current slotList.
-  const slotCountForMember = (memberId) =>
-    createForm.slotList.filter((id) => id === memberId).length;
-
   return (
     <>
       <Navbar />
       <div className="admin-container">
-        <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>
-          ← Dashboard
-        </Link>
+        <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
         <div className="page-header">
           <h1>Chamaa (Merry-Go-Round) Management</h1>
           {!isStaff && (
@@ -242,7 +209,7 @@ const Chamaa = () => {
               <table>
                 <thead>
                   <tr>
-                    <th>Name</th><th>Contribution</th><th>Slots</th>
+                    <th>Name</th><th>Contribution</th><th>Positions</th>
                     <th>Rounds Done</th><th>Start Date</th><th>Status</th><th>Actions</th>
                   </tr>
                 </thead>
@@ -265,9 +232,7 @@ const Chamaa = () => {
                             {expandedCycleId === cycle.id ? 'Collapse' : 'Expand'}
                           </button>
                           {!isStaff && cycle.isActive && (
-                            <button className="btn-danger" style={smallBtn} onClick={() => handleEndCycle(cycle.id)}>
-                              End
-                            </button>
+                            <button className="btn-danger" style={smallBtn} onClick={() => handleEndCycle(cycle.id)}>End</button>
                           )}
                         </td>
                       </tr>
@@ -276,22 +241,17 @@ const Chamaa = () => {
                         <tr>
                           <td colSpan={7} style={{ background: '#f9f9f9', padding: '16px' }}>
                             <strong style={{ display: 'block', marginBottom: '10px' }}>
-                              Participants — {participants.length} slot{participants.length !== 1 ? 's' : ''}
+                              Payout List — {participants.length} position{participants.length !== 1 ? 's' : ''}
                             </strong>
-
                             {!isStaff && (
                               <p style={{ fontSize: '13px', color: '#888', marginBottom: '10px' }}>
-                                💡 A member can hold multiple slots (payout positions). Click a position
-                                number to edit the order. Positions swap automatically.
+                                💡 A member can appear more than once in the list. Click a position number to change the order.
                               </p>
                             )}
-
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
                                 <tr style={{ background: '#eee' }}>
-                                  <th style={thSub}>
-                                    Position{!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to edit)</span>}
-                                  </th>
+                                  <th style={thSub}>Position{!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to edit)</span>}</th>
                                   <th style={thSub}>Member</th>
                                   <th style={thSub}>Contributions Made</th>
                                   <th style={thSub}>Received Pot</th>
@@ -300,55 +260,30 @@ const Chamaa = () => {
                               </thead>
                               <tbody>
                                 {participants.map((p) => {
-                                  // Determine the display name for this slot.
-                                  const memberName = p.member
+                                  const memberName  = p.member
                                     ? `${p.member.firstName} ${p.member.lastName}`
                                     : getMemberName(p.memberId);
-
-                                  // Count how many total slots this member has in this cycle
-                                  // so we can add a "(slot 2 of 3)" label when > 1.
-                                  const memberSlots = participants.filter(
-                                    (s) => s.memberId === p.memberId
-                                  );
-                                  const slotIndex  = memberSlots.findIndex((s) => s.id === p.id) + 1;
-                                  const slotLabel  = memberSlots.length > 1
-                                    ? ` (slot ${slotIndex} of ${memberSlots.length})`
+                                  // Count how many times this member appears so we can show "(2nd turn)" etc.
+                                  const sameSlots  = participants.filter((s) => s.memberId === p.memberId);
+                                  const turnIndex  = sameSlots.findIndex((s) => s.id === p.id) + 1;
+                                  const turnLabel  = sameSlots.length > 1
+                                    ? ` (turn ${turnIndex} of ${sameSlots.length})`
                                     : '';
 
                                   return (
                                     <tr key={p.id} style={{ borderBottom: '1px solid #ddd' }}>
-
-                                      {/* ── position cell ── */}
                                       <td style={tdSub}>
                                         {!isStaff && editingPositionId === p.id ? (
                                           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max={participants.length}
+                                              type="number" min="1" max={participants.length}
                                               value={positionDraft}
                                               onChange={(e) => setPositionDraft(e.target.value)}
                                               onKeyDown={(e) => handlePositionKeyDown(e, p.id)}
-                                              style={positionInput}
-                                              autoFocus
-                                              disabled={positionSaving}
+                                              style={positionInput} autoFocus disabled={positionSaving}
                                             />
-                                            <button
-                                              style={iconBtn('#2e7d32')}
-                                              onClick={() => savePosition(p.id)}
-                                              disabled={positionSaving}
-                                              title="Save"
-                                            >
-                                              {positionSaving ? '…' : '✓'}
-                                            </button>
-                                            <button
-                                              style={iconBtn('#c62828')}
-                                              onClick={cancelEditingPosition}
-                                              disabled={positionSaving}
-                                              title="Cancel"
-                                            >
-                                              ✕
-                                            </button>
+                                            <button style={iconBtn('#2e7d32')} onClick={() => savePosition(p.id)} disabled={positionSaving}>{positionSaving ? '…' : '✓'}</button>
+                                            <button style={iconBtn('#c62828')} onClick={cancelEditingPosition} disabled={positionSaving}>✕</button>
                                           </span>
                                         ) : (
                                           <span
@@ -357,46 +292,29 @@ const Chamaa = () => {
                                             onClick={() => !isStaff && startEditingPosition(p)}
                                           >
                                             {p.position}
-                                            {!isStaff && <span style={{ marginLeft: '5px', fontSize: '11px', color: '#1976d2' }}>✎</span>}
+                                            {!isStaff && <span style={{ marginLeft: '4px', fontSize: '11px', color: '#1976d2' }}>✎</span>}
                                           </span>
                                         )}
                                       </td>
-
                                       <td style={tdSub}>
                                         {memberName}
-                                        {slotLabel && (
-                                          <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>
-                                            {slotLabel}
-                                          </span>
+                                        {turnLabel && (
+                                          <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>{turnLabel}</span>
                                         )}
                                       </td>
                                       <td style={tdSub}>{p.paidContributions} / {cycle.totalParticipants}</td>
                                       <td style={tdSub}>
                                         {p.hasReceived
                                           ? <span style={badges.active}>Yes — {new Date(p.receivedDate).toLocaleDateString()}</span>
-                                          : <span style={badges.ended}>No</span>
-                                        }
+                                          : <span style={badges.ended}>No</span>}
                                       </td>
-
                                       {!isStaff && (
                                         <td style={tdSub}>
                                           {cycle.isActive && (
                                             <>
-                                              <button
-                                                className="btn-primary"
-                                                style={smallBtn}
-                                                onClick={() => openContribModal(p, cycle)}
-                                              >
-                                                Contribute
-                                              </button>
+                                              <button className="btn-primary" style={smallBtn} onClick={() => openContribModal(p, cycle)}>Contribute</button>
                                               {!p.hasReceived && (
-                                                <button
-                                                  className="btn-primary"
-                                                  style={{ ...smallBtn, background: '#7b1fa2' }}
-                                                  onClick={() => handleMarkReceived(p.id)}
-                                                >
-                                                  Mark Received
-                                                </button>
+                                                <button className="btn-primary" style={{ ...smallBtn, background: '#7b1fa2', marginLeft: '6px' }} onClick={() => handleMarkReceived(p.id)}>Mark Received</button>
                                               )}
                                             </>
                                           )}
@@ -418,104 +336,84 @@ const Chamaa = () => {
           </div>
         )}
 
-        {/* ── Create Cycle Modal ── */}
+        {/* ── Create Cycle Modal ─────────────────────────────────── */}
         {showCreateModal && !isStaff && (
-          <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal-overlay" onClick={() => { setShowCreateModal(false); setCreateForm(createDefaults); }}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
               <h2>Create New Chamaa Cycle</h2>
               <form onSubmit={handleCreateSubmit}>
+
                 <div className="form-group">
                   <label>Cycle Name *</label>
-                  <input
-                    type="text"
-                    value={createForm.name}
-                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                    required
-                  />
+                  <input type="text" value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Contribution Amount (KES) *</label>
-                  <input
-                    type="number"
-                    value={createForm.contributionAmount}
-                    onChange={(e) => setCreateForm({ ...createForm, contributionAmount: e.target.value })}
-                    min="1"
-                    required
-                  />
+                  <input type="number" min="1" value={createForm.contributionAmount} onChange={(e) => setCreateForm({ ...createForm, contributionAmount: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Start Date</label>
-                  <input
-                    type="date"
-                    value={createForm.startDate}
-                    onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })}
-                  />
+                  <input type="date" value={createForm.startDate} onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })} />
                 </div>
 
-                {/* ── slot builder ── */}
+                {/* ── two-panel slot builder ── */}
                 <div className="form-group">
-                  <label>Payout Slots * — add members in payout order (a member can appear multiple times)</label>
+                  <label style={{ display: 'block', marginBottom: '4px' }}>
+                    Payout List *
+                  </label>
+                  <p style={{ fontSize: '12px', color: '#888', marginTop: 0, marginBottom: '10px' }}>
+                    Click a member on the left to add them to the next position on the right.
+                    The same member can be added multiple times.
+                  </p>
 
-                  {/* Member picker: click a member to add a slot for them */}
-                  <div style={styles.memberPicker}>
-                    {members.map((m) => {
-                      const count = slotCountForMember(m.id);
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          style={{ ...styles.memberChip, ...(count > 0 ? styles.memberChipActive : {}) }}
-                          onClick={() => addSlot(m.id)}
-                          title={`Add a slot for ${m.firstName} ${m.lastName}`}
-                        >
-                          {m.firstName} {m.lastName}
-                          {count > 0 && (
-                            <span style={styles.chipBadge}>{count}</span>
-                          )}
-                          <span style={styles.chipPlus}>＋</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Ordered slot list — each row is one payout position */}
-                  {createForm.slotList.length > 0 && (
-                    <div style={styles.slotList}>
-                      <p style={styles.slotListLabel}>
-                        Payout order ({createForm.slotList.length} slot{createForm.slotList.length !== 1 ? 's' : ''})
-                      </p>
-                      {createForm.slotList.map((memberId, idx) => (
-                        <div key={idx} style={styles.slotRow}>
-                          <span style={styles.slotPos}>{idx + 1}</span>
-                          <span style={styles.slotName}>{getMemberName(memberId)}</span>
+                  <div style={styles.builderWrap}>
+                    {/* LEFT: member picker */}
+                    <div style={styles.leftPanel}>
+                      <p style={styles.panelHeader}>Members</p>
+                      {members.map((m) => {
+                        const count = createForm.slotList.filter((id) => id === m.id).length;
+                        return (
                           <button
+                            key={m.id}
                             type="button"
-                            style={styles.slotMoveBtn}
-                            onClick={() => moveSlot(idx, -1)}
-                            disabled={idx === 0}
-                            title="Move up"
-                          >▲</button>
-                          <button
-                            type="button"
-                            style={styles.slotMoveBtn}
-                            onClick={() => moveSlot(idx, 1)}
-                            disabled={idx === createForm.slotList.length - 1}
-                            title="Move down"
-                          >▼</button>
-                          <button
-                            type="button"
-                            style={{ ...styles.slotMoveBtn, color: '#c62828' }}
-                            onClick={() => removeSlot(idx)}
-                            title="Remove slot"
-                          >✕</button>
-                        </div>
-                      ))}
+                            style={styles.memberBtn}
+                            onClick={() => appendSlot(m.id)}
+                            title={`Add ${m.firstName} to the next position`}
+                          >
+                            <span style={styles.memberBtnName}>{m.firstName} {m.lastName}</span>
+                            {count > 0 && (
+                              <span style={styles.memberBtnBadge}>×{count}</span>
+                            )}
+                            <span style={styles.memberBtnPlus}>＋</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
+
+                    {/* RIGHT: ordered slot list */}
+                    <div style={styles.rightPanel}>
+                      <p style={styles.panelHeader}>
+                        Payout order {createForm.slotList.length > 0 && `(${createForm.slotList.length})`}
+                      </p>
+                      {createForm.slotList.length === 0 ? (
+                        <p style={styles.emptyHint}>← Click a member to add them here</p>
+                      ) : (
+                        createForm.slotList.map((memberId, idx) => (
+                          <div key={idx} style={styles.slotRow}>
+                            <span style={styles.slotPos}>{idx + 1}</span>
+                            <span style={styles.slotName}>{getMemberName(memberId)}</span>
+                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, -1)} disabled={idx === 0} title="Move up">▲</button>
+                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, 1)} disabled={idx === createForm.slotList.length - 1} title="Move down">▼</button>
+                            <button type="button" style={{ ...styles.slotMoveBtn, color: '#c62828', borderColor: '#ffcdd2' }} onClick={() => removeSlot(idx)} title="Remove">✕</button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="modal-actions">
-                  <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                  <button type="button" className="btn-secondary" onClick={() => { setShowCreateModal(false); setCreateForm(createDefaults); }}>Cancel</button>
                   <button type="submit" className="btn-primary">Create Cycle</button>
                 </div>
               </form>
@@ -523,7 +421,7 @@ const Chamaa = () => {
           </div>
         )}
 
-        {/* ── Contribution Modal ── */}
+        {/* ── Contribution Modal ─────────────────────────────────── */}
         {showContribModal && selectedParticipant && !isStaff && (
           <div className="modal-overlay" onClick={() => setShowContribModal(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -534,18 +432,13 @@ const Chamaa = () => {
                     ? `${selectedParticipant.member.firstName} ${selectedParticipant.member.lastName}`
                     : `Member #${selectedParticipant.memberId}`}
                 </strong>
-                {' '}— Slot position <strong>#{selectedParticipant.position}</strong>
+                {' '}— Position <strong>#{selectedParticipant.position}</strong>
                 {' '}— Required: <strong>{formatCurrency(selectedParticipant.contributionAmount)}</strong>
               </p>
               <form onSubmit={handleContribSubmit}>
                 <div className="form-group">
                   <label>Amount (KES) *</label>
-                  <input
-                    type="number"
-                    value={contribForm.amount}
-                    onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })}
-                    required
-                  />
+                  <input type="number" value={contribForm.amount} onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })} required />
                   <small style={{ color: '#999' }}>Must be exactly {formatCurrency(selectedParticipant.contributionAmount)}</small>
                 </div>
                 <div className="form-row">
@@ -557,22 +450,12 @@ const Chamaa = () => {
                   </div>
                   <div className="form-group">
                     <label>Year *</label>
-                    <input
-                      type="number"
-                      value={contribForm.year}
-                      onChange={(e) => setContribForm({ ...contribForm, year: e.target.value })}
-                      min="2000"
-                      required
-                    />
+                    <input type="number" value={contribForm.year} onChange={(e) => setContribForm({ ...contribForm, year: e.target.value })} min="2000" required />
                   </div>
                 </div>
                 <div className="form-group">
                   <label>Payment Date</label>
-                  <input
-                    type="date"
-                    value={contribForm.paymentDate}
-                    onChange={(e) => setContribForm({ ...contribForm, paymentDate: e.target.value })}
-                  />
+                  <input type="date" value={contribForm.paymentDate} onChange={(e) => setContribForm({ ...contribForm, paymentDate: e.target.value })} />
                 </div>
                 <div className="modal-actions">
                   <button type="button" className="btn-secondary" onClick={() => setShowContribModal(false)}>Cancel</button>
@@ -587,7 +470,7 @@ const Chamaa = () => {
   );
 };
 
-// ─── styles ────────────────────────────────────────────────────
+// ── styles ─────────────────────────────────────────────────────
 const badges = {
   active: { background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: '12px', fontWeight: 600, fontSize: '13px' },
   ended:  { background: '#eceff1', color: '#546e7a', padding: '4px 10px', borderRadius: '12px', fontWeight: 600, fontSize: '13px' },
@@ -597,67 +480,73 @@ const thSub         = { padding: '8px 10px', textAlign: 'left', fontWeight: 600,
 const tdSub         = { padding: '8px 10px', fontSize: '14px', color: '#333' };
 const positionBadge = {
   display: 'inline-flex', alignItems: 'center', gap: '4px',
-  cursor: 'pointer', fontWeight: 700,
-  padding: '3px 8px', borderRadius: '6px',
-  background: '#e3f2fd', color: '#1565c0',
-  border: '1px dashed #90caf9',
-  transition: 'background 0.15s',
+  cursor: 'pointer', fontWeight: 700, padding: '3px 8px', borderRadius: '6px',
+  background: '#e3f2fd', color: '#1565c0', border: '1px dashed #90caf9',
 };
 const positionInput = {
   width: '60px', padding: '4px 6px', fontSize: '14px',
-  border: '2px solid #1976d2', borderRadius: '4px',
-  textAlign: 'center',
+  border: '2px solid #1976d2', borderRadius: '4px', textAlign: 'center',
 };
 const iconBtn = (color) => ({
   background: color, color: '#fff', border: 'none',
-  borderRadius: '4px', padding: '4px 8px',
-  cursor: 'pointer', fontSize: '13px', fontWeight: 700,
+  borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '13px', fontWeight: 700,
 });
 
-// ── create-modal slot builder styles ──
 const styles = {
-  memberPicker: {
-    display: 'flex', flexWrap: 'wrap', gap: '8px',
-    padding: '10px', border: '1px solid #ddd', borderRadius: '6px',
-    marginBottom: '12px', maxHeight: '180px', overflowY: 'auto',
+  // two-column builder
+  builderWrap: {
+    display: 'flex', gap: '12px', alignItems: 'flex-start',
   },
-  memberChip: {
-    display: 'inline-flex', alignItems: 'center', gap: '5px',
-    padding: '5px 10px', borderRadius: '20px', fontSize: '13px',
-    border: '1px solid #90caf9', background: '#e3f2fd', color: '#1565c0',
-    cursor: 'pointer', fontWeight: 500,
+  leftPanel: {
+    flex: '0 0 200px', border: '1px solid #ddd', borderRadius: '6px',
+    overflow: 'hidden', maxHeight: '340px', overflowY: 'auto',
   },
-  memberChipActive: {
-    background: '#bbdefb', border: '1px solid #1976d2',
+  rightPanel: {
+    flex: 1, border: '1px solid #ddd', borderRadius: '6px',
+    overflow: 'hidden', maxHeight: '340px', overflowY: 'auto',
   },
-  chipBadge: {
+  panelHeader: {
+    margin: 0, padding: '7px 10px', background: '#f5f5f5',
+    fontSize: '12px', fontWeight: 600, color: '#555',
+    borderBottom: '1px solid #ddd', position: 'sticky', top: 0,
+  },
+
+  // member button (left panel)
+  memberBtn: {
+    display: 'flex', alignItems: 'center', width: '100%',
+    padding: '8px 10px', background: '#fff', border: 'none',
+    borderBottom: '1px solid #f0f0f0', cursor: 'pointer',
+    textAlign: 'left', gap: '6px',
+    transition: 'background 0.12s',
+  },
+  memberBtnName: { flex: 1, fontSize: '13px', color: '#333' },
+  memberBtnBadge: {
     background: '#1976d2', color: '#fff', borderRadius: '10px',
-    padding: '1px 6px', fontSize: '11px', fontWeight: 700,
+    padding: '1px 7px', fontSize: '11px', fontWeight: 700,
   },
-  chipPlus: { fontSize: '15px', fontWeight: 700, color: '#1976d2' },
-  slotList: {
-    border: '1px solid #ddd', borderRadius: '6px',
-    overflow: 'hidden',
+  memberBtnPlus: {
+    fontSize: '16px', fontWeight: 700, color: '#1976d2', lineHeight: 1,
   },
-  slotListLabel: {
-    margin: 0, padding: '6px 10px',
-    background: '#f5f5f5', fontSize: '12px', color: '#888',
-    borderBottom: '1px solid #ddd',
+
+  emptyHint: {
+    padding: '20px 12px', fontSize: '13px', color: '#aaa', textAlign: 'center', margin: 0,
   },
+
+  // slot rows (right panel)
   slotRow: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    padding: '6px 10px', borderBottom: '1px solid #f0f0f0',
+    display: 'flex', alignItems: 'center', gap: '6px',
+    padding: '6px 8px', borderBottom: '1px solid #f0f0f0',
   },
   slotPos: {
-    width: '24px', height: '24px', display: 'inline-flex',
+    width: '22px', height: '22px', display: 'inline-flex',
     alignItems: 'center', justifyContent: 'center',
     background: '#1976d2', color: '#fff', borderRadius: '50%',
-    fontSize: '12px', fontWeight: 700, flexShrink: 0,
+    fontSize: '11px', fontWeight: 700, flexShrink: 0,
   },
-  slotName: { flex: 1, fontSize: '14px', color: '#333' },
+  slotName: { flex: 1, fontSize: '13px', color: '#333' },
   slotMoveBtn: {
     background: 'none', border: '1px solid #ddd', borderRadius: '4px',
-    padding: '2px 7px', cursor: 'pointer', fontSize: '12px', color: '#555',
+    padding: '2px 6px', cursor: 'pointer', fontSize: '11px', color: '#555',
   },
 };
 
