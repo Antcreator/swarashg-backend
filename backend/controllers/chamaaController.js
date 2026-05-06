@@ -18,6 +18,7 @@ const getAllCycles = async (req, res) => {
 
     const rows = cycles.map((c) => ({
       ...c.toJSON(),
+      // totalParticipants = number of SLOTS (rows), not unique members
       totalParticipants: c.participants.length,
       completedRounds:   c.participants.filter((p) => p.hasReceived).length,
     }));
@@ -39,6 +40,7 @@ const getCycleById = async (req, res) => {
           { model: Member, as: 'member', attributes: ['firstName', 'lastName'] },
           { model: ChamaaContribution, as: 'contributions' },
         ],
+        order: [['position', 'ASC']],
       }],
     });
 
@@ -46,12 +48,15 @@ const getCycleById = async (req, res) => {
       return res.status(404).json({ message: 'Chamaa cycle not found' });
     }
 
-    const participants = cycle.participants.map((p) => ({
-      ...p.toJSON(),
-      contributionsMade: p.contributions.length,
-      paidContributions: p.contributions.filter((c) => c.isPaid).length,
-      totalFines:        p.contributions.reduce((s, c) => s + Number(c.fineAmount), 0),
-    }));
+    // Each row is one slot — a member can appear multiple times with different positions.
+    const participants = cycle.participants
+      .sort((a, b) => a.position - b.position)
+      .map((p) => ({
+        ...p.toJSON(),
+        contributionsMade: p.contributions.length,
+        paidContributions: p.contributions.filter((c) => c.isPaid).length,
+        totalFines:        p.contributions.reduce((s, c) => s + Number(c.fineAmount), 0),
+      }));
 
     return res.json({ cycle, participants });
   } catch (error) {
@@ -61,6 +66,8 @@ const getCycleById = async (req, res) => {
 };
 
 // ─── POST /chamaa ───────────────────────────────────────────────
+// memberIds may now contain duplicate member IDs — each entry becomes
+// one slot/position. Example: [1, 2, 1, 3, 1] gives member 1 positions 1, 3 and 5.
 const createCycle = async (req, res) => {
   const { name, contributionAmount, startDate, memberIds } = req.body;
 
@@ -75,7 +82,7 @@ const createCycle = async (req, res) => {
       startDate: startDate || new Date(),
     });
 
-    // add all members as participants with sequential positions
+    // Each entry in memberIds (including duplicates) becomes its own participant slot.
     for (let i = 0; i < memberIds.length; i++) {
       await ChamaaParticipant.create({
         cycleId:  cycle.id,
@@ -92,6 +99,7 @@ const createCycle = async (req, res) => {
 };
 
 // ─── POST /chamaa/participant ───────────────────────────────────
+// Adds a new slot for a member — they may already have other slots in the same cycle.
 const addParticipant = async (req, res) => {
   const { cycleId, memberId } = req.body;
 
@@ -100,17 +108,15 @@ const addParticipant = async (req, res) => {
     if (!cycle)          return res.status(404).json({ message: 'Chamaa cycle not found' });
     if (!cycle.isActive) return res.status(400).json({ message: 'Cycle is not active' });
 
-    const alreadyIn = await ChamaaParticipant.findOne({ where: { cycleId, memberId } });
-    if (alreadyIn) return res.status(400).json({ message: 'Member already in this cycle' });
+    // No longer reject if the member is already in the cycle — they can have multiple slots.
 
-    // next position
     const maxPos = await ChamaaParticipant.max('position', { where: { cycleId } }) || 0;
 
     const participant = await ChamaaParticipant.create({
       cycleId, memberId, position: maxPos + 1,
     });
 
-    return res.status(201).json({ message: 'Participant added', participant });
+    return res.status(201).json({ message: 'Participant slot added', participant });
   } catch (error) {
     console.error('Add participant error:', error);
     return res.status(500).json({ message: 'Failed to add participant' });
@@ -118,8 +124,8 @@ const addParticipant = async (req, res) => {
 };
 
 // ─── PUT /chamaa/participant/:id/position ───────────────────────
-// Uses a temp position (-1) as a stepping stone to avoid the unique
-// constraint on (cycleId, position) firing during the swap.
+// Swaps two slots by position. The unique constraint is only on (cycleId, position),
+// so a member appearing in multiple rows is fine as long as positions stay unique.
 const updateParticipantPosition = async (req, res) => {
   const { id } = req.params;
   const { newPosition } = req.body;
@@ -136,33 +142,26 @@ const updateParticipantPosition = async (req, res) => {
       return res.json({ message: 'Position unchanged', participant });
     }
 
-    // Find whoever currently holds the target position (if any).
     const occupant = await ChamaaParticipant.findOne({
       where: { cycleId, position: newPosition },
     });
 
-    // Wrap the swap in a transaction so a partial update is never left in the DB.
     await sequelize.transaction(async (t) => {
       if (occupant) {
-        // Step 1: Park occupant at a temporary slot that can't clash with any real position.
         occupant.position = -1;
         await occupant.save({ transaction: t });
 
-        // Step 2: Move the target participant into the now-vacant slot.
         participant.position = newPosition;
         await participant.save({ transaction: t });
 
-        // Step 3: Give the occupant the vacated old position.
         occupant.position = oldPosition;
         await occupant.save({ transaction: t });
       } else {
-        // No one is sitting there — just move directly.
         participant.position = newPosition;
         await participant.save({ transaction: t });
       }
     });
 
-    // Return all participants sorted so the caller can refresh the list.
     const allParticipants = await ChamaaParticipant.findAll({
       where: { cycleId },
       include: [{ model: Member, as: 'member', attributes: ['firstName', 'lastName'] }],
@@ -181,6 +180,8 @@ const updateParticipantPosition = async (req, res) => {
 };
 
 // ─── POST /chamaa/contribution ──────────────────────────────────
+// Contributions are tracked per participant slot (id), so Mary's slot at
+// position 1 and her slot at position 5 each have independent contribution records.
 const recordContribution = async (req, res) => {
   const { participantId, month, year, amount, paymentDate } = req.body;
 
@@ -198,12 +199,12 @@ const recordContribution = async (req, res) => {
       return res.status(400).json({ message: `Contribution must be exactly KES ${expected}` });
     }
 
-    // duplicate?
+    // Duplicate check is per slot (participantId), not per member — intentional.
     const existing = await ChamaaContribution.findOne({
       where: { participantId, month, year },
     });
     if (existing) {
-      return res.status(400).json({ message: 'Contribution already recorded for this month' });
+      return res.status(400).json({ message: 'Contribution already recorded for this slot this month' });
     }
 
     // ─── late check ───────────────────────────────────────────
@@ -227,7 +228,6 @@ const recordContribution = async (req, res) => {
       isPaid: true, isLate, fineAmount,
     });
 
-    // record fine
     if (isLate) {
       await Fine.create({
         memberId:    participant.memberId,
@@ -295,6 +295,7 @@ const getMonthlyChamaaReport = async (req, res) => {
     const cycle = await ChamaaCycle.findByPk(cycleId);
     if (!cycle) return res.status(404).json({ message: 'Cycle not found' });
 
+    // Each row is a slot — a member with 3 slots appears 3 times.
     const participants = await ChamaaParticipant.findAll({
       where: { cycleId },
       include: [
@@ -323,11 +324,11 @@ const getMonthlyChamaaReport = async (req, res) => {
     );
 
     const summary = {
-      totalParticipants: details.length,
-      paidParticipants:  details.filter((d) => d.isPaid).length,
-      latePayments:      details.filter((d) => d.isLate).length,
-      totalAmount:       details.reduce((s, d) => s + Number(d.amount || 0), 0),
-      totalFines:        details.reduce((s, d) => s + Number(d.fineAmount || 0), 0),
+      totalSlots:       details.length,
+      paidSlots:        details.filter((d) => d.isPaid).length,
+      latePayments:     details.filter((d) => d.isLate).length,
+      totalAmount:      details.reduce((s, d) => s + Number(d.amount || 0), 0),
+      totalFines:       details.reduce((s, d) => s + Number(d.fineAmount || 0), 0),
     };
 
     return res.json({ cycle, month, year, summary, details });
