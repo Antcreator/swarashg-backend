@@ -49,7 +49,14 @@ const StatutoryPage = () => {
   const startEdit = (row) => {
     setEditing(prev => ({
       ...prev,
-      [row.id]: { cautionaryFee: row.cautionaryFee, statutoryFee: row.statutoryFee, guarantorDeduction: row.guarantorDeduction, other: row.other, notes: row.notes || '' },
+      [row.id]: {
+        cautionaryFee:      row.cautionaryFee,
+        statutoryFee:       row.statutoryFee,
+        guarantorDeduction: row.guarantorDeduction,
+        other:              row.other,
+        agmFee:             row.agmFee,
+        notes:              row.notes || '',
+      },
     }));
   };
 
@@ -145,7 +152,7 @@ const StatutoryPage = () => {
       <h1>Statutory Fees - ${year}</h1>
       <p>Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} &nbsp;·&nbsp; ${filtered.length} members</p>
       <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
-      <script>window.onload = () => { window.print(); }<script>
+      <script>window.onload = () => { window.print(); }<\/script>
     </body></html>`);
     win.document.close();
   };
@@ -231,10 +238,29 @@ const StatutoryPage = () => {
                       <td style={{ padding: '10px' }}>{fmt(row.totalSeedCapital)}</td>
                       <td style={{ padding: '10px', color: row.savingsFine > 0 ? '#c62828' : '#666' }}>{fmt(row.savingsFine)}</td>
                       <td style={{ padding: '10px', color: row.chamaaFine  > 0 ? '#c62828' : '#666' }}>{fmt(row.chamaaFine)}</td>
+
+                      {/* AGM Fee — now editable, shows deposit value as default */}
                       <td style={{ padding: '10px' }}>
-                        <span style={{ background: row.agmFee > 0 ? '#f3e5f5' : '#f5f5f5', color: row.agmFee > 0 ? '#7b1fa2' : '#999', padding: '3px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                          {fmt(row.agmFee)}
-                        </span>
+                        {!isStaff && isEditing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <input
+                              type="number"
+                              value={ed.agmFee}
+                              min="0"
+                              style={inputStyle}
+                              onChange={e => handleEditChange(row.id, 'agmFee', e.target.value)}
+                            />
+                            {row.agmFee > 0 && (
+                              <span style={{ fontSize: '10px', color: '#7b1fa2' }}>
+                                Deposit: {fmt(row.agmFee)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ background: row.agmFee > 0 ? '#f3e5f5' : '#f5f5f5', color: row.agmFee > 0 ? '#7b1fa2' : '#999', padding: '3px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
+                            {fmt(row.agmFee)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Cautionary Fee */}
