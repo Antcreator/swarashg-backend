@@ -12,12 +12,22 @@ const getAdminName = async (userId) => {
 // GET /statutory?year=2025
 const getAllStatutory = async (req, res) => {
   try {
+    // ✅ Guard: should never reach here without req.user, but belt-and-suspenders
+    if (!req.user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     const year     = Number(req.query.year) || new Date().getFullYear();
     const isMember = req.user.role === 'member';
 
     const whereClause = isMember
       ? { id: req.user.member_id, isActive: true }
       : { isActive: true };
+
+    // ✅ Guard: member role but no member_id linked — misconfigured account
+    if (isMember && !req.user.member_id) {
+      return res.status(403).json({ message: 'No member profile linked to this account' });
+    }
 
     const members = await Member.findAll({
       where: whereClause,
@@ -52,8 +62,8 @@ const getAllStatutory = async (req, res) => {
 
       // ✅ If a statutory record exists and agmFee was explicitly saved on it, use that.
       //    Otherwise fall back to the sum from agm_fees deposits.
-      const agmFeeDeposit  = agmDepositMap[m.id] || 0;
-      const agmFeeSaved    = statutory ? Number(statutory.agmFee) : null;
+      const agmFeeDeposit = agmDepositMap[m.id] || 0;
+      const agmFeeSaved   = statutory ? Number(statutory.agmFee) : null;
       // null means "never set by admin" → show deposit value; 0 means admin explicitly set it to 0
       const agmFee = (agmFeeSaved !== null) ? agmFeeSaved : agmFeeDeposit;
 

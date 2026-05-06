@@ -49,9 +49,9 @@ Member.hasMany(Fine,   { foreignKey: 'memberId', as: 'fines'  });
 Fine.belongsTo(Member, { foreignKey: 'memberId', as: 'member' });
 
 // ─── ChamaaCycle ↔ ChamaaParticipant ────────────────────────────
-ChamaaCycle.hasMany(ChamaaParticipant,   { foreignKey: 'cycleId',  as: 'participants'        });
-ChamaaParticipant.belongsTo(ChamaaCycle, { foreignKey: 'cycleId',  as: 'cycle'               });
-ChamaaParticipant.belongsTo(Member,      { foreignKey: 'memberId', as: 'member'              });
+ChamaaCycle.hasMany(ChamaaParticipant,   { foreignKey: 'cycleId',  as: 'participants'         });
+ChamaaParticipant.belongsTo(ChamaaCycle, { foreignKey: 'cycleId',  as: 'cycle'                });
+ChamaaParticipant.belongsTo(Member,      { foreignKey: 'memberId', as: 'member'               });
 Member.hasMany(ChamaaParticipant,        { foreignKey: 'memberId', as: 'chamaaParticipations' });
 
 // ─── ChamaaParticipant ↔ ChamaaContribution ─────────────────────
@@ -67,7 +67,7 @@ Deposit.belongsTo(Loan, { foreignKey: 'loanId', as: 'loan'     });
 Loan.hasMany(Deposit,   { foreignKey: 'loanId', as: 'deposits' });
 
 // ─── Deposit ↔ User (confirmer and approver) ────────────────────
-Deposit.belongsTo(User, { foreignKey: 'confirmedBy', as: 'confirmer'       });
+Deposit.belongsTo(User, { foreignKey: 'confirmedBy', as: 'confirmer'        });
 User.hasMany(Deposit,   { foreignKey: 'confirmedBy', as: 'confirmedDeposits' });
 
 Deposit.belongsTo(User, { foreignKey: 'approvedBy', as: 'depositApprover'  });
@@ -82,10 +82,10 @@ SeedCapital.belongsTo(Deposit, { foreignKey: 'depositId', as: 'deposit'         
 Deposit.hasMany(SeedCapital,   { foreignKey: 'depositId', as: 'seedCapitalEntries' });
 
 // ─── Member ↔ AgmFee ────────────────────────────────────────────
-Member.hasMany(AgmFee,    { foreignKey: 'memberId',   as: 'agmFees'  });
-AgmFee.belongsTo(Member,  { foreignKey: 'memberId',   as: 'member'   });
-AgmFee.belongsTo(User,    { foreignKey: 'recordedBy', as: 'recorder' });
-AgmFee.belongsTo(Deposit, { foreignKey: 'depositId',  as: 'deposit'  });
+Member.hasMany(AgmFee,   { foreignKey: 'memberId',   as: 'agmFees'  });
+AgmFee.belongsTo(Member, { foreignKey: 'memberId',   as: 'member'   });
+AgmFee.belongsTo(User,   { foreignKey: 'recordedBy', as: 'recorder' });
+AgmFee.belongsTo(Deposit,{ foreignKey: 'depositId',  as: 'deposit'  });
 
 // ─── Member ↔ Statutory ─────────────────────────────────────────
 Member.hasMany(Statutory,   { foreignKey: 'memberId', as: 'statutory' });
@@ -98,12 +98,15 @@ User.hasMany(Statutory,   { foreignKey: 'editedBy',    as: 'editedStatutory'    
 User.hasMany(Statutory,   { foreignKey: 'submittedBy', as: 'submittedStatutory' });
 
 // ─── Member ↔ RegistrationFee ───────────────────────────────────
-Member.hasOne(RegistrationFee,   { foreignKey: 'memberId', as: 'registrationFee' });
-RegistrationFee.belongsTo(Member,{ foreignKey: 'memberId', as: 'member'          });
+Member.hasOne(RegistrationFee,    { foreignKey: 'memberId', as: 'registrationFee' });
+RegistrationFee.belongsTo(Member, { foreignKey: 'memberId', as: 'member'          });
 
 // ─── Investment ↔ InvestmentColumnName ──────────────────────────
-Investment.belongsTo(InvestmentColumnName, { foreignKey: 'columnNameId', as: 'columnName' });
-InvestmentColumnName.hasMany(Investment,   { foreignKey: 'columnNameId', as: 'investments' });
+// ✅ NO association between these two models.
+// Both are keyed independently by `year`. The controller fetches them
+// separately with their own queries. Adding hasOne/belongsTo here is
+// what caused Sequelize to inject `columnNameId` into every Investment
+// upsert, producing the "column does not exist" Postgres error.
 
 module.exports = {
   sequelize,

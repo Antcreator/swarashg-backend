@@ -12,7 +12,16 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
     if (err) {
+      // ✅ Log the JWT error so Railway logs show you exactly what's wrong
+      console.error('JWT verify failed:', err.message, 'token prefix:', token?.slice(0, 20));
       return res.status(403).json({ message: 'Invalid or expired token' });
+    }
+
+    // ✅ Guard against tokens that verified but have no userId in payload
+    //    This catches JWT_SECRET mismatches that produce valid-but-wrong decodes
+    if (!decoded || !decoded.userId) {
+      console.error('Decoded JWT missing userId. Full decoded payload:', decoded);
+      return res.status(403).json({ message: 'Malformed token payload' });
     }
 
     try {
@@ -21,6 +30,8 @@ const authenticateToken = (req, res, next) => {
       });
 
       if (!user) {
+        // ✅ Log the ID so you can verify it exists in the DB
+        console.error('User not found for decoded.userId:', decoded.userId);
         return res.status(403).json({ message: 'User not found' });
       }
 
