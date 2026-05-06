@@ -49,7 +49,7 @@ const Navbar = () => {
 
         {/* Brand */}
         <div className="navbar-brand">
-          <img src="/logo.png" alt="Swara SHG" className="navbar-logo" />
+          <img src="/logo2.png" alt="Swara SHG" className="navbar-logo" />
           <div className="navbar-brand-text">
             <h2>Swara SHG</h2>
             <span className="role-badge">
