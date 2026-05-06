@@ -45,13 +45,14 @@ const evaluatePayment = (targetMonth, targetYear, paymentDateStr) => {
 
 const Savings = () => {
   const isStaff = useIsStaff();
-  const [savings,     setSavings]     = useState([]);
-  const [members,     setMembers]     = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [showModal,   setShowModal]   = useState(false);
-  const [editingId,   setEditingId]   = useState(null);   // null = create, number = edit
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // saving id to confirm delete
+  const [savings,       setSavings]       = useState([]);
+  const [members,       setMembers]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [showModal,     setShowModal]     = useState(false);
+  const [editingId,     setEditingId]     = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [search,        setSearch]        = useState('');
 
   const today = new Date();
 
@@ -63,8 +64,8 @@ const Savings = () => {
     notes: '',
   };
 
-  const [formData, setFormData] = useState(emptyForm);
-  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [formData,       setFormData]       = useState(emptyForm);
+  const [paymentStatus,  setPaymentStatus]  = useState(null);
 
   useEffect(() => { fetchSavings(); fetchMembers(); }, []);
 
@@ -85,6 +86,14 @@ const Savings = () => {
   }, [formData.paymentDate, formData.month, formData.year]);
 
   useEffect(() => { evaluateStatus(); }, [evaluateStatus]);
+
+  // ── Search filter ─────────────────────────────────────────────────────────
+  const filtered = savings.filter((s) => {
+    const fullName = `${s.member?.firstName ?? ''} ${s.member?.lastName ?? ''}`.toLowerCase();
+    const monthName = getMonthName(s.month).toLowerCase();
+    const q = search.toLowerCase();
+    return fullName.includes(q) || monthName.includes(q) || String(s.year).includes(q);
+  });
 
   // ── Open modal for CREATE ──────────────────────────────────────────────────
   const openCreate = () => {
@@ -215,8 +224,7 @@ const Savings = () => {
   const { windowStart: cws, windowEnd: cwe } = getSavingWindow(currentTargetMonth, currentTargetYear);
   const fmtShort = (d) => d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
 
-  // ── Icon button style helper ──────────────────────────────────────────────
-  const iconBtn = (bg, hoverBg) => ({
+  const iconBtn = (bg) => ({
     display: 'inline-flex', alignItems: 'center', gap: '5px',
     padding: '5px 10px', border: 'none', borderRadius: '6px',
     cursor: 'pointer', fontSize: '12px', fontWeight: 600,
@@ -229,17 +237,30 @@ const Savings = () => {
       <div className="admin-container">
         <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
 
-        <div className="page-header">
-          <h1>Savings Management</h1>
-          {!isStaff && (
-            <button
-              className="btn-primary"
-              onClick={openCreate}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              <Plus size={15} /> Record Savings
-            </button>
-          )}
+        {/* Page header with search */}
+        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <h1 style={{ margin: 0 }}>Savings Management</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Search member, month, year..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                padding: '8px 14px', borderRadius: '6px',
+                border: '1px solid #ddd', fontSize: '14px', width: '240px',
+              }}
+            />
+            {!isStaff && (
+              <button
+                className="btn-primary"
+                onClick={openCreate}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+              >
+                <Plus size={15} /> Record Savings
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Info Banner */}
@@ -270,9 +291,13 @@ const Savings = () => {
                 </tr>
               </thead>
               <tbody>
-                {savings.length === 0 ? (
-                  <tr><td colSpan={isStaff ? 7 : 8} style={{ textAlign: 'center', color: '#999' }}>No savings records yet.</td></tr>
-                ) : savings.map((saving) => (
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={isStaff ? 7 : 8} style={{ textAlign: 'center', color: '#999' }}>
+                      {search ? 'No records match your search.' : 'No savings records yet.'}
+                    </td>
+                  </tr>
+                ) : filtered.map((saving) => (
                   <tr key={saving.id}>
                     <td>{saving.member?.firstName} {saving.member?.lastName}</td>
                     <td>{formatCurrency(saving.amount)}</td>
@@ -288,18 +313,15 @@ const Savings = () => {
                     {!isStaff && (
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          {/* Edit */}
                           <button
-                            style={iconBtn('#1976d2', '#1565c0')}
+                            style={iconBtn('#1976d2')}
                             onClick={() => openEdit(saving)}
                             title="Edit record"
                           >
                             <Pencil size={13} /> Edit
                           </button>
-
-                          {/* Delete */}
                           <button
-                            style={iconBtn('#c62828', '#b71c1c')}
+                            style={iconBtn('#c62828')}
                             onClick={() => setDeleteConfirm(saving.id)}
                             title="Delete record"
                           >
@@ -360,7 +382,7 @@ const Savings = () => {
                     value={formData.memberId}
                     onChange={(e) => setFormData({ ...formData, memberId: e.target.value })}
                     required
-                    disabled={!!editingId} // member shouldn't change on edit
+                    disabled={!!editingId}
                   >
                     <option value="">Select Member</option>
                     {members.map((m) => (
