@@ -27,6 +27,11 @@ const Statutory = sequelize.define('Statutory', {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0,
   },
+  // ✅ Added: agmFee is now persisted on the statutory record itself
+  agmFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+  },
   year: {
     type: DataTypes.INTEGER,
     allowNull: false,

@@ -1,4 +1,4 @@
-const { Statutory, Member, Savings, SeedCapital, Fine, User } = require('../models');
+const { Statutory, Member, Savings, SeedCapital, Fine, User, AgmFee } = require('../models');
 
 // Helper — safely get a user's full name by ID
 const getAdminName = async (userId) => {
@@ -10,15 +10,11 @@ const getAdminName = async (userId) => {
 };
 
 // GET /statutory?year=2025
-// - Admins/staff: returns all active members
-// - Members: returns only their own record (wrapped in the same { members: [...] } shape
-//   so the frontend MemberDashboard doesn't need any changes)
 const getAllStatutory = async (req, res) => {
   try {
     const year     = Number(req.query.year) || new Date().getFullYear();
     const isMember = req.user.role === 'member';
 
-    // When a member calls this endpoint, restrict to their own record only
     const whereClause = isMember
       ? { id: req.user.member_id, isActive: true }
       : { isActive: true };
@@ -27,6 +23,16 @@ const getAllStatutory = async (req, res) => {
       where: whereClause,
       attributes: ['id', 'firstName', 'lastName', 'phone'],
       order: [['firstName', 'ASC']],
+    });
+
+    // Build agmFee deposit map from the agm_fees table (used as fallback default)
+    const agmRows = await AgmFee.findAll({
+      where: { year },
+      attributes: ['memberId', 'amount'],
+    });
+    const agmDepositMap = {};
+    agmRows.forEach(r => {
+      agmDepositMap[r.memberId] = (agmDepositMap[r.memberId] || 0) + Number(r.amount || 0);
     });
 
     const result = await Promise.all(members.map(async (m) => {
@@ -44,6 +50,13 @@ const getAllStatutory = async (req, res) => {
         getAdminName(statutory?.editedBy),
       ]);
 
+      // ✅ If a statutory record exists and agmFee was explicitly saved on it, use that.
+      //    Otherwise fall back to the sum from agm_fees deposits.
+      const agmFeeDeposit  = agmDepositMap[m.id] || 0;
+      const agmFeeSaved    = statutory ? Number(statutory.agmFee) : null;
+      // null means "never set by admin" → show deposit value; 0 means admin explicitly set it to 0
+      const agmFee = (agmFeeSaved !== null) ? agmFeeSaved : agmFeeDeposit;
+
       return {
         id: m.id,
         firstName: m.firstName,
@@ -53,6 +66,8 @@ const getAllStatutory = async (req, res) => {
         totalSeedCapital,
         savingsFine,
         chamaaFine,
+        agmFee,
+        agmFeeDeposit,          // ← sent to frontend so it can show "Deposit: KES X" hint
         cautionaryFee:      statutory ? Number(statutory.cautionaryFee)      : 0,
         statutoryFee:       statutory ? Number(statutory.statutoryFee)       : 0,
         guarantorDeduction: statutory ? Number(statutory.guarantorDeduction) : 0,
@@ -75,7 +90,8 @@ const getAllStatutory = async (req, res) => {
 // PUT /statutory/:memberId
 const upsertStatutory = async (req, res) => {
   const { memberId } = req.params;
-  const { cautionaryFee, statutoryFee, guarantorDeduction, other, notes, year } = req.body;
+  // ✅ agmFee is now accepted from the request body
+  const { cautionaryFee, statutoryFee, guarantorDeduction, other, agmFee, notes, year } = req.body;
   const adminId = req.user?.id;
 
   try {
@@ -88,6 +104,7 @@ const upsertStatutory = async (req, res) => {
         statutoryFee:       statutoryFee       ?? 0,
         guarantorDeduction: guarantorDeduction ?? 0,
         other:              other              ?? 0,
+        agmFee:             agmFee             ?? null, // null = not yet overridden by admin
         notes:              notes              ?? '',
         editedBy:           adminId            ?? null,
       },
@@ -98,6 +115,7 @@ const upsertStatutory = async (req, res) => {
       if (statutoryFee       !== undefined) record.statutoryFee       = statutoryFee;
       if (guarantorDeduction !== undefined) record.guarantorDeduction = guarantorDeduction;
       if (other              !== undefined) record.other              = other;
+      if (agmFee             !== undefined) record.agmFee             = agmFee; // ✅ persist it
       if (notes              !== undefined) record.notes              = notes;
       record.editedBy = adminId ?? null;
       await record.save();
