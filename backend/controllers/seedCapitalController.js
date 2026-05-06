@@ -1,6 +1,22 @@
 const { SeedCapital, Member } = require('../models');
 
-// ─── GET /seed-capital/stats ────────────────────────────────────
+// ── Helper: resolve admin display name from req.user ─────────────────────────
+// authenticateToken decodes the JWT and sets req.user = { userId, role, ... }
+// The JWT is signed with { userId, role } — so we need to look up the user's
+// name from the Member/User record, or fall back to whatever is on req.user.
+const getAdminName = (reqUser) => {
+  if (!reqUser) return 'Admin';
+  return (
+    reqUser.name      ||
+    reqUser.fullName  ||
+    reqUser.firstName ||
+    reqUser.username  ||
+    reqUser.email     ||
+    `Admin #${reqUser.userId || reqUser.id}`
+  );
+};
+
+// ─── GET /seed-capital/stats ─────────────────────────────────────────────────
 const getSeedCapitalStats = async (req, res) => {
   try {
     const total       = await SeedCapital.sum('amount');
@@ -18,9 +34,9 @@ const getSeedCapitalStats = async (req, res) => {
   }
 };
 
-// ─── GET /seed-capital ──────────────────────────────────────────
-// Returns all members with their aggregated seed capital + each
-// member's individual contribution rows (for the edit modal)
+// ─── GET /seed-capital ────────────────────────────────────────────────────────
+// Returns all members with aggregated totals + each member's individual
+// contribution rows (including editedBy / editedAt for the audit trail)
 const getAllSeedCapital = async (req, res) => {
   try {
     const members = await Member.findAll({
@@ -48,12 +64,13 @@ const getAllSeedCapital = async (req, res) => {
         totalSeedCapital,
         contributionCount: contributions.length,
         lastContribution,
-        // Include individual rows so the frontend can list and edit them
-        contributions:     contributions.map(c => ({
+        contributions: contributions.map(c => ({
           id:          c.id,
           amount:      Number(c.amount),
           paymentDate: c.paymentDate,
-          notes:       c.notes || '',
+          notes:       c.notes   || '',
+          editedBy:    c.editedBy || '',
+          editedAt:    c.editedAt || null,
           depositId:   c.depositId || null,
           createdAt:   c.createdAt,
         })),
@@ -70,8 +87,7 @@ const getAllSeedCapital = async (req, res) => {
   }
 };
 
-// ─── POST /seed-capital ─────────────────────────────────────────
-// Create a new seed capital contribution for a member
+// ─── POST /seed-capital ───────────────────────────────────────────────────────
 const createSeedCapital = async (req, res) => {
   const { memberId, amount, paymentDate, notes, depositId } = req.body;
 
@@ -86,22 +102,28 @@ const createSeedCapital = async (req, res) => {
     const member = await Member.findByPk(memberId);
     if (!member) return res.status(404).json({ message: 'Member not found' });
 
+    const adminName = getAdminName(req.user);
+
     const contribution = await SeedCapital.create({
       memberId:    Number(memberId),
       amount:      Number(amount),
       paymentDate,
-      notes:       notes || null,
+      notes:       notes    || null,
       depositId:   depositId || null,
+      editedBy:    adminName,
+      editedAt:    new Date(),
     });
 
     return res.status(201).json({
-      message:      'Seed capital contribution recorded successfully',
+      message: 'Seed capital contribution recorded successfully',
       contribution: {
         id:          contribution.id,
         memberId:    contribution.memberId,
         amount:      Number(contribution.amount),
         paymentDate: contribution.paymentDate,
         notes:       contribution.notes,
+        editedBy:    contribution.editedBy,
+        editedAt:    contribution.editedAt,
       },
     });
   } catch (error) {
@@ -110,8 +132,7 @@ const createSeedCapital = async (req, res) => {
   }
 };
 
-// ─── PUT /seed-capital/:id ──────────────────────────────────────
-// Update a single seed capital contribution row by its own ID
+// ─── PUT /seed-capital/:id ────────────────────────────────────────────────────
 const updateSeedCapital = async (req, res) => {
   const { id } = req.params;
   const { amount, paymentDate, notes } = req.body;
@@ -129,10 +150,14 @@ const updateSeedCapital = async (req, res) => {
       return res.status(404).json({ message: 'Seed capital contribution not found' });
     }
 
+    const adminName = getAdminName(req.user);
+
     await contribution.update({
       amount:      Number(amount),
       paymentDate,
       notes:       notes ?? contribution.notes,
+      editedBy:    adminName,
+      editedAt:    new Date(),
     });
 
     return res.json({
@@ -143,6 +168,8 @@ const updateSeedCapital = async (req, res) => {
         amount:      Number(contribution.amount),
         paymentDate: contribution.paymentDate,
         notes:       contribution.notes,
+        editedBy:    contribution.editedBy,
+        editedAt:    contribution.editedAt,
       },
     });
   } catch (error) {
@@ -151,8 +178,7 @@ const updateSeedCapital = async (req, res) => {
   }
 };
 
-// ─── DELETE /seed-capital/:id ───────────────────────────────────
-// Delete a single seed capital contribution row by its own ID
+// ─── DELETE /seed-capital/:id ─────────────────────────────────────────────────
 const deleteSeedCapital = async (req, res) => {
   const { id } = req.params;
   try {
@@ -160,7 +186,6 @@ const deleteSeedCapital = async (req, res) => {
     if (!contribution) {
       return res.status(404).json({ message: 'Seed capital contribution not found' });
     }
-
     await contribution.destroy();
     return res.json({ message: 'Seed capital contribution deleted successfully' });
   } catch (error) {
