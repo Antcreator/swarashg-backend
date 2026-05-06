@@ -5,7 +5,7 @@ import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import {
   ClipboardList, Calendar, Users, Receipt, CreditCard,
-  PenLine, Trash2, CheckCircle, XCircle, Save,
+  PenLine, Trash2, CheckCircle, XCircle, Save, ScrollText,
 } from 'lucide-react';
 
 const fmt = (amount) =>
@@ -86,6 +86,26 @@ const AgmFeePage = () => {
   const filtered = members.filter(m =>
     `${m.firstName} ${m.lastName}`.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Source badge config
+  const sourceBadge = (source) => {
+    if (source === 'deposit') {
+      return {
+        bg: '#e3f2fd', color: '#1565c0',
+        icon: <CreditCard size={11} />, label: 'Deposit',
+      };
+    }
+    if (source === 'statutory_override') {
+      return {
+        bg: '#fff8e1', color: '#e65100',
+        icon: <ScrollText size={11} />, label: 'Statutory Adj.',
+      };
+    }
+    return {
+      bg: '#f3e5f5', color: '#6a1b9a',
+      icon: <PenLine size={11} />, label: 'Manual',
+    };
+  };
 
   const s = {
     page:        { minHeight: '100vh', background: '#f8f9fa' },
@@ -220,31 +240,47 @@ const AgmFeePage = () => {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {m.contributions.map((c, ci) => (
-                                      <tr key={c.id} style={{ background: ci % 2 === 0 ? 'white' : '#fce4ec' }}>
-                                        <td style={{ padding: '8px 10px' }}>{new Date(c.createdAt).toLocaleDateString()}</td>
-                                        <td style={{ padding: '8px 10px', fontWeight: '700', color: '#7b1fa2' }}>{fmt(c.amount)}</td>
-                                        <td style={{ padding: '8px 10px' }}>{c.year}</td>
-                                        <td style={{ padding: '8px 10px' }}>
-                                          <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: c.source === 'deposit' ? '#e3f2fd' : '#f3e5f5', color: c.source === 'deposit' ? '#1565c0' : '#6a1b9a', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                            {c.source === 'deposit'
-                                              ? <><CreditCard size={11} /> Deposit</>
-                                              : <><PenLine    size={11} /> Manual</>}
-                                          </span>
-                                        </td>
-                                        <td style={{ padding: '8px 10px', color: '#555' }}>{c.recordedBy || '—'}</td>
-                                        <td style={{ padding: '8px 10px', color: '#666' }}>{c.notes || '—'}</td>
-                                        {!isStaff && (
+                                    {m.contributions.map((c, ci) => {
+                                      const badge = sourceBadge(c.source);
+                                      // statutory_override rows can only be removed by editing the Statutory page
+                                      const isDeletable = !isStaff && c.source === 'manual';
+                                      const isSystemRow = c.source === 'statutory_override';
+
+                                      return (
+                                        <tr key={c.id} style={{ background: ci % 2 === 0 ? 'white' : '#fce4ec', opacity: isSystemRow ? 0.85 : 1 }}>
+                                          <td style={{ padding: '8px 10px' }}>{new Date(c.createdAt).toLocaleDateString()}</td>
+                                          <td style={{ padding: '8px 10px', fontWeight: '700', color: '#7b1fa2' }}>{fmt(c.amount)}</td>
+                                          <td style={{ padding: '8px 10px' }}>{c.year}</td>
                                           <td style={{ padding: '8px 10px' }}>
-                                            {c.source === 'manual' && (
-                                              <button style={{ ...s.btnDelete, opacity: deleting === c.id ? 0.6 : 1 }} onClick={() => handleDelete(c.id)} disabled={deleting === c.id}>
-                                                {deleting === c.id ? '...' : <><Trash2 size={11} /> Delete</>}
-                                              </button>
+                                            <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', background: badge.bg, color: badge.color, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                              {badge.icon} {badge.label}
+                                            </span>
+                                          </td>
+                                          <td style={{ padding: '8px 10px', color: '#555' }}>{c.recordedBy || '—'}</td>
+                                          <td style={{ padding: '8px 10px', color: '#666' }}>
+                                            {c.notes || '—'}
+                                            {isSystemRow && (
+                                              <span style={{ marginLeft: 6, fontSize: '10px', color: '#e65100', fontStyle: 'italic' }}>
+                                                (edit via Statutory page)
+                                              </span>
                                             )}
                                           </td>
-                                        )}
-                                      </tr>
-                                    ))}
+                                          {!isStaff && (
+                                            <td style={{ padding: '8px 10px' }}>
+                                              {isDeletable && (
+                                                <button
+                                                  style={{ ...s.btnDelete, opacity: deleting === c.id ? 0.6 : 1 }}
+                                                  onClick={() => handleDelete(c.id)}
+                                                  disabled={deleting === c.id}
+                                                >
+                                                  {deleting === c.id ? '...' : <><Trash2 size={11} /> Delete</>}
+                                                </button>
+                                              )}
+                                            </td>
+                                          )}
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </div>
