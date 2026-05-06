@@ -22,11 +22,14 @@ const MONTH_FULL = [
 ];
 
 // Fiscal year order: Dec (prev year) → Jan … Nov (selected year)
-// Returns array of { month: 1-12, year } objects, length 12
 const getFiscalMonths = (year) => [
   { month: 12, year: year - 1 },
   ...Array.from({ length: 11 }, (_, i) => ({ month: i + 1, year })),
 ];
+
+// ── Shared alpha sort helper ─────────────────────────────────────────────────
+const sortAlpha = (arr, getNameFn) =>
+  [...arr].sort((a, b) => getNameFn(a).localeCompare(getNameFn(b)));
 
 
 const Reports = () => {
@@ -83,17 +86,27 @@ const Reports = () => {
 
   const fetchMonthlySavingsReport = async (filters) => {
     const res = await savingsAPI.getMonthlyReport(filters.month, filters.year);
-    return res.data;
+    const data = res.data;
+    // Sort details alphabetically by member first name + last name
+    if (data.details) {
+      data.details = sortAlpha(data.details, r => `${r.firstName} ${r.lastName}`);
+    }
+    return data;
   };
 
   const fetchLoansSummaryReport = async () => {
     const [loansRes, statsRes] = await Promise.all([loansAPI.getAll(), loansAPI.getStatistics()]);
-    return { loans: loansRes.data.loans, statistics: statsRes.data.statistics };
+    const loans = sortAlpha(
+      loansRes.data.loans,
+      l => l.member ? `${l.member.firstName} ${l.member.lastName}` : `#${l.memberId}`
+    );
+    return { loans, statistics: statsRes.data.statistics };
   };
 
   const fetchMembersSummaryReport = async () => {
     const res = await membersAPI.getAll();
-    return { members: res.data.members };
+    const members = sortAlpha(res.data.members, m => `${m.firstName} ${m.lastName}`);
+    return { members };
   };
 
   const fetchChamaaMonthlyReport = async (filters) => {
@@ -112,10 +125,12 @@ const Reports = () => {
             const fine          = monthContribs.reduce((sum, c) => sum + Number(c.fineAmount || 0), 0);
             return { id: p.id, name, position: p.position, hasReceived: p.hasReceived, receivedDate: p.receivedDate, paidContributions: p.paidContributions, totalParticipants: cycle.totalParticipants, paid, amount, fine, paymentDate: monthContribs[0]?.paymentDate || null };
           });
-          const totalCollected   = members.reduce((sum, m) => sum + m.amount, 0);
-          const paidCount        = members.filter((m) => m.paid).length;
-          const expectedPerMonth = Number(cycle.contributionAmount) * members.length;
-          return { cycleId: cycle.id, cycleName: cycle.name, contribution: cycle.contributionAmount, isActive: cycle.isActive, totalParticipants: cycle.totalParticipants, completedRounds: cycle.completedRounds, members, totalCollected, paidCount, expectedPerMonth };
+          // Sort members alphabetically (overrides position sort at render time)
+          const sortedMembers    = sortAlpha(members, m => m.name);
+          const totalCollected   = sortedMembers.reduce((sum, m) => sum + m.amount, 0);
+          const paidCount        = sortedMembers.filter((m) => m.paid).length;
+          const expectedPerMonth = Number(cycle.contributionAmount) * sortedMembers.length;
+          return { cycleId: cycle.id, cycleName: cycle.name, contribution: cycle.contributionAmount, isActive: cycle.isActive, totalParticipants: cycle.totalParticipants, completedRounds: cycle.completedRounds, members: sortedMembers, totalCollected, paidCount, expectedPerMonth };
         } catch { return null; }
       })
     );
@@ -140,7 +155,8 @@ const Reports = () => {
       ...years.map(y => savingsAPI.getAll({ year: y })),
     ]);
 
-    const members  = membersRes.data.members;
+    // Sort members alphabetically before building rows
+    const members  = sortAlpha(membersRes.data.members, m => `${m.firstName} ${m.lastName}`);
     const allSavings = savingsResults.flatMap((res, i) =>
       (res.data.savings || []).filter(s => Number(s.year) === years[i])
     );
@@ -178,7 +194,7 @@ const Reports = () => {
         try {
           const res          = await chamaaAPI.getCycleById(cycle.id);
           const participants = res.data.participants || [];
-          const rows = participants.map(p => {
+          const unsortedRows = participants.map(p => {
             const name     = p.member ? `${p.member.firstName} ${p.member.lastName}` : `Member #${p.memberId}`;
             const contribs = p.contributions || [];
             const months   = {};
@@ -190,6 +206,8 @@ const Reports = () => {
             const yearTotal = Object.values(months).reduce((a, b) => a + b, 0);
             return { name, months, yearTotal, position: p.position };
           });
+          // Sort alphabetically
+          const rows = sortAlpha(unsortedRows, r => r.name);
           const colTotals = {};
           fiscalMonths.forEach(fm => {
             const key       = `${fm.year}-${fm.month}`;
@@ -214,7 +232,8 @@ const Reports = () => {
       loansAPI.getAll(),
     ]);
 
-    const members    = membersRes.data.members   || [];
+    // Sort members alphabetically from the start
+    const members    = sortAlpha(membersRes.data.members || [], m => `${m.firstName} ${m.lastName}`);
     const regFees    = regFeeRes.data.members    || [];
     const seedCaps   = seedCapRes.data.members   || [];
     const allSavings = savingsRes.data.savings   || [];
@@ -314,6 +333,7 @@ const Reports = () => {
       })
     );
 
+    // members is already sorted alphabetically above
     const rows = members.map(m => {
       const mid = Number(m.id);
       return {
@@ -440,9 +460,9 @@ const Reports = () => {
     } else if (activeReport === 'chamaa-monthly' && reportData.cycles) {
       reportData.cycles.forEach(cycle => {
         csv += `\nCycle: ${cycle.cycleName} (${cycle.isActive ? 'Active' : 'Ended'})\n`;
-        csv += `Position,Member,Status,Amount Paid,Fine,Payment Date\n`;
-        cycle.members.forEach(m => { csv += `${m.position},"${m.name}",${m.paid ? 'Paid' : 'Unpaid'},${m.amount},${m.fine},${m.paymentDate ? new Date(m.paymentDate).toLocaleDateString() : ''}\n`; });
-        csv += `,,Total Collected,${cycle.totalCollected}\n,,Paid,${cycle.paidCount}/${cycle.members.length}\n\n`;
+        csv += `Member,Status,Amount Paid,Fine,Payment Date\n`;
+        cycle.members.forEach(m => { csv += `"${m.name}",${m.paid ? 'Paid' : 'Unpaid'},${m.amount},${m.fine},${m.paymentDate ? new Date(m.paymentDate).toLocaleDateString() : ''}\n`; });
+        csv += `,Total Collected,${cycle.totalCollected}\n,Paid,${cycle.paidCount}/${cycle.members.length}\n\n`;
       });
 
     } else if (activeReport === 'savings-monthly' && reportData.details) {
@@ -454,7 +474,6 @@ const Reports = () => {
       reportData.loans.forEach(l => { csv += `"${l.member ? `${l.member.firstName} ${l.member.lastName}` : `#${l.memberId}`}",${l.amount},${l.interestRate}%,${l.durationMonths},${l.disbursementDate},${l.dueDate},${l.amountPaid},${l.remainingBalance},${l.status}\n`; });
 
     } else if (activeReport === 'members-summary' && reportData.members) {
-      // ← Updated: replaced nationalId with memberId
       csv += 'Member ID,Name,Phone,Total Savings,Active Guarantees,Date Joined\n';
       reportData.members.forEach(m => { csv += `"${m.memberId}","${m.firstName} ${m.lastName}",${m.phone},${m.total_savings || 0},${m.active_guarantees || 0},${m.dateJoined}\n`; });
 
@@ -473,7 +492,6 @@ const Reports = () => {
 
   // ── Sub-components ────────────────────────────────────────────
 
-  // fiscalMonths: array of { month, year } — Dec(prev yr) first
   const YearlyTable = ({ rows, colTotals, grandTotal, year, fiscalMonths }) => (
     <div className="yearly-table-wrapper">
       <table className="yearly-table">
@@ -580,9 +598,10 @@ const Reports = () => {
                 <tr><th>#</th><th>Member</th><th>Status</th><th>Amount Paid</th><th>Fine</th><th>Payment Date</th><th>Contributions</th><th>Pot Received</th></tr>
               </thead>
               <tbody>
-                {cycle.members.slice().sort((a, b) => a.position - b.position).map((member, idx) => (
+                {/* Members already sorted alphabetically from fetcher; render in that order */}
+                {cycle.members.map((member, idx) => (
                   <tr key={member.id} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td className="chamaa-td chamaa-td--pos">{member.position}</td>
+                    <td className="chamaa-td chamaa-td--pos">{idx + 1}</td>
                     <td className="chamaa-td"><div className="member-cell"><div className="member-avatar member-avatar--sm" style={{ background: `hsl(${(idx * 53) % 360}, 55%, 88%)`, color: `hsl(${(idx * 53) % 360}, 55%, 30%)` }}>{member.name.charAt(0).toUpperCase()}</div><span className="member-name">{member.name}</span></div></td>
                     <td className="chamaa-td chamaa-td--center">
                       {member.paid
@@ -642,22 +661,11 @@ const Reports = () => {
 
     return (
       <div>
-        <div style={{
-          overflowX: 'auto',
-          borderRadius: '12px',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-        }}>
+        <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
           <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: '12px' }}>
             <thead>
               <tr style={{ background: '#0f172a' }}>
-                <th style={{
-                  padding: '14px 16px',
-                  color: '#f8fafc', fontWeight: 700, fontSize: '11px',
-                  textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left',
-                  position: 'sticky', left: 0, background: '#0f172a', zIndex: 4,
-                  borderRight: '2px solid #1e293b', whiteSpace: 'nowrap', minWidth: '230px',
-                }}>
+                <th style={{ padding: '14px 16px', color: '#f8fafc', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'left', position: 'sticky', left: 0, background: '#0f172a', zIndex: 4, borderRight: '2px solid #1e293b', whiteSpace: 'nowrap', minWidth: '230px' }}>
                   Member
                 </th>
                 {columns.map(col => (
@@ -686,31 +694,15 @@ const Reports = () => {
                 const rowTotal = calcRowTotal(row);
                 return (
                   <tr key={row.id} style={{ background: rowBg, borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{
-                      padding: '10px 14px', position: 'sticky', left: 0,
-                      background: rowBg, zIndex: 1, borderRight: '2px solid #e2e8f0', whiteSpace: 'nowrap',
-                    }}>
+                    <td style={{ padding: '10px 14px', position: 'sticky', left: 0, background: rowBg, zIndex: 1, borderRight: '2px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{
-                          width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
-                          background: `hsl(${(idx * 47) % 360}, 55%, 88%)`,
-                          color: `hsl(${(idx * 47) % 360}, 55%, 30%)`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '12px', fontWeight: 800,
-                        }}>
+                        <div style={{ width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0, background: `hsl(${(idx * 47) % 360}, 55%, 88%)`, color: `hsl(${(idx * 47) % 360}, 55%, 30%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800 }}>
                           {row.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>{row.name}</div>
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
-                            {/* Member ID badge */}
-                            <span style={{
-                              fontFamily: 'monospace', fontWeight: 700,
-                              background: '#f0f4ff', color: '#1a3a8f',
-                              padding: '1px 6px', borderRadius: '5px',
-                              fontSize: '11px', letterSpacing: '0.04em',
-                              border: '1px solid #c7d4f7',
-                            }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, background: '#f0f4ff', color: '#1a3a8f', padding: '1px 6px', borderRadius: '5px', fontSize: '11px', letterSpacing: '0.04em', border: '1px solid #c7d4f7' }}>
                               {row.memberId}
                             </span>
                             {row.phone && <span style={{ fontSize: '11px', color: '#94a3b8' }}>{row.phone}</span>}
@@ -724,13 +716,7 @@ const Reports = () => {
                       return (
                         <td key={col.key} style={{ padding: '10px 10px', textAlign: 'right', borderRight: '1px solid #e2e8f0' }}>
                           {raw > 0 ? (
-                            <span style={{
-                              display: 'inline-block', padding: '3px 9px', borderRadius: '6px',
-                              background: isNeg ? '#fef2f2' : col.bg,
-                              color: isNeg ? '#dc2626' : col.accent,
-                              fontWeight: 700, fontSize: '12px', whiteSpace: 'nowrap',
-                              border: `1px solid ${isNeg ? '#fecaca' : col.accent + '30'}`,
-                            }}>
+                            <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '6px', background: isNeg ? '#fef2f2' : col.bg, color: isNeg ? '#dc2626' : col.accent, fontWeight: 700, fontSize: '12px', whiteSpace: 'nowrap', border: `1px solid ${isNeg ? '#fecaca' : col.accent + '30'}` }}>
                               {isNeg ? `−${formatCurrency(raw)}` : formatCurrency(raw)}
                             </span>
                           ) : (
@@ -739,12 +725,7 @@ const Reports = () => {
                         </td>
                       );
                     })}
-                    <td style={{
-                      padding: '10px 12px', textAlign: 'right',
-                      borderLeft: '2px solid #e2e8f0', fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
-                      color: rowTotal > 0 ? '#15803d' : rowTotal < 0 ? '#dc2626' : '#d1d5db',
-                      background: rowTotal > 0 ? (isEven ? '#f0fdf4' : '#dcfce7') : rowTotal < 0 ? '#fef2f2' : rowBg,
-                    }}>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', borderLeft: '2px solid #e2e8f0', fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap', color: rowTotal > 0 ? '#15803d' : rowTotal < 0 ? '#dc2626' : '#d1d5db', background: rowTotal > 0 ? (isEven ? '#f0fdf4' : '#dcfce7') : rowTotal < 0 ? '#fef2f2' : rowBg }}>
                       {rowTotal !== 0 ? (rowTotal < 0 ? `−${formatCurrency(-rowTotal)}` : formatCurrency(rowTotal)) : '—'}
                     </td>
                   </tr>
@@ -753,12 +734,7 @@ const Reports = () => {
             </tbody>
             <tfoot>
               <tr style={{ background: '#0f172a' }}>
-                <td style={{
-                  padding: '13px 14px', color: '#f8fafc', fontWeight: 700, fontSize: '11px',
-                  letterSpacing: '0.06em', textTransform: 'uppercase',
-                  position: 'sticky', left: 0, background: '#0f172a', zIndex: 2,
-                  borderRight: '2px solid #1e293b', whiteSpace: 'nowrap',
-                }}>
+                <td style={{ padding: '13px 14px', color: '#f8fafc', fontWeight: 700, fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', left: 0, background: '#0f172a', zIndex: 2, borderRight: '2px solid #1e293b', whiteSpace: 'nowrap' }}>
                   TOTALS ({rows.length} members)
                 </td>
                 {columns.map(col => {
@@ -767,12 +743,7 @@ const Reports = () => {
                   return (
                     <td key={col.key} style={{ padding: '12px 10px', textAlign: 'right', borderRight: '1px solid #1e293b' }}>
                       {raw > 0 ? (
-                        <span style={{
-                          display: 'inline-block', padding: '3px 9px', borderRadius: '6px',
-                          background: isNeg ? '#fef2f2' : col.bg,
-                          color: isNeg ? '#f87171' : col.accent,
-                          fontWeight: 800, fontSize: '12px', whiteSpace: 'nowrap',
-                        }}>
+                        <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '6px', background: isNeg ? '#fef2f2' : col.bg, color: isNeg ? '#f87171' : col.accent, fontWeight: 800, fontSize: '12px', whiteSpace: 'nowrap' }}>
                           {isNeg ? `−${formatCurrency(raw)}` : formatCurrency(raw)}
                         </span>
                       ) : (
@@ -781,12 +752,7 @@ const Reports = () => {
                     </td>
                   );
                 })}
-                <td style={{
-                  padding: '12px 12px', textAlign: 'right',
-                  borderLeft: '2px solid #334155',
-                  color: grandTotal >= 0 ? '#fbbf24' : '#f87171',
-                  fontWeight: 800, fontSize: '14px', whiteSpace: 'nowrap',
-                }}>
+                <td style={{ padding: '12px 12px', textAlign: 'right', borderLeft: '2px solid #334155', color: grandTotal >= 0 ? '#fbbf24' : '#f87171', fontWeight: 800, fontSize: '14px', whiteSpace: 'nowrap' }}>
                   {grandTotal < 0 ? `−${formatCurrency(-grandTotal)}` : formatCurrency(grandTotal)}
                 </td>
               </tr>
@@ -1048,19 +1014,12 @@ const Reports = () => {
                   {activeReport === 'members-summary' && reportData.members && (
                     <div className="table-scroll-wrapper">
                       <table className="report-table">
-                        {/* ← Updated: replaced National ID column with Member ID */}
                         <thead><tr><th>Member ID</th><th>Name</th><th>Phone</th><th>Total Savings</th><th>Guarantees</th><th>Date Joined</th></tr></thead>
                         <tbody>
                           {reportData.members.map(m => (
                             <tr key={m.id}>
                               <td>
-                                <span style={{
-                                  fontFamily: 'monospace', fontWeight: 700,
-                                  background: '#f0f4ff', color: '#1a3a8f',
-                                  padding: '2px 8px', borderRadius: '6px',
-                                  fontSize: '12px', letterSpacing: '0.04em',
-                                  border: '1px solid #c7d4f7',
-                                }}>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 700, background: '#f0f4ff', color: '#1a3a8f', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', letterSpacing: '0.04em', border: '1px solid #c7d4f7' }}>
                                   {m.memberId}
                                 </span>
                               </td>
