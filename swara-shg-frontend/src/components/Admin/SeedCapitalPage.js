@@ -4,7 +4,7 @@ import Navbar from '../Navbar/navbar';
 import { seedCapitalAPI } from '../../Service/Api';
 import '../MembersManagementAdmin/Members.css';
 import {
-  Sprout, Pencil, Trash2, X, Save, AlertTriangle, ChevronDown, ChevronUp, User,
+  Sprout, Pencil, Trash2, X, Save, AlertTriangle, ChevronDown, ChevronUp, User, Plus,
 } from 'lucide-react';
 
 const SeedCapitalPage = () => {
@@ -15,11 +15,19 @@ const SeedCapitalPage = () => {
 
   const [expandedMember, setExpandedMember] = useState(null);
 
+  // ── Edit existing contribution ────────────────────────────────────────────
   const [editingContrib, setEditingContrib] = useState(null);
   const [editForm,       setEditForm]       = useState({ amount: '', paymentDate: '', notes: '' });
   const [editLoading,    setEditLoading]    = useState(false);
   const [editError,      setEditError]      = useState('');
 
+  // ── Add new contribution ──────────────────────────────────────────────────
+  const [addingMember,  setAddingMember]  = useState(null); // { id, firstName, lastName }
+  const [addForm,       setAddForm]       = useState({ amount: '', paymentDate: '', notes: '' });
+  const [addLoading,    setAddLoading]    = useState(false);
+  const [addError,      setAddError]      = useState('');
+
+  // ── Delete ────────────────────────────────────────────────────────────────
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -50,6 +58,8 @@ const SeedCapitalPage = () => {
   const fmtDateShort = (d) =>
     d ? new Date(d).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: '2-digit' }) : null;
 
+  const todayStr = () => new Date().toISOString().split('T')[0];
+
   const filtered = data.filter(m =>
     `${m.firstName} ${m.lastName}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -58,9 +68,11 @@ const SeedCapitalPage = () => {
   const openEdit = (contrib) => {
     setEditingContrib(contrib);
     setEditForm({
-      amount:      contrib.amount      ?? '',
-      paymentDate: contrib.paymentDate ?? '',
-      notes:       contrib.notes       ?? '',
+      amount:      contrib.amount ?? '',
+      paymentDate: contrib.paymentDate
+        ? new Date(contrib.paymentDate).toISOString().split('T')[0]
+        : todayStr(),
+      notes: contrib.notes ?? '',
     });
     setEditError('');
   };
@@ -95,6 +107,47 @@ const SeedCapitalPage = () => {
       setEditError(err.response?.data?.message || 'Failed to update contribution.');
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  // ── Add helpers ───────────────────────────────────────────────────────────
+  const openAdd = (member) => {
+    setAddingMember(member);
+    setAddForm({ amount: '', paymentDate: todayStr(), notes: '' });
+    setAddError('');
+  };
+
+  const closeAdd = () => {
+    setAddingMember(null);
+    setAddForm({ amount: '', paymentDate: '', notes: '' });
+    setAddError('');
+  };
+
+  const handleAddSave = async (e) => {
+    e.preventDefault();
+    if (!addForm.amount || Number(addForm.amount) <= 0) {
+      setAddError('Please enter a valid positive amount.');
+      return;
+    }
+    if (!addForm.paymentDate) {
+      setAddError('Payment date is required.');
+      return;
+    }
+    setAddLoading(true);
+    setAddError('');
+    try {
+      await seedCapitalAPI.create({
+        memberId:    addingMember.id,
+        amount:      Number(addForm.amount),
+        paymentDate: addForm.paymentDate,
+        notes:       addForm.notes,
+      });
+      closeAdd();
+      fetchData();
+    } catch (err) {
+      setAddError(err.response?.data?.message || 'Failed to add contribution.');
+    } finally {
+      setAddLoading(false);
     }
   };
 
@@ -141,6 +194,56 @@ const SeedCapitalPage = () => {
     ...extra,
   });
 
+  // ── Reusable form fields ──────────────────────────────────────────────────
+  const ContribFormFields = ({ form, setForm, error }) => (
+    <>
+      <div className="form-group">
+        <label>Amount (KES) *</label>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={form.amount}
+          onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+          required
+          autoFocus
+          style={{ fontSize: '16px' }}
+          placeholder="e.g. 5000"
+        />
+      </div>
+      <div className="form-group">
+        <label>Payment Date *</label>
+        <input
+          type="date"
+          value={form.paymentDate}
+          onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))}
+          required
+          style={{ fontSize: '16px' }}
+        />
+      </div>
+      <div className="form-group">
+        <label>Notes</label>
+        <textarea
+          value={form.notes}
+          onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+          rows="3"
+          placeholder="Optional notes"
+          style={{ fontSize: '16px' }}
+        />
+      </div>
+      {error && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          background: '#ffebee', border: '1px solid #e53935',
+          borderRadius: '6px', padding: '10px 12px',
+          color: '#c62828', fontSize: '13px', marginBottom: '12px',
+        }}>
+          <AlertTriangle size={14} /> {error}
+        </div>
+      )}
+    </>
+  );
+
   // ── Edited-by badge ───────────────────────────────────────────────────────
   const EditedByBadge = ({ editedBy, editedAt }) => {
     if (!editedBy) return <span style={{ color: '#ccc', fontSize: '12px' }}>—</span>;
@@ -163,11 +266,8 @@ const SeedCapitalPage = () => {
   // ── Mobile contribution card ──────────────────────────────────────────────
   const ContribCard = ({ c }) => (
     <div style={{
-      background: 'white',
-      border: '1px solid #e8f5e9',
-      borderRadius: '8px',
-      padding: '12px',
-      marginBottom: '8px',
+      background: 'white', border: '1px solid #e8f5e9',
+      borderRadius: '8px', padding: '12px', marginBottom: '8px',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
         <span style={{ fontSize: '13px', fontWeight: 600, color: '#2e7d32' }}>{fmt(c.amount)}</span>
@@ -179,12 +279,8 @@ const SeedCapitalPage = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
         <EditedByBadge editedBy={c.editedBy} editedAt={c.editedAt} />
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button style={iconBtn('#1976d2')} onClick={() => openEdit(c)} title="Edit">
-            <Pencil size={12} /> Edit
-          </button>
-          <button style={iconBtn('#c62828')} onClick={() => setDeleteConfirm(c.id)} title="Delete">
-            <Trash2 size={12} /> Delete
-          </button>
+          <button style={iconBtn('#1976d2')} onClick={() => openEdit(c)}><Pencil size={12} /> Edit</button>
+          <button style={iconBtn('#c62828')} onClick={() => setDeleteConfirm(c.id)}><Trash2 size={12} /> Delete</button>
         </div>
       </div>
     </div>
@@ -193,16 +289,13 @@ const SeedCapitalPage = () => {
   // ── Mobile member card ────────────────────────────────────────────────────
   const MemberCard = ({ m, index }) => {
     const isExpanded = expandedMember === m.id;
+    const hasContribs = m.contributions && m.contributions.length > 0;
     return (
       <div style={{
-        border: '1px solid #e0e0e0',
-        borderRadius: '10px',
-        marginBottom: '10px',
-        overflow: 'hidden',
-        background: 'white',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        border: '1px solid #e0e0e0', borderRadius: '10px',
+        marginBottom: '10px', overflow: 'hidden',
+        background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
       }}>
-        {/* Card header */}
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -235,26 +328,29 @@ const SeedCapitalPage = () => {
             )}
           </div>
 
-          <button
-            onClick={() => setExpandedMember(isExpanded ? null : m.id)}
-            style={{ ...iconBtn(isExpanded ? '#455a64' : '#1976d2'), width: '100%', justifyContent: 'center' }}
-          >
-            {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            {isExpanded ? 'Collapse' : 'View Contributions'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => openAdd(m)}
+              style={{ ...iconBtn('#2e7d32'), flex: 1, justifyContent: 'center' }}
+            >
+              <Plus size={13} /> Add Contribution
+            </button>
+            {hasContribs && (
+              <button
+                onClick={() => setExpandedMember(isExpanded ? null : m.id)}
+                style={{ ...iconBtn(isExpanded ? '#455a64' : '#1976d2'), flex: 1, justifyContent: 'center' }}
+              >
+                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                {isExpanded ? 'Collapse' : 'View'}
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Expanded contributions */}
-        {isExpanded && (
+        {isExpanded && hasContribs && (
           <div style={{ background: '#f9fbe7', borderTop: '2px solid #aed581', padding: '12px 16px' }}>
-            <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>
-              Contributions
-            </p>
-            {(!m.contributions || m.contributions.length === 0) ? (
-              <p style={{ color: '#999', fontSize: '13px', margin: 0 }}>No contributions recorded yet.</p>
-            ) : (
-              m.contributions.map((c) => <ContribCard key={c.id} c={c} />)
-            )}
+            <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>Contributions</p>
+            {m.contributions.map((c) => <ContribCard key={c.id} c={c} />)}
           </div>
         )}
       </div>
@@ -277,7 +373,6 @@ const SeedCapitalPage = () => {
           }
           .seed-mobile-list { display: none; }
 
-          /* Modal responsive */
           @media (max-width: 480px) {
             .seed-modal-content {
               max-width: 100% !important;
@@ -338,13 +433,13 @@ const SeedCapitalPage = () => {
             <div className="seed-desktop-table table-container">
               <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '5%'  }} />
-                  <col style={{ width: '23%' }} />
-                  <col style={{ width: '14%' }} />
-                  <col style={{ width: '17%' }} />
-                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '4%'  }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '13%' }} />
                   <col style={{ width: '15%' }} />
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '25%' }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -354,7 +449,7 @@ const SeedCapitalPage = () => {
                     <th style={{ textAlign: 'right' }}>Total Seed Capital</th>
                     <th style={{ textAlign: 'center' }}>Contributions</th>
                     <th style={{ textAlign: 'center' }}>Last Contribution</th>
-                    <th style={{ textAlign: 'center' }}>Details</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -364,6 +459,7 @@ const SeedCapitalPage = () => {
                     </tr>
                   ) : filtered.map((m, i) => {
                     const isExpanded = expandedMember === m.id;
+                    const hasContribs = m.contributions && m.contributions.length > 0;
                     return (
                       <React.Fragment key={m.id}>
                         <tr>
@@ -378,78 +474,97 @@ const SeedCapitalPage = () => {
                           <td style={{ textAlign: 'center' }}>{m.contributionCount || 0}</td>
                           <td style={{ textAlign: 'center' }}>{fmtDate(m.lastContribution)}</td>
                           <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => setExpandedMember(isExpanded ? null : m.id)}
-                              style={iconBtn(isExpanded ? '#455a64' : '#1976d2')}
-                              title={isExpanded ? 'Collapse' : 'View & edit contributions'}
-                            >
-                              {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                              {isExpanded ? 'Collapse' : 'View'}
-                            </button>
+                            <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                              {/* Always-visible Add button */}
+                              <button
+                                onClick={() => openAdd(m)}
+                                style={iconBtn('#2e7d32')}
+                                title="Add contribution"
+                              >
+                                <Plus size={12} /> Add
+                              </button>
+                              {/* View only shown when contributions exist */}
+                              {hasContribs && (
+                                <button
+                                  onClick={() => setExpandedMember(isExpanded ? null : m.id)}
+                                  style={iconBtn(isExpanded ? '#455a64' : '#1976d2')}
+                                  title={isExpanded ? 'Collapse' : 'View & edit contributions'}
+                                >
+                                  {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                  {isExpanded ? 'Collapse' : 'View'}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
 
-                        {isExpanded && (
+                        {/* Expanded contributions sub-table */}
+                        {isExpanded && hasContribs && (
                           <tr>
                             <td colSpan="7" style={{ padding: 0, background: '#f9fbe7', borderBottom: '2px solid #aed581' }}>
                               <div style={{ padding: '14px 28px 18px' }}>
-                                <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>
-                                  Contributions — {m.firstName} {m.lastName}
-                                </p>
-                                {(!m.contributions || m.contributions.length === 0) ? (
-                                  <p style={{ color: '#999', fontSize: '13px' }}>No contributions recorded yet.</p>
-                                ) : (
-                                  <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: '580px' }}>
-                                      <colgroup>
-                                        <col style={{ width: '14%' }} />
-                                        <col style={{ width: '14%' }} />
-                                        <col style={{ width: '22%' }} />
-                                        <col style={{ width: '24%' }} />
-                                        <col style={{ width: '26%' }} />
-                                      </colgroup>
-                                      <thead>
-                                        <tr>
-                                          <th style={subTh('left')}>Payment Date</th>
-                                          <th style={subTh('right')}>Amount</th>
-                                          <th style={subTh('left')}>Notes</th>
-                                          <th style={subTh('center')}>
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                              <User size={11} /> Edited By
-                                            </span>
-                                          </th>
-                                          <th style={subTh('center')}>Actions</th>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#558b2f' }}>
+                                    Contributions — {m.firstName} {m.lastName}
+                                  </p>
+                                  <button
+                                    onClick={() => openAdd(m)}
+                                    style={{ ...iconBtn('#2e7d32'), fontSize: '11px', padding: '4px 10px', minHeight: 'unset' }}
+                                  >
+                                    <Plus size={11} /> Add Another
+                                  </button>
+                                </div>
+
+                                <div style={{ overflowX: 'auto' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: '580px' }}>
+                                    <colgroup>
+                                      <col style={{ width: '14%' }} />
+                                      <col style={{ width: '14%' }} />
+                                      <col style={{ width: '22%' }} />
+                                      <col style={{ width: '24%' }} />
+                                      <col style={{ width: '26%' }} />
+                                    </colgroup>
+                                    <thead>
+                                      <tr>
+                                        <th style={subTh('left')}>Payment Date</th>
+                                        <th style={subTh('right')}>Amount</th>
+                                        <th style={subTh('left')}>Notes</th>
+                                        <th style={subTh('center')}>
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                            <User size={11} /> Edited By
+                                          </span>
+                                        </th>
+                                        <th style={subTh('center')}>Actions</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {m.contributions.map((c) => (
+                                        <tr key={c.id} style={{ background: 'white' }}>
+                                          <td style={subTd('left')}>{fmtDate(c.paymentDate)}</td>
+                                          <td style={subTd('right', { fontWeight: 600, color: '#2e7d32' })}>
+                                            {fmt(c.amount)}
+                                          </td>
+                                          <td style={subTd('left', { color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
+                                            {c.notes || '—'}
+                                          </td>
+                                          <td style={subTd('center')}>
+                                            <EditedByBadge editedBy={c.editedBy} editedAt={c.editedAt} />
+                                          </td>
+                                          <td style={subTd('center')}>
+                                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                              <button style={iconBtn('#1976d2')} onClick={() => openEdit(c)}>
+                                                <Pencil size={12} /> Edit
+                                              </button>
+                                              <button style={iconBtn('#c62828')} onClick={() => setDeleteConfirm(c.id)}>
+                                                <Trash2 size={12} /> Delete
+                                              </button>
+                                            </div>
+                                          </td>
                                         </tr>
-                                      </thead>
-                                      <tbody>
-                                        {m.contributions.map((c) => (
-                                          <tr key={c.id} style={{ background: 'white' }}>
-                                            <td style={subTd('left')}>{fmtDate(c.paymentDate)}</td>
-                                            <td style={subTd('right', { fontWeight: 600, color: '#2e7d32' })}>
-                                              {fmt(c.amount)}
-                                            </td>
-                                            <td style={subTd('left', { color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
-                                              {c.notes || '—'}
-                                            </td>
-                                            <td style={subTd('center')}>
-                                              <EditedByBadge editedBy={c.editedBy} editedAt={c.editedAt} />
-                                            </td>
-                                            <td style={subTd('center')}>
-                                              <div style={{ display: 'inline-flex', gap: '6px' }}>
-                                                <button style={iconBtn('#1976d2')} onClick={() => openEdit(c)}>
-                                                  <Pencil size={12} /> Edit
-                                                </button>
-                                                <button style={iconBtn('#c62828')} onClick={() => setDeleteConfirm(c.id)}>
-                                                  <Trash2 size={12} /> Delete
-                                                </button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -482,8 +597,6 @@ const SeedCapitalPage = () => {
               ) : (
                 <>
                   {filtered.map((m, i) => <MemberCard key={m.id} m={m} index={i} />)}
-
-                  {/* Mobile totals footer */}
                   <div style={{
                     background: '#f5f5f5', border: '1px solid #e0e0e0',
                     borderRadius: '10px', padding: '14px 16px',
@@ -503,6 +616,48 @@ const SeedCapitalPage = () => {
           </>
         )}
 
+        {/* ── Add Contribution Modal ──────────────────────────────────────── */}
+        {addingMember && (
+          <div className="modal-overlay" onClick={closeAdd}>
+            <div
+              className="modal-content seed-modal-content"
+              onClick={e => e.stopPropagation()}
+              style={{ maxWidth: '440px', width: '100%', boxSizing: 'border-box' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '6px' }}>
+                <Sprout size={20} color="#2e7d32" />
+                <h2 style={{ margin: 0, fontSize: '18px' }}>Add Contribution</h2>
+              </div>
+              <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#666' }}>
+                Member: <strong>{addingMember.firstName} {addingMember.lastName}</strong>
+              </p>
+
+              <form onSubmit={handleAddSave}>
+                <ContribFormFields form={addForm} setForm={setAddForm} error={addError} />
+                <div className="modal-actions seed-modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeAdd}
+                    disabled={addLoading}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <X size={14} /> Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={addLoading}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: addLoading ? 0.65 : 1 }}
+                  >
+                    <Plus size={14} /> {addLoading ? 'Saving…' : 'Add Contribution'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* ── Edit Contribution Modal ─────────────────────────────────────── */}
         {editingContrib && (
           <div className="modal-overlay" onClick={closeEdit}>
@@ -517,53 +672,7 @@ const SeedCapitalPage = () => {
               </div>
 
               <form onSubmit={handleEditSave}>
-                <div className="form-group">
-                  <label>Amount (KES) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={editForm.amount}
-                    onChange={e => { setEditForm(f => ({ ...f, amount: e.target.value })); setEditError(''); }}
-                    required
-                    autoFocus
-                    style={{ fontSize: '16px' /* prevents iOS zoom */ }}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Payment Date *</label>
-                  <input
-                    type="date"
-                    value={editForm.paymentDate}
-                    onChange={e => { setEditForm(f => ({ ...f, paymentDate: e.target.value })); setEditError(''); }}
-                    required
-                    style={{ fontSize: '16px' }}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Notes</label>
-                  <textarea
-                    value={editForm.notes}
-                    onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                    rows="3"
-                    placeholder="Optional notes"
-                    style={{ fontSize: '16px' }}
-                  />
-                </div>
-
-                {editError && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    background: '#ffebee', border: '1px solid #e53935',
-                    borderRadius: '6px', padding: '10px 12px',
-                    color: '#c62828', fontSize: '13px', marginBottom: '12px',
-                  }}>
-                    <AlertTriangle size={14} /> {editError}
-                  </div>
-                )}
-
+                <ContribFormFields form={editForm} setForm={setEditForm} error={editError} />
                 <div className="modal-actions seed-modal-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                   <button
                     type="button"
