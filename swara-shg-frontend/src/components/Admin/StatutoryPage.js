@@ -152,7 +152,7 @@ const StatutoryPage = () => {
       <h1>Statutory Fees - ${year}</h1>
       <p>Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} &nbsp;·&nbsp; ${filtered.length} members</p>
       <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
-      <script>window.onload = () => { window.print(); }<\/script>
+      <script>window.onload = () => { window.print(); }<script>
     </body></html>`);
     win.document.close();
   };
