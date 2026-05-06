@@ -55,7 +55,7 @@ const Login = () => {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <img src="/swara-shg-frontend/public/logo.png" alt="Swara SHG Logo" className="login-logo" />
+          <img src="logo.png" alt="Swara SHG Logo" className="login-logo" />
           <h1>Swara SHG</h1>
           <p>Self Help Group Management System</p>
         </div>
