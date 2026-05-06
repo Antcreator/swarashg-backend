@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { statutoryAPI, agmFeeAPI } from '../../Service/Api';
+import { statutoryAPI } from '../../Service/Api'; // ✅ agmFeeAPI no longer needed separately
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import {
@@ -24,17 +24,15 @@ const StatutoryPage = () => {
     setLoading(true);
     setError('');
     try {
-      const [statRes, agmRes] = await Promise.all([
-        statutoryAPI.getAll(year),
-        agmFeeAPI.getAll(year),
-      ]);
-      const agmMap = {};
-      (agmRes.data.members || []).forEach(m => { agmMap[m.id] = Number(m.totalThisYear || 0); });
+      // ✅ agmFee is now returned directly from the statutory endpoint
+      //    (with agmFeeDeposit as the fallback hint). No second API call needed.
+      const statRes = await statutoryAPI.getAll(year);
       const merged = (statRes.data.members || []).map(m => ({
         ...m,
-        agmFee:             agmMap[m.id] || 0,
-        guarantorDeduction: m.guarantorDeduction ? Number(m.guarantorDeduction) : 0,
-        other:              m.other ? Number(m.other) : 0,
+        agmFee:             Number(m.agmFee             || 0),
+        agmFeeDeposit:      Number(m.agmFeeDeposit      || 0),
+        guarantorDeduction: Number(m.guarantorDeduction || 0),
+        other:              Number(m.other              || 0),
       }));
       setRows(merged);
     } catch (err) {
@@ -54,7 +52,7 @@ const StatutoryPage = () => {
         statutoryFee:       row.statutoryFee,
         guarantorDeduction: row.guarantorDeduction,
         other:              row.other,
-        agmFee:             row.agmFee,
+        agmFee:             row.agmFee,       // ✅ pre-fill with current saved/fallback value
         notes:              row.notes || '',
       },
     }));
@@ -71,6 +69,7 @@ const StatutoryPage = () => {
   const saveRow = async (memberId) => {
     setSaving(prev => ({ ...prev, [memberId]: true }));
     try {
+      // ✅ agmFee is now included in the payload so the backend persists it
       await statutoryAPI.save(memberId, { ...editing[memberId], year });
       cancelEdit(memberId);
       await fetchData();
@@ -239,7 +238,7 @@ const StatutoryPage = () => {
                       <td style={{ padding: '10px', color: row.savingsFine > 0 ? '#c62828' : '#666' }}>{fmt(row.savingsFine)}</td>
                       <td style={{ padding: '10px', color: row.chamaaFine  > 0 ? '#c62828' : '#666' }}>{fmt(row.chamaaFine)}</td>
 
-                      {/* AGM Fee — now editable, shows deposit value as default */}
+                      {/* AGM Fee — editable; shows deposit hint when in edit mode */}
                       <td style={{ padding: '10px' }}>
                         {!isStaff && isEditing ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -250,9 +249,10 @@ const StatutoryPage = () => {
                               style={inputStyle}
                               onChange={e => handleEditChange(row.id, 'agmFee', e.target.value)}
                             />
-                            {row.agmFee > 0 && (
+                            {/* ✅ Hint now uses agmFeeDeposit (raw deposit total) not agmFee */}
+                            {row.agmFeeDeposit > 0 && (
                               <span style={{ fontSize: '10px', color: '#7b1fa2' }}>
-                                Deposit: {fmt(row.agmFee)}
+                                Deposit: {fmt(row.agmFeeDeposit)}
                               </span>
                             )}
                           </div>
@@ -328,7 +328,7 @@ const StatutoryPage = () => {
                         }
                       </td>
 
-                      {/* Actions — hidden for staff */}
+                      {/* Actions */}
                       <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
                         {isStaff ? (
                           <span style={{ color: '#bbb', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
