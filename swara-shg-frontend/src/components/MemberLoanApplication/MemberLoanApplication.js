@@ -185,7 +185,7 @@ const MemberLoanApplication = () => {
   //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
   //   oneShare       = 99,000 / 3 = 33,000
   //   reduced        = 109,008 - 33,000 = 76,008
-  //   liabilityEach  = 76,008 / 5 = 15,201.60
+  //   liabilityEach  = 76,008 / 5 = 15,201.60  → ceiled to 15,202
   const fetchEligibleGuarantors = async (loanAmount) => {
     setLoadingEligibility(true);
     try {
@@ -286,9 +286,10 @@ const MemberLoanApplication = () => {
     return true;
   });
 
+  // fmt: rounds UP to the nearest whole number (ceiling), then formats as KES integer
   const fmt = (amount) => new Intl.NumberFormat('en-KE', {
-    style: 'currency', currency: 'KES', minimumFractionDigits: 0,
-  }).format(amount || 0);
+    style: 'currency', currency: 'KES', minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(Math.ceil(amount || 0));
 
   const handleSubmitNew = async (e) => {
     e.preventDefault();
@@ -379,11 +380,11 @@ const MemberLoanApplication = () => {
     const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
 
     // oneShare = principal / ONE_SHARE_DIVISOR (always 3)
-    // liabilityEach = (totalRepayment - oneShare) / n
+    // liabilityEach = (totalRepayment - oneShare) / n  → ceiled
     const principalAmt = effectiveAmount();
     const oneShareAmt  = principalAmt / ONE_SHARE_DIVISOR;  // always ÷ 3
 
-    // Formula display: e.g. "(109,008 − 33,000) ÷ 5 = 15,201"
+    // Formula display: e.g. "(109,008 − 33,000) ÷ 5 = 15,202"
     const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
       ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
       : null;
@@ -642,21 +643,21 @@ const MemberLoanApplication = () => {
   // ── Loan Summary Box ─────────────────────────────────────────
   // Liability formula:
   //   oneShare    = principal / ONE_SHARE_DIVISOR   (always ÷ 3)
-  //   liabilityEach = (totalRepayment - oneShare) / n
+  //   liabilityEach = (totalRepayment - oneShare) / n  → ceiled to whole number
   //
   // Example: principal=99,000 | n=5 | rate=10% | fee=108
   //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
   //   oneShare       = 99,000 / 3 = 33,000
   //   reduced        = 109,008 - 33,000 = 76,008
-  //   liabilityEach  = 76,008 / 5 = 15,201.60
+  //   liabilityEach  = 76,008 / 5 = 15,201.60  → ceiled to 15,202
   function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
     if (!amt || !formData.durationMonths) return null;
-    const fullRepayment = amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE;
+    const fullRepayment = Math.ceil(amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE);
 
     const n             = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
-    const oneShare      = amt / ONE_SHARE_DIVISOR;         // always principal ÷ 3
-    const reduced       = fullRepayment - oneShare;        // totalRepayment - oneShare
-    const liabilityEach = reduced / n;                     // reduced ÷ n
+    const oneShare      = Math.ceil(amt / ONE_SHARE_DIVISOR);   // always principal ÷ 3, ceiled
+    const reduced       = fullRepayment - oneShare;              // totalRepayment - oneShare
+    const liabilityEach = Math.ceil(reduced / n);               // ceiled to whole number
 
     return (
       <div className="loan-summary-box">
@@ -1083,7 +1084,7 @@ const MemberLoanApplication = () => {
                           <div className="tbd-row"><span>New Loan Amount (Principal):</span><strong>{fmt(formData.topUpAmount)}</strong></div>
                           <div className="tbd-row orange"><span>+ Interest ({loanInfo.interestRate}%):</span><strong>+ {fmt(Number(formData.topUpAmount) * loanInfo.interestRate / 100)}</strong></div>
                           <div className="tbd-row amber"><span>+ Transaction Fee:</span><strong>+ {fmt(TRANSACTION_FEE)}</strong></div>
-                          <div className="tbd-row blue total-row"><span>= New Loan Balance (Total Repayment):</span><strong>{fmt(Number(formData.topUpAmount) + (Number(formData.topUpAmount) * loanInfo.interestRate / 100) + TRANSACTION_FEE)}</strong></div>
+                          <div className="tbd-row blue total-row"><span>= New Loan Balance (Total Repayment):</span><strong>{fmt(Math.ceil(Number(formData.topUpAmount) + (Number(formData.topUpAmount) * loanInfo.interestRate / 100) + TRANSACTION_FEE))}</strong></div>
                           <div className="tbd-row muted"><span>Old Balance Cleared (on approval):</span><strong style={{ color: '#c62828' }}>− {fmt(eligibility.activeLoan.remainingBalance)}</strong></div>
                           <div className="tbd-row green cash-row"><span><DollarSign size={12} /> Cash You Receive:</span><strong>{fmt(Math.max(0, Number(formData.topUpAmount) - Number(eligibility.activeLoan.remainingBalance)))}</strong></div>
                         </div>
