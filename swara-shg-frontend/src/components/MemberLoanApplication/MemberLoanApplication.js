@@ -37,6 +37,13 @@ const MemberLoanApplication = () => {
   const [eligibleCount, setEligibleCount]           = useState(0);
   const [loadingEligibility, setLoadingEligibility] = useState(false);
 
+  // Stores the full guarantors API response so we can read
+  // liabilityPerGuarantor and requiredGuarantors from the server.
+  const [guarantorsMeta, setGuarantorsMeta] = useState({
+    liabilityPerGuarantor: 0,
+    requiredGuarantors: 0,
+  });
+
   const [formData, setFormData] = useState({
     memberId, amount: '', durationMonths: '', guarantorIds: [], topUpAmount: '',
   });
@@ -134,10 +141,13 @@ const MemberLoanApplication = () => {
     if (amt >= 1000) {
       fetchDurationOptionsForAmount(amt);
       fetchEligibleGuarantors(amt);
-      setLoanInfo(prev => ({ ...prev, requiredGuarantors: amt < 80000 ? 3 : 5 }));
+      // Set required guarantors locally too so UI responds immediately
+      const req = amt < 80000 ? 3 : 5;
+      setLoanInfo(prev => ({ ...prev, requiredGuarantors: req }));
     } else {
       setAvailableDurations([]);
       setAllGuarantors([]);
+      setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
       setLoanInfo(prev => ({ ...prev, requiredGuarantors: 0 }));
       setFormData(prev => ({ ...prev, durationMonths: '', guarantorIds: [] }));
     }
@@ -162,13 +172,33 @@ const MemberLoanApplication = () => {
     } catch { setAvailableDurations([]); }
   };
 
+  // FIX: store the full API response including liabilityPerGuarantor and
+  // requiredGuarantors returned by the (now-corrected) backend so the UI
+  // reflects the real server-side calculation, not a hardcoded /2 split.
   const fetchEligibleGuarantors = async (loanAmount) => {
     setLoadingEligibility(true);
     try {
       const res = await guarantorsAPI.getEligible({ loanAmount, excludeMemberId: memberId });
-      setAllGuarantors(res.data.guarantors || []);
-      setEligibleCount(res.data.eligibleCount || 0);
-    } catch { setAllGuarantors([]); setEligibleCount(0); }
+      const data = res.data;
+      setAllGuarantors(data.guarantors || []);
+      setEligibleCount(data.eligibleCount || 0);
+
+      // Keep server-side meta so the picker shows accurate liability figures
+      setGuarantorsMeta({
+        liabilityPerGuarantor: data.liabilityPerGuarantor || 0,
+        requiredGuarantors:    data.requiredGuarantors    || (loanAmount < 80000 ? 3 : 5),
+      });
+
+      // Also update loanInfo so the submit guard uses the correct count
+      setLoanInfo(prev => ({
+        ...prev,
+        requiredGuarantors: data.requiredGuarantors || (loanAmount < 80000 ? 3 : 5),
+      }));
+    } catch {
+      setAllGuarantors([]);
+      setEligibleCount(0);
+      setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
+    }
     finally { setLoadingEligibility(false); }
   };
 
@@ -208,6 +238,7 @@ const MemberLoanApplication = () => {
     setAvailableDurations([]);
     setAllGuarantors([]);
     setGuarantorFilter('all');
+    setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
   };
 
   const closeModal = () => { setModalMode(null); resetForm(); };
@@ -244,6 +275,10 @@ const MemberLoanApplication = () => {
     if (guarantorFilter === 'ineligible') return !g.isEligible;
     return true;
   });
+
+  const fmt = (amount) => new Intl.NumberFormat('en-KE', {
+    style: 'currency', currency: 'KES', minimumFractionDigits: 0,
+  }).format(amount || 0);
 
   const handleSubmitNew = async (e) => {
     e.preventDefault();
@@ -294,10 +329,6 @@ const MemberLoanApplication = () => {
     }
   };
 
-  const fmt = (amount) => new Intl.NumberFormat('en-KE', {
-    style: 'currency', currency: 'KES', minimumFractionDigits: 0,
-  }).format(amount || 0);
-
   const getStatusBadge = (loan) => {
     if (loan.approvalStatus === 'pending')
       return (
@@ -328,10 +359,16 @@ const MemberLoanApplication = () => {
 
   // ── Guarantor Picker ─────────────────────────────────────────
   const GuarantorPicker = () => {
-    const selectedCount    = formData.guarantorIds.length;
-    const requiredCount    = loanInfo.requiredGuarantors;
-    const progressPercent  = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
-    const progressColor    = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
+    const selectedCount   = formData.guarantorIds.length;
+    const requiredCount   = loanInfo.requiredGuarantors;
+    const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
+    const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
+
+    // Show the server-returned liability per guarantor so the user
+    // understands exactly how much savings each guarantor needs to cover.
+    const liabilityLabel = guarantorsMeta.liabilityPerGuarantor > 0
+      ? `Each guarantor covers ${fmt(guarantorsMeta.liabilityPerGuarantor)}`
+      : null;
 
     return (
       <div className="form-group guarantor-picker-wrapper">
@@ -354,6 +391,19 @@ const MemberLoanApplication = () => {
           )}
         </div>
 
+        {/* Liability info banner — new, shows server value */}
+        {liabilityLabel && (
+          <div className="guarantor-liability-info">
+            <Users size={12} />
+            <span>{liabilityLabel} of loan liability</span>
+            {guarantorsMeta.requiredGuarantors > 0 && (
+              <span className="guarantor-liability-split">
+                ({guarantorsMeta.requiredGuarantors} guarantors × {fmt(guarantorsMeta.liabilityPerGuarantor)})
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Progress bar */}
         {requiredCount > 0 && (
           <div className="guarantor-progress-track">
@@ -364,13 +414,13 @@ const MemberLoanApplication = () => {
           </div>
         )}
 
-        {/* Filter tabs — full width on mobile */}
+        {/* Filter tabs */}
         {allGuarantors.length > 0 && (
           <div className="guarantor-filter-bar">
             {[
-              { key: 'all',        label: 'All',        count: allGuarantors.length,                        color: '#1976d2', Icon: Users       },
-              { key: 'eligible',   label: 'Eligible',   count: eligibleCount,                               color: '#4caf50', Icon: ShieldCheck },
-              { key: 'ineligible', label: 'Ineligible', count: allGuarantors.length - eligibleCount,        color: '#f44336', Icon: ShieldOff   },
+              { key: 'all',        label: 'All',        count: allGuarantors.length,                  color: '#1976d2', Icon: Users       },
+              { key: 'eligible',   label: 'Eligible',   count: eligibleCount,                          color: '#4caf50', Icon: ShieldCheck },
+              { key: 'ineligible', label: 'Ineligible', count: allGuarantors.length - eligibleCount,  color: '#f44336', Icon: ShieldOff   },
             ].map(({ key, label, count, color, Icon }) => (
               <button
                 key={key}
@@ -486,12 +536,29 @@ const MemberLoanApplication = () => {
                         {g.activeGuaranteeCount}/3 active guarantees
                       </span>
                     </div>
-                    {!g.isEligible && (
+
+                    {/* Show savings vs required liability from server */}
+                    {!g.isEligible && g.ineligibilityReason ? (
                       <div className="guarantor-ineligible-reason">
                         <AlertTriangle size={11} color="#991b1b" />
-                        {g.activeGuaranteeCount >= 3
-                          ? 'Max guarantees reached'
-                          : 'Insufficient savings'}
+                        {g.ineligibilityReason}
+                      </div>
+                    ) : !g.isEligible && (
+                      <div className="guarantor-ineligible-reason">
+                        <AlertTriangle size={11} color="#991b1b" />
+                        {g.activeGuaranteeCount >= 3 ? 'Max guarantees reached' : 'Insufficient savings'}
+                      </div>
+                    )}
+
+                    {/* Show available savings for eligible guarantors */}
+                    {g.isEligible && g.availableSavings !== undefined && (
+                      <div className="guarantor-savings-info">
+                        <span>Available: <strong>{fmt(g.availableSavings)}</strong></span>
+                        {guarantorsMeta.liabilityPerGuarantor > 0 && (
+                          <span style={{ color: '#555' }}>
+                            {' '}· Needs: {fmt(guarantorsMeta.liabilityPerGuarantor)}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -517,9 +584,9 @@ const MemberLoanApplication = () => {
           <div className="guarantor-selected-summary">
             <span className="guarantor-selected-label">Selected:</span>
             {formData.guarantorIds.map(id => {
-              const g = allGuarantors.find(g => g.id === id);
+              const g        = allGuarantors.find(g => g.id === id);
               const isOffice = officeGuarantor && id === officeGuarantor.id;
-              const name = isOffice
+              const name     = isOffice
                 ? officeGuarantor.name
                 : g ? `${g.firstName} ${g.lastName}` : `#${id}`;
               return (
@@ -586,7 +653,14 @@ const MemberLoanApplication = () => {
         )}
         <div className="loan-summary-guarantors">
           <Users size={13} color="#888" />
-          <span><strong>Guarantors Required:</strong> {loanInfo.requiredGuarantors}</span>
+          <span>
+            <strong>Guarantors Required:</strong> {loanInfo.requiredGuarantors}
+            {guarantorsMeta.liabilityPerGuarantor > 0 && (
+              <span style={{ color: '#888', marginLeft: 6 }}>
+                (each covers {fmt(guarantorsMeta.liabilityPerGuarantor)})
+              </span>
+            )}
+          </span>
         </div>
       </div>
     );
@@ -1006,106 +1080,76 @@ const MemberLoanApplication = () => {
 
       {/* ── Scoped styles ── */}
       <style>{`
-        /* ── Page layout ───────────────────────────────── */
         .mla-container { box-sizing: border-box; }
 
         .mla-page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-          gap: 12px;
-          flex-wrap: wrap;
+          display: flex; justify-content: space-between;
+          align-items: flex-start; margin-bottom: 20px;
+          gap: 12px; flex-wrap: wrap;
         }
         .mla-page-header h1 { margin: 0; font-size: 20px; }
         @media (min-width: 640px) { .mla-page-header h1 { font-size: 24px; } }
 
         .mla-header-actions {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 4px;
-          flex-shrink: 0;
+          display: flex; flex-direction: column;
+          align-items: flex-end; gap: 4px; flex-shrink: 0;
         }
         .mla-pending-hint {
-          font-size: 11px;
-          color: #e65100;
-          font-weight: 600;
-          display: flex;
-          align-items: center;
-          gap: 4px;
+          font-size: 11px; color: #e65100; font-weight: 600;
+          display: flex; align-items: center; gap: 4px;
         }
 
-        /* ── Status banner ─────────────────────────────── */
         .mla-status-banner {
-          padding: 14px 16px;
-          border-radius: 10px;
-          margin-bottom: 16px;
-          border: 2px solid;
+          padding: 14px 16px; border-radius: 10px;
+          margin-bottom: 16px; border: 2px solid;
         }
         .banner-warning { background: #fff8e1; border-color: #ffc107; }
         .banner-info    { background: #fff3e0; border-color: #ff9800; }
-
-        .banner-inner { display: flex; align-items: flex-start; gap: 12px; }
-        .banner-title { color: #e65100; font-size: 14px; display: block; margin-bottom: 4px; }
-        @media (min-width: 640px) { .banner-title { font-size: 15px; } }
-        .banner-msg   { margin: 0 0 4px; font-size: 13px; color: #5d4037; }
-        .banner-sub   { margin: 0 0 8px; font-size: 12px; color: #8d6e63; }
-        .banner-meta  {
+        .banner-inner   { display: flex; align-items: flex-start; gap: 12px; }
+        .banner-title   { color: #e65100; font-size: 14px; display: block; margin-bottom: 4px; }
+        .banner-msg     { margin: 0 0 4px; font-size: 13px; color: #5d4037; }
+        .banner-sub     { margin: 0 0 8px; font-size: 12px; color: #8d6e63; }
+        .banner-meta    {
           display: flex; flex-wrap: wrap; gap: 8px 16px;
           font-size: 12px; color: #5d4037;
           background: #ffecb3; padding: 8px 12px;
           border-radius: 6px; align-items: center;
         }
-        @media (min-width: 640px) { .banner-meta { font-size: 13px; } }
 
-        /* ── Eligibility card ──────────────────────────── */
         .mla-eligibility-card {
-          background: #e8f5e9;
-          padding: 16px;
-          border-radius: 10px;
-          margin-bottom: 20px;
+          background: #e8f5e9; padding: 16px;
+          border-radius: 10px; margin-bottom: 20px;
           border: 2px solid #4caf50;
         }
-        @media (min-width: 640px) { .mla-eligibility-card { padding: 20px; } }
-
         .mla-eligibility-header {
-          display: flex; justify-content: space-between; align-items: center;
-          margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+          display: flex; justify-content: space-between;
+          align-items: center; margin-bottom: 14px;
+          flex-wrap: wrap; gap: 8px;
         }
         .mla-eligibility-header h3 {
           margin: 0; color: #2e7d32; font-size: 15px;
           display: flex; align-items: center; gap: 8px;
         }
-        @media (min-width: 640px) { .mla-eligibility-header h3 { font-size: 17px; } }
-
         .mla-refresh-btn {
           background: none; border: 1px solid #4caf50; color: #2e7d32;
           border-radius: 6px; padding: 5px 12px; cursor: pointer;
           font-size: 12px; font-weight: 600;
           display: inline-flex; align-items: center; gap: 5px;
         }
-
         .mla-eligibility-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
         }
         @media (min-width: 768px) {
           .mla-eligibility-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
         }
-
-        .elig-item {}
         .elig-label {
           margin: 0 0 4px; font-size: 12px; color: #555;
           display: flex; align-items: center; gap: 4px;
         }
         .elig-value { margin: 0; font-size: 18px; font-weight: 700; }
-        @media (min-width: 640px) { .elig-value { font-size: 20px; } }
         .elig-value.green { color: #2e7d32; }
         .elig-value.blue  { color: #1976d2; }
 
-        /* ── Empty state ───────────────────────────────── */
         .mla-empty {
           text-align: center; padding: 40px 20px;
           color: #666; font-size: 14px;
@@ -1113,17 +1157,13 @@ const MemberLoanApplication = () => {
           border: 1px solid #eee;
         }
 
-        /* ── Desktop table / Mobile card toggle ─────────── */
         .mla-table-desktop { display: none; }
         @media (min-width: 900px) {
           .mla-table-desktop { display: block; }
-          .loan-cards-mobile  { display: none; }
+          .loan-cards-mobile { display: none; }
         }
 
-        /* ── Mobile loan cards ─────────────────────────── */
-        .loan-cards-mobile {
-          display: flex; flex-direction: column; gap: 12px;
-        }
+        .loan-cards-mobile { display: flex; flex-direction: column; gap: 12px; }
         .loan-card-mobile {
           background: white; border-radius: 10px;
           padding: 14px 16px;
@@ -1137,9 +1177,7 @@ const MemberLoanApplication = () => {
         }
         .loan-card-mobile-id { font-size: 15px; font-weight: 700; color: #1a1a2e; }
         .loan-card-mobile-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
         }
         @media (min-width: 480px) {
           .loan-card-mobile-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1149,14 +1187,14 @@ const MemberLoanApplication = () => {
         .lcm-value { font-size: 13px; font-weight: 600; color: #1a1a2e; }
 
         .mob-badge {
-          padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+          padding: 3px 8px; border-radius: 10px;
+          font-size: 11px; font-weight: 700;
           display: inline-flex; align-items: center; gap: 3px;
         }
         .mob-badge.orange { background: #ff9800; color: white; }
         .mob-badge.green  { background: #4caf50; color: white; }
         .mob-badge.red    { background: #f44336; color: white; }
 
-        /* ── Tags ──────────────────────────────────────── */
         .tag-topup {
           margin-left: 6px; padding: 2px 7px;
           background: #f3e5f5; color: #7b1fa2;
@@ -1164,464 +1202,287 @@ const MemberLoanApplication = () => {
           display: inline-flex; align-items: center; gap: 3px;
         }
         .tag-office {
-          padding: 2px 8px;
-          background: #ff9800; color: white;
+          padding: 2px 8px; background: #ff9800; color: white;
           border-radius: 10px; font-size: 10px; font-weight: 700;
           display: inline-flex; align-items: center; gap: 3px;
-          white-space: nowrap;
-          flex-shrink: 0;
+          white-space: nowrap; flex-shrink: 0;
         }
         .tag-elig {
           padding: 2px 7px; border-radius: 8px;
           font-size: 10px; font-weight: 700;
           display: inline-flex; align-items: center; gap: 3px;
-          white-space: nowrap;
-          flex-shrink: 0;
+          white-space: nowrap; flex-shrink: 0;
         }
         .tag-yes { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
         .tag-no  { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
 
-        /* ── Modal ─────────────────────────────────────── */
+        /* ── Modal ── */
         .mla-modal {
           display: flex; flex-direction: column;
           max-height: 95vh; padding: 0 !important;
           border-radius: 16px 16px 0 0 !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          position: fixed !important;
-          bottom: 0 !important;
-          left: 0 !important;
+          width: 100% !important; max-width: 100% !important;
+          margin: 0 !important; position: fixed !important;
+          bottom: 0 !important; left: 0 !important;
         }
         @media (min-width: 640px) {
           .mla-modal {
-            position: relative !important;
-            bottom: auto !important;
-            left: auto !important;
-            border-radius: 12px !important;
-            max-width: 720px !important;
-            width: 100% !important;
+            position: relative !important; bottom: auto !important;
+            left: auto !important; border-radius: 12px !important;
+            max-width: 720px !important; width: 100% !important;
             max-height: 90vh;
           }
         }
-        .modal-overlay {
-          align-items: flex-end !important;
-        }
-        @media (min-width: 640px) {
-          .modal-overlay { align-items: center !important; }
-        }
+        .modal-overlay { align-items: flex-end !important; }
+        @media (min-width: 640px) { .modal-overlay { align-items: center !important; } }
 
         .mla-modal-header {
           display: flex; justify-content: space-between; align-items: center;
-          padding: 18px 20px 14px;
-          border-bottom: 1px solid #f0f0f0;
-          flex-shrink: 0;
+          padding: 18px 20px 14px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
         }
         .mla-modal-header h2 { margin: 0; font-size: 17px; }
-        @media (min-width: 640px) { .mla-modal-header h2 { font-size: 20px; } }
-
         .mla-modal-close {
           background: #f0f0f0; border: none; border-radius: 50%;
           width: 30px; height: 30px; display: flex; align-items: center;
           justify-content: center; cursor: pointer; flex-shrink: 0;
-          color: #555; transition: background 0.15s;
+          color: #555;
         }
-        .mla-modal-close:hover { background: #e0e0e0; }
-
         .mla-modal-body {
-          overflow-y: auto; flex: 1;
-          padding: 16px 16px 24px;
+          overflow-y: auto; flex: 1; padding: 16px 16px 24px;
           -webkit-overflow-scrolling: touch;
         }
         @media (min-width: 640px) { .mla-modal-body { padding: 20px 28px 28px; } }
 
-        /* ══════════════════════════════════════════════════
-           GUARANTOR PICKER — fully mobile-responsive
-        ══════════════════════════════════════════════════ */
+        /* ══ GUARANTOR PICKER ══ */
+        .guarantor-picker-wrapper { margin-top: 4px; }
 
-        .guarantor-picker-wrapper {
-          margin-top: 4px;
-        }
-
-        /* Header row */
         .guarantor-picker-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin-bottom: 6px;
-          flex-wrap: wrap;
+          display: flex; align-items: center;
+          justify-content: space-between; gap: 8px;
+          margin-bottom: 6px; flex-wrap: wrap;
         }
         .guarantor-picker-label {
-          font-size: 13px;
-          font-weight: 700;
-          color: #1a1a2e;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
+          font-size: 13px; font-weight: 700; color: #1a1a2e;
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
         }
         .guarantor-count-badge {
-          display: inline-flex;
-          align-items: center;
-          padding: 2px 10px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 700;
-          background: #e3f2fd;
-          color: #1565c0;
+          display: inline-flex; align-items: center;
+          padding: 2px 10px; border-radius: 12px;
+          font-size: 12px; font-weight: 700;
+          background: #e3f2fd; color: #1565c0;
           border: 1.5px solid #90caf9;
-          transition: background 0.2s, color 0.2s;
         }
         .guarantor-count-badge.complete {
-          background: #e8f5e9;
-          color: #2e7d32;
-          border-color: #a5d6a7;
+          background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7;
         }
         .guarantor-picker-hint {
-          font-size: 11px;
-          color: #888;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          white-space: nowrap;
+          font-size: 11px; color: #888;
+          display: flex; align-items: center; gap: 4px; white-space: nowrap;
         }
 
-        /* Progress bar */
+        /* Liability info banner — NEW */
+        .guarantor-liability-info {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 12px; color: #1565c0;
+          background: #e3f2fd; padding: 7px 12px;
+          border-radius: 7px; margin-bottom: 8px;
+          border: 1px solid #90caf9; flex-wrap: wrap;
+        }
+        .guarantor-liability-split {
+          color: #888; font-size: 11px;
+        }
+
         .guarantor-progress-track {
-          width: 100%;
-          height: 4px;
-          background: #e0e0e0;
-          border-radius: 4px;
-          margin-bottom: 10px;
-          overflow: hidden;
+          width: 100%; height: 4px; background: #e0e0e0;
+          border-radius: 4px; margin-bottom: 10px; overflow: hidden;
         }
         .guarantor-progress-fill {
-          height: 100%;
-          border-radius: 4px;
+          height: 100%; border-radius: 4px;
           transition: width 0.3s ease, background 0.3s ease;
         }
 
-        /* Filter tabs */
         .guarantor-filter-bar {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 6px;
-          margin-bottom: 10px;
+          display: grid; grid-template-columns: 1fr 1fr 1fr;
+          gap: 6px; margin-bottom: 10px;
         }
-
         .guarantor-filter-btn {
-          padding: 8px 6px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          border-width: 2px;
-          border-style: solid;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          transition: all 0.15s;
-          white-space: nowrap;
-          width: 100%;
-          flex-direction: column;
-          min-height: 52px;
+          padding: 8px 6px; border-radius: 8px;
+          font-size: 12px; font-weight: 600; cursor: pointer;
+          border-width: 2px; border-style: solid;
+          display: flex; align-items: center;
+          justify-content: center; gap: 4px;
+          transition: all 0.15s; white-space: nowrap;
+          width: 100%; flex-direction: column; min-height: 52px;
         }
         @media (min-width: 400px) {
-          .guarantor-filter-btn {
-            flex-direction: row;
-            min-height: auto;
-            padding: 8px 10px;
-          }
+          .guarantor-filter-btn { flex-direction: row; min-height: auto; padding: 8px 10px; }
         }
-
-        .filter-label-text {
-          font-size: 11px;
-          line-height: 1;
-        }
-        @media (min-width: 400px) {
-          .filter-label-text { font-size: 12px; }
-        }
-
+        .filter-label-text { font-size: 11px; line-height: 1; }
+        @media (min-width: 400px) { .filter-label-text { font-size: 12px; } }
         .filter-count-pill {
-          border-radius: 10px;
-          padding: 1px 6px;
-          font-size: 10px;
-          font-weight: 700;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          line-height: 1.4;
+          border-radius: 10px; padding: 1px 6px;
+          font-size: 10px; font-weight: 700;
+          display: inline-flex; align-items: center;
+          justify-content: center; line-height: 1.4;
         }
 
-        /* Loading state */
         .guarantor-loading {
-          text-align: center; padding: 24px 16px;
-          color: #888; display: flex; align-items: center;
+          text-align: center; padding: 24px 16px; color: #888;
+          display: flex; align-items: center;
           justify-content: center; gap: 8px; font-size: 13px;
         }
 
-        /* Scrollable list */
         .guarantor-list-scroll {
-          max-height: 260px;
-          overflow-y: auto;
-          border: 1.5px solid #e0e0e0;
-          border-radius: 10px;
-          background: #fafafa;
-          -webkit-overflow-scrolling: touch;
+          max-height: 260px; overflow-y: auto;
+          border: 1.5px solid #e0e0e0; border-radius: 10px;
+          background: #fafafa; -webkit-overflow-scrolling: touch;
           overscroll-behavior: contain;
         }
-        @media (min-width: 640px) {
-          .guarantor-list-scroll { max-height: 320px; }
-        }
+        @media (min-width: 640px) { .guarantor-list-scroll { max-height: 320px; } }
 
-        /* Guarantor item — tap-friendly */
         .guarantor-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 12px 12px;
-          border-bottom: 1px solid #ececec;
-          cursor: pointer;
-          transition: background 0.12s;
-          position: relative;
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 12px; border-bottom: 1px solid #ececec;
+          cursor: pointer; transition: background 0.12s;
           -webkit-tap-highlight-color: transparent;
           user-select: none;
         }
         .guarantor-item:last-child { border-bottom: none; }
-        .guarantor-item:active { opacity: 0.85; }
+        .guarantor-item:active     { opacity: 0.85; }
 
-        .guarantor-item.eligible         { background: #f0fdf4; }
-        .guarantor-item.eligible:hover   { background: #dcfce7; }
-        .guarantor-item.ineligible       { background: #fef2f2; opacity: 0.78; cursor: default; }
-        .guarantor-item.selected.eligible { background: #dcfce7; }
+        .guarantor-item.eligible           { background: #f0fdf4; }
+        .guarantor-item.eligible:hover     { background: #dcfce7; }
+        .guarantor-item.ineligible         { background: #fef2f2; opacity: 0.78; cursor: default; }
+        .guarantor-item.selected.eligible  { background: #dcfce7; }
 
-        .guarantor-item.office-guarantor {
-          background: #fff9c4;
-          border-bottom: 1px solid #f0e57a;
-          cursor: pointer;
-        }
-        .guarantor-item.office-guarantor:hover { background: #fff3e0; }
+        .guarantor-item.office-guarantor          { background: #fff9c4; border-bottom: 1px solid #f0e57a; }
+        .guarantor-item.office-guarantor:hover    { background: #fff3e0; }
         .guarantor-item.office-guarantor.selected { background: #ffe0b2; }
 
-        /* Checkbox area — hidden visually but accessible */
-        .guarantor-checkbox-wrap {
-          display: flex;
-          align-items: center;
-          flex-shrink: 0;
-          padding-top: 1px;
-        }
+        .guarantor-checkbox-wrap { display: flex; align-items: center; flex-shrink: 0; padding-top: 1px; }
         .guarantor-checkbox-wrap input[type="checkbox"] {
-          width: 18px;
-          height: 18px;
-          cursor: pointer;
-          accent-color: #1976d2;
-          flex-shrink: 0;
+          width: 18px; height: 18px; cursor: pointer; accent-color: #1976d2; flex-shrink: 0;
         }
 
-        /* Avatar */
         .guarantor-avatar {
-          width: 34px;
-          height: 34px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: 700;
-          flex-shrink: 0;
-          text-transform: uppercase;
+          width: 34px; height: 34px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px; font-weight: 700; flex-shrink: 0; text-transform: uppercase;
         }
         .guarantor-avatar.elig  { background: #bbf7d0; color: #065f46; }
         .guarantor-avatar.inelig { background: #fecaca; color: #7f1d1d; }
 
-        /* Info column */
         .guarantor-item-info {
-          flex: 1;
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
+          flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;
         }
         .guarantor-item-top {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-wrap: wrap;
+          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
         }
         .guarantor-item-name {
-          font-weight: 700;
-          font-size: 13px;
-          color: #1a1a2e;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          font-weight: 700; font-size: 13px; color: #1a1a2e;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
           max-width: 140px;
         }
-        @media (min-width: 380px) {
-          .guarantor-item-name { max-width: 180px; }
-        }
-        @media (min-width: 480px) {
-          .guarantor-item-name { max-width: none; white-space: normal; }
-        }
+        @media (min-width: 380px) { .guarantor-item-name { max-width: 180px; } }
+        @media (min-width: 480px) { .guarantor-item-name { max-width: none; white-space: normal; } }
 
-        .guarantor-item-sub {
-          font-size: 11px;
-          color: #888;
-        }
+        .guarantor-item-sub { font-size: 11px; color: #888; }
 
-        /* Guarantee usage pips */
         .guarantor-item-meta {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-wrap: wrap;
+          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
         }
-        .guarantee-usage-bar {
-          display: flex;
-          gap: 3px;
-          align-items: center;
-        }
+        .guarantee-usage-bar { display: flex; gap: 3px; align-items: center; }
         .guarantee-usage-pip {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          background: #e0e0e0;
-          transition: background 0.2s;
+          width: 10px; height: 10px; border-radius: 50%;
+          background: #e0e0e0; transition: background 0.2s;
         }
         .guarantee-usage-pip.filled       { background: #4caf50; }
         .guarantee-usage-pip.filled.maxed { background: #f44336; }
 
-        /* Ineligible reason */
         .guarantor-ineligible-reason {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 11px;
-          font-weight: 600;
-          color: #991b1b;
-          background: #fee2e2;
-          padding: 4px 8px;
-          border-radius: 6px;
-          margin-top: 2px;
-          width: fit-content;
-          max-width: 100%;
+          display: flex; align-items: center; gap: 5px;
+          font-size: 11px; font-weight: 600; color: #991b1b;
+          background: #fee2e2; padding: 4px 8px; border-radius: 6px;
+          margin-top: 2px; width: fit-content; max-width: 100%;
         }
 
-        /* Guarantor warning (below picker) */
+        /* NEW: savings info for eligible guarantors */
+        .guarantor-savings-info {
+          font-size: 11px; color: #666; margin-top: 2px;
+        }
+
         .guarantor-warning {
           color: #c62828; font-size: 13px; background: #ffebee;
           padding: 10px 14px; border-radius: 6px;
           display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
         }
 
-        /* Selected chips row */
         .guarantor-selected-summary {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 6px;
-          margin-top: 8px;
-          padding: 8px 10px;
-          background: #f0fdf4;
-          border: 1.5px solid #a5d6a7;
-          border-radius: 8px;
+          display: flex; align-items: center; flex-wrap: wrap;
+          gap: 6px; margin-top: 8px; padding: 8px 10px;
+          background: #f0fdf4; border: 1.5px solid #a5d6a7; border-radius: 8px;
         }
-        .guarantor-selected-label {
-          font-size: 11px;
-          font-weight: 700;
-          color: #2e7d32;
-          white-space: nowrap;
-        }
+        .guarantor-selected-label { font-size: 11px; font-weight: 700; color: #2e7d32; white-space: nowrap; }
         .guarantor-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          background: #d1fae5;
-          color: #065f46;
-          border: 1px solid #6ee7b7;
-          border-radius: 12px;
-          padding: 3px 8px 3px 10px;
-          font-size: 12px;
-          font-weight: 600;
+          display: inline-flex; align-items: center; gap: 4px;
+          background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7;
+          border-radius: 12px; padding: 3px 8px 3px 10px;
+          font-size: 12px; font-weight: 600;
         }
         .guarantor-chip-remove {
-          background: none;
-          border: none;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2px;
-          border-radius: 50%;
-          color: #065f46;
-          transition: background 0.15s;
-          -webkit-tap-highlight-color: transparent;
+          background: none; border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          padding: 2px; border-radius: 50%; color: #065f46;
         }
-        .guarantor-chip-remove:hover { background: #a7f3d0; }
 
-        /* ── Loan summary box ──────────────────────────── */
+        /* ── Loan Summary ── */
         .loan-summary-box {
           background: #e3f2fd; padding: 14px;
           border-radius: 10px; margin-bottom: 18px;
           border: 2px solid #1976d2;
         }
-        @media (min-width: 640px) { .loan-summary-box { padding: 16px; } }
         .loan-summary-title {
           margin: 0 0 12px; color: #1565c0;
           font-size: 14px; display: flex; align-items: center; gap: 8px;
         }
-        @media (min-width: 640px) { .loan-summary-title { font-size: 16px; } }
-
         .loan-summary-grid {
           display: grid; grid-template-columns: 1fr 1fr;
           gap: 10px; font-size: 13px; margin-bottom: 12px;
         }
         .sum-label { margin: 0 0 2px; color: #666; font-size: 11px; }
         .sum-value { margin: 0; font-weight: 700; font-size: 13px; }
-        @media (min-width: 640px) { .sum-value { font-size: 14px; } }
 
         .loan-summary-amounts { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
         @media (min-width: 480px) { .loan-summary-amounts { flex-direction: row; } }
 
-        .amount-box {
-          flex: 1; border-radius: 8px; padding: 12px;
-          border: 2px solid;
-        }
+        .amount-box { flex: 1; border-radius: 8px; padding: 12px; border: 2px solid; }
         .amount-box.blue  { background: #e3f2fd; border-color: #1976d2; }
         .amount-box.green { background: #e8f5e9; border-color: #4caf50; }
         .amount-box-label {
           font-size: 11px; font-weight: 600; text-transform: uppercase;
-          letter-spacing: 0.05em;
-          display: flex; align-items: center; gap: 5px;
+          letter-spacing: 0.05em; display: flex; align-items: center; gap: 5px;
         }
         .amount-box.blue .amount-box-label  { color: #1565c0; }
         .amount-box.green .amount-box-label { color: #2e7d32; }
-        .amount-box-value {
-          font-size: 20px; font-weight: 800; margin-top: 2px;
-        }
-        @media (min-width: 640px) { .amount-box-value { font-size: 24px; } }
+        .amount-box-value { font-size: 20px; font-weight: 800; margin-top: 2px; }
         .amount-box.blue .amount-box-value  { color: #1565c0; }
         .amount-box.green .amount-box-value { color: #2e7d32; }
         .amount-box-sub { font-size: 11px; color: #777; margin-top: 2px; }
 
         .loan-summary-disburse {
-          margin-top: 12px; padding: 14px;
-          background: #e8f5e9; border-radius: 8px;
-          border: 2px solid #4caf50;
-          display: flex; justify-content: space-between; align-items: center;
-          flex-wrap: wrap; gap: 12px;
+          margin-top: 12px; padding: 14px; background: #e8f5e9;
+          border-radius: 8px; border: 2px solid #4caf50;
+          display: flex; justify-content: space-between;
+          align-items: center; flex-wrap: wrap; gap: 12px;
         }
         .amount-disburse-value { margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #2e7d32; }
         .amount-balance-value  { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: #1565c0; }
-
         .loan-summary-guarantors {
-          margin-top: 10px; display: flex; align-items: center;
-          gap: 6px; font-size: 12px; color: #888;
+          margin-top: 10px; display: flex; align-items: center; gap: 6px;
+          font-size: 12px; color: #888;
         }
 
-        /* ── Top-up modal ──────────────────────────────── */
+        /* ── Top-up ── */
         .topup-current-loan {
           background: #e3f2fd; padding: 14px; border-radius: 8px;
           margin-bottom: 18px; border: 2px solid #1976d2;
@@ -1635,22 +1496,13 @@ const MemberLoanApplication = () => {
           gap: 8px; font-size: 13px;
         }
         .tcg-label { color: #666; }
-
-        .topup-breakdown {
-          margin-top: 10px; border-radius: 8px;
-          border: 1px solid #e5e7eb; overflow: hidden;
-        }
+        .topup-breakdown { margin-top: 10px; border-radius: 8px; border: 1px solid #e5e7eb; overflow: hidden; }
         .tbd-header {
           background: #f9fafb; padding: 7px 14px;
-          font-size: 11px; font-weight: 700;
-          color: #374151; text-transform: uppercase;
+          font-size: 11px; font-weight: 700; color: #374151; text-transform: uppercase;
         }
         .tbd-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
-        @media (min-width: 640px) { .tbd-body { font-size: 13px; } }
-        .tbd-row {
-          display: flex; justify-content: space-between;
-          align-items: center; gap: 8px;
-        }
+        .tbd-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .tbd-row.orange { color: #e65100; }
         .tbd-row.amber  { color: #f57f17; }
         .tbd-row.blue   { color: #1565c0; }
@@ -1658,32 +1510,20 @@ const MemberLoanApplication = () => {
         .tbd-row.muted  { color: #888; }
         .total-row { border-top: 2px solid #1976d2; padding-top: 6px; font-weight: 700; }
         .cash-row  { border-top: 1px dashed #e5e7eb; padding-top: 6px; }
-
         .topup-error-hint {
-          margin-top: 8px; padding: 8px 12px;
-          background: #ffebee; border-radius: 6px;
-          font-size: 12px; color: #c62828;
+          margin-top: 8px; padding: 8px 12px; background: #ffebee;
+          border-radius: 6px; font-size: 12px; color: #c62828;
           display: flex; align-items: center; gap: 6px;
         }
 
-        /* ── Modal actions ─────────────────────────────── */
-        .modal-actions {
-          display: flex; flex-direction: column; gap: 10px; margin-top: 16px;
-        }
-        @media (min-width: 480px) {
-          .modal-actions {
-            flex-direction: row; justify-content: flex-end;
-          }
-        }
+        /* ── Modal actions ── */
+        .modal-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+        @media (min-width: 480px) { .modal-actions { flex-direction: row; justify-content: flex-end; } }
         .modal-actions .btn-primary,
-        .modal-actions .btn-secondary {
-          width: 100%;
-        }
+        .modal-actions .btn-secondary { width: 100%; }
         @media (min-width: 480px) {
           .modal-actions .btn-primary,
-          .modal-actions .btn-secondary {
-            width: auto;
-          }
+          .modal-actions .btn-secondary { width: auto; }
         }
       `}</style>
     </>
