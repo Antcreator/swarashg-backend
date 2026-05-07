@@ -40,25 +40,27 @@ const calculateTotalRepayment = (amount, interestRate = getMinInterestRate(), tr
 /**
  * getLiabilityPerGuarantor
  *
- * New formula (requested):
+ * Formula:
  *   Step 1 – totalRepayment  = principal + interest + txFee
- *   Step 2 – oneShare        = totalRepayment / requiredGuarantors
+ *   Step 2 – oneShare        = principal / requiredGuarantors   ← NOTE: uses PRINCIPAL, not totalRepayment
  *   Step 3 – reduced         = totalRepayment - oneShare
  *   Step 4 – liabilityEach   = reduced / requiredGuarantors
  *
  * Example – KES 10,000 loan (3 guarantors, 7 % interest, KES 108 fee):
- *   totalRepayment = 10,000 + 700 + 108 = 10,808
- *   oneShare       = 10,808 / 3         = 3,602.67
- *   reduced        = 10,808 - 3,602.67  = 7,205.33
- *   liabilityEach  = 7,205.33 / 3       ≈ 2,401.78  → rounded to 2,402
+ *   totalRepayment = 10,000 + 700 + 108  = 10,808
+ *   oneShare       = 10,000 / 3          = 3,333.33
+ *   reduced        = 10,808 - 3,333.33   = 7,474.67
+ *   liabilityEach  = 7,474.67 / 3        ≈ 2,491.56  → rounded to 2,492
  *
- * Algebraically: totalRepayment × (n-1) / n²
+ * Algebraically: (totalRepayment - principal/n) / n
  * where n = requiredGuarantors
  */
 const getLiabilityPerGuarantor = (amount, interestRate, transactionFee) => {
   const n              = getRequiredGuarantors(amount);
+  const principal      = Number(amount);
   const totalRepayment = calculateTotalRepayment(amount, interestRate, transactionFee);
-  return totalRepayment * (n - 1) / (n * n);
+  const oneShare       = principal / n;
+  return (totalRepayment - oneShare) / n;
 };
 
 // ─── GET /guarantors/eligible ────────────────────────────────────
