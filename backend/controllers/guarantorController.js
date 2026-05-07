@@ -2,14 +2,64 @@ const { Member, Loan, LoanGuarantor, Savings } = require('../models');
 const { Op } = require('sequelize');
 
 const MAX_ACTIVE_GUARANTEES = 3;
+const TRANSACTION_FEE       = 108;
 
 // ─── Helpers ──────────────────────────────────────────────────────
 // IMPORTANT: Must mirror loanController.js exactly.
 // Loans < 80,000  → 3 required guarantors
 // Loans >= 80,000 → 5 required guarantors
-// Liability per guarantor = loanAmount / requiredGuarantors  (NOT always /2)
-const getRequiredGuarantors    = (amount) => Number(amount) < 80000 ? 3 : 5;
-const getLiabilityPerGuarantor = (amount) => Number(amount) / getRequiredGuarantors(amount);
+const getRequiredGuarantors = (amount) => Number(amount) < 80000 ? 3 : 5;
+
+// Total repayment = principal + (principal * interestRate / 100) + transactionFee
+// We derive interestRate from the loan tiers. However, in the guarantor controller
+// we only have the loan *amount* at eligibility-check time, not the chosen duration.
+// We therefore use the MINIMUM interest rate for the tier (1-month / first option)
+// as a conservative floor so eligibility is not over-stated.
+//
+// LOAN_TIERS (mirrored from loanController):
+//   Tier 1  0–19,999    → 7 %
+//   Tier 2  20,000–49,999   → 7 % (1m) / 8.5 % (2m)
+//   Tier 3  50,000–79,999   → 7 % (1m) …
+//   Tier 4  80,000–99,999   → 7 % (1m) …
+//   Tier 5  100,000+     → 7 % (1m) …
+// All tiers share 7 % as the minimum (1-month) rate, so we always use 7 % here
+// unless the caller passes in a specific rate via the optional parameter.
+const getMinInterestRate = () => 7; // 1-month rate — all tiers
+
+/**
+ * calculateTotalRepayment
+ * Mirrors loanController.calculateTotalRepayment exactly.
+ */
+const calculateTotalRepayment = (amount, interestRate = getMinInterestRate(), transactionFee = TRANSACTION_FEE) => {
+  const principal = Number(amount);
+  const rate      = Number(interestRate);
+  const txFee     = Number(transactionFee);
+  return Math.round(principal + (principal * rate / 100) + txFee);
+};
+
+/**
+ * getLiabilityPerGuarantor
+ *
+ * New formula (requested):
+ *   Step 1 – totalRepayment  = principal + interest + txFee
+ *   Step 2 – oneShare        = totalRepayment / requiredGuarantors
+ *   Step 3 – reduced         = totalRepayment - oneShare
+ *   Step 4 – liabilityEach   = reduced / requiredGuarantors
+ *
+ * Example – KES 10,000 loan (3 guarantors, 7 % interest, KES 108 fee):
+ *   totalRepayment = 10,000 + 700 + 108 = 10,808
+ *   oneShare       = 10,808 / 3         = 3,602.67
+ *   reduced        = 10,808 - 3,602.67  = 7,205.33
+ *   liabilityEach  = 7,205.33 / 3       ≈ 2,401.78  → rounded to 2,402
+ *
+ * Algebraically: totalRepayment × (n-1) / n²
+ * where n = requiredGuarantors
+ */
+const getLiabilityPerGuarantor = (amount, interestRate, transactionFee) => {
+  const n              = getRequiredGuarantors(amount);
+  const totalRepayment = calculateTotalRepayment(amount, interestRate, transactionFee);
+  return totalRepayment * (n - 1) / (n * n);
+};
 
 // ─── GET /guarantors/eligible ────────────────────────────────────
 const getEligibleGuarantors = async (req, res) => {
@@ -19,10 +69,9 @@ const getEligibleGuarantors = async (req, res) => {
     return res.status(400).json({ message: 'loanAmount query param is required and must be a number' });
   }
 
-  // FIX: was always dividing by 2 regardless of how many guarantors are required.
-  // A KES 10,000 loan needs 3 guarantors → liability = 10,000 / 3 ≈ 3,333 each.
   const liabilityPerGuarantor = getLiabilityPerGuarantor(loanAmount);
   const requiredGuarantors    = getRequiredGuarantors(loanAmount);
+  const totalRepayment        = calculateTotalRepayment(loanAmount);
 
   try {
     const where = {};
@@ -54,8 +103,7 @@ const getEligibleGuarantors = async (req, res) => {
           }],
         });
 
-        // FIX: use each guaranteed loan's own amount to calculate the correct
-        // liability share instead of always using remainingBalance / 2.
+        // Fetch accepted guarantees to calculate existing liabilities
         let activeGuarantees = [];
         try {
           activeGuarantees = await LoanGuarantor.findAll({
@@ -64,17 +112,22 @@ const getEligibleGuarantors = async (req, res) => {
               approvalStatus: 'accepted',
             },
             include: [{
-              model:    Loan,
-              as:       'loan',
-              where:    { status: { [Op.in]: ['active', 'arrears'] } },
-              attributes: ['amount', 'remainingBalance'],
-              required: true,
+              model:      Loan,
+              as:         'loan',
+              where:      { status: { [Op.in]: ['active', 'arrears'] } },
+              attributes: ['amount', 'interestRate', 'transactionFee', 'remainingBalance'],
+              required:   true,
             }],
           });
         } catch (_) {}
 
+        // Recalculate each existing guarantee's liability using the same new formula
         const currentLiabilities = activeGuarantees.reduce((sum, g) => {
-          const share = getLiabilityPerGuarantor(g.loan?.amount || 0);
+          const share = getLiabilityPerGuarantor(
+            g.loan?.amount       || 0,
+            g.loan?.interestRate,
+            g.loan?.transactionFee
+          );
           return sum + share;
         }, 0);
 
@@ -115,6 +168,7 @@ const getEligibleGuarantors = async (req, res) => {
     return res.json({
       guarantors:            sortedGuarantors,
       liabilityPerGuarantor: Math.round(liabilityPerGuarantor),
+      totalRepayment:        Math.round(totalRepayment),
       requiredGuarantors,
       maxActiveGuarantees:   MAX_ACTIVE_GUARANTEES,
       eligibleCount:         sortedGuarantors.filter(g => g.isEligible).length,
@@ -135,9 +189,9 @@ const checkGuarantorEligibility = async (req, res) => {
     return res.status(400).json({ message: 'loanAmount query param is required and must be a number' });
   }
 
-  // FIX: same as above — was always dividing by 2.
   const liabilityPerGuarantor = getLiabilityPerGuarantor(loanAmount);
   const requiredGuarantors    = getRequiredGuarantors(loanAmount);
+  const totalRepayment        = calculateTotalRepayment(loanAmount);
 
   try {
     const member = await Member.findByPk(guarantorId, {
@@ -169,18 +223,22 @@ const checkGuarantorEligibility = async (req, res) => {
       activeGuarantees = await LoanGuarantor.findAll({
         where: { guarantorId: Number(guarantorId), approvalStatus: 'accepted' },
         include: [{
-          model:    Loan,
-          as:       'loan',
-          where:    { status: { [Op.in]: ['active', 'arrears'] } },
-          attributes: ['id', 'amount', 'remainingBalance'],
-          required: true,
+          model:      Loan,
+          as:         'loan',
+          where:      { status: { [Op.in]: ['active', 'arrears'] } },
+          attributes: ['id', 'amount', 'interestRate', 'transactionFee', 'remainingBalance'],
+          required:   true,
         }],
       });
     } catch (_) {}
 
-    // FIX: correct per-loan liability share based on each loan's own amount.
+    // Recalculate each existing guarantee's liability using the same new formula
     const currentLiabilities = activeGuarantees.reduce((sum, g) => {
-      const share = getLiabilityPerGuarantor(g.loan?.amount || 0);
+      const share = getLiabilityPerGuarantor(
+        g.loan?.amount       || 0,
+        g.loan?.interestRate,
+        g.loan?.transactionFee
+      );
       return sum + share;
     }, 0);
 
@@ -214,9 +272,14 @@ const checkGuarantorEligibility = async (req, res) => {
         loanId:           g.loan.id,
         loanAmount:       Number(g.loan.amount),
         remainingBalance: Number(g.loan.remainingBalance),
-        yourLiability:    Math.round(getLiabilityPerGuarantor(g.loan.amount)),
+        yourLiability:    Math.round(getLiabilityPerGuarantor(
+          g.loan.amount,
+          g.loan.interestRate,
+          g.loan.transactionFee
+        )),
       })),
       requiredGuarantors,
+      totalRepayment:        Math.round(totalRepayment),
       liabilityPerGuarantor: Math.round(liabilityPerGuarantor),
     });
   } catch (error) {
