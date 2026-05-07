@@ -5,7 +5,6 @@ import LoanGuarantorStatus from './../Shared/LoanGuarantorStatus';
 import './MyLoanApplications.css';
 
 const MyLoanApplications = () => {
-  console.log('MyLoanApplications rendered');
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedLoan, setExpandedLoan] = useState(null);
@@ -47,15 +46,11 @@ const MyLoanApplications = () => {
   };
 
   const toggleLoanExpand = (loanId) => {
-    console.log('Toggle expand for loan:', loanId);
-    console.log('Current expandedLoan:', expandedLoan);
     if (expandedLoan === loanId) {
       setExpandedLoan(null);
     } else {
       setExpandedLoan(loanId);
       const loan = loans.find(l => l.id === loanId);
-      console.log('Found loan:', loan);
-      console.log('Loan guarantors:', loan?.guarantors);
       if (loan && loan.guarantors) {
         loan.guarantors.forEach(guarantor => {
           fetchGuarantorEligibility(loanId, guarantor.guarantorId, loan.amount);
@@ -64,7 +59,6 @@ const MyLoanApplications = () => {
     }
   };
 
-  // ── Open replace modal & fetch eligible guarantors ────────────
   const openReplaceModal = async (loanId, oldGuarantorMemberId, loanAmount, oldGuarantorRecordId) => {
     setReplaceModal({ loanId, oldGuarantorId: oldGuarantorRecordId, loanAmount });
     setSelectedNewGuarantor(null);
@@ -77,7 +71,7 @@ const MyLoanApplications = () => {
       const loan = loans.find(l => l.id === loanId);
       const existingIds = (loan?.guarantors || []).map(g => g.guarantorId);
       const filtered = (res.data.guarantors || []).filter(
-        g => !existingIds.includes(g.id) || g.id === oldGuarantorMemberId // ✅ compare member ids
+        g => !existingIds.includes(g.id) || g.id === oldGuarantorMemberId
       );
       setEligibleForReplace(filtered);
     } catch (err) {
@@ -131,7 +125,6 @@ const MyLoanApplications = () => {
   };
 
   const renderGuarantorEligibility = (loan) => {
-    console.log('Guarantors:', JSON.stringify(loan.guarantors, null, 2));
     if (!loan.guarantors || loan.guarantors.length === 0) return null;
 
     return (
@@ -159,19 +152,15 @@ const MyLoanApplications = () => {
                         : <span className="eligibility-badge ineligible">✗ Ineligible</span>
                     )}
                   </div>
-                  <div className="guarantor-status" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="guarantor-status">
                     {guarantor.approvalStatus === 'pending'  && <span className="status-badge pending">Pending</span>}
                     {guarantor.approvalStatus === 'accepted' && <span className="status-badge accepted">Accepted</span>}
                     {(isRejected && !isOffice) && (
                       <>
-                        <span className="status-badge declined" style={{ background: '#ffebee', color: '#c62828', border: '1px solid #f44336' }}>Declined</span>
+                        <span className="status-badge declined">Declined</span>
                         <button
+                          className="btn-replace"
                           onClick={() => openReplaceModal(loan.id, guarantor.guarantorId, loan.amount, guarantor.id)}
-                          style={{
-                            padding: '4px 10px', fontSize: '12px', fontWeight: 600,
-                            background: '#1976d2', color: 'white', border: 'none',
-                            borderRadius: '6px', cursor: 'pointer',
-                          }}
                         >
                           🔄 Replace
                         </button>
@@ -179,11 +168,6 @@ const MyLoanApplications = () => {
                     )}
                   </div>
                 </div>
-
-                {eligibility && !isOffice && (
-                  <div className="guarantor-savings-info">
-                  </div>
-                )}
 
                 {isRejected && guarantor.declineReason && (
                   <div className="decline-reason">
@@ -229,216 +213,188 @@ const MyLoanApplications = () => {
           </div>
         ) : (
           <div className="loans-list">
-           {loans.map((loan) => {
-  console.log('Loan:', loan.id, '| approvalStatus:', loan.approvalStatus, '| status:', loan.status);
-  return (
-    <div key={loan.id} className="loan-card">
-      <div className="loan-card-header">
-        <div className="loan-info">
-          <h3>Loan #{loan.id}</h3>
-          <p className="loan-date">Applied on {formatDate(loan.createdAt)}</p>
-        </div>
-        <div className="header-actions">
-          {getStatusBadge(loan)}
-          {loan.approvalStatus === 'pending' && (
-            <button className="btn-expand" onClick={() => toggleLoanExpand(loan.id)}>
-              {expandedLoan === loan.id ? '−' : '+'}
-            </button>
-          )}
-        </div>
-      </div>
+            {loans.map((loan) => (
+              <div key={loan.id} className="loan-card">
+                {/* ── Card Header ── */}
+                <div className="loan-card-header">
+                  <div className="loan-info">
+                    <h3>Loan #{loan.id}</h3>
+                    <p className="loan-date">Applied on {formatDate(loan.createdAt)}</p>
+                  </div>
+                  <div className="header-actions">
+                    {getStatusBadge(loan)}
+                    {loan.approvalStatus === 'pending' && (
+                      <button className="btn-expand" onClick={() => toggleLoanExpand(loan.id)}>
+                        {expandedLoan === loan.id ? '−' : '+'}
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-      <div className="loan-details">
-        <div className="detail-grid">
-          <div className="detail-item">
-            <span className="label">Amount:</span>
-            <span className="value">{formatCurrency(loan.amount)}</span>
-          </div>
-          <div className="detail-item">
-            <span className="label">Interest Rate:</span>
-            <span className="value">{loan.interestRate}%</span>
-          </div>
-          <div className="detail-item">
-            <span className="label">Duration:</span>
-            <span className="value">{loan.durationMonths} months</span>
-          </div>
-          <div className="detail-item">
-            <span className="label">Total Repayment:</span>
-            <span className="value highlight">{formatCurrency(loan.totalRepayment)}</span>
-          </div>
-        </div>
-
-        {loan.approvalStatus === 'approved' && (
-          <div className="detail-grid">
-            <div className="detail-item">
-              <span className="label">Disbursed:</span>
-              <span className="value">{formatDate(loan.disbursementDate)}</span>
-            </div>
-            <div className="detail-item">
-              <span className="label">Due Date:</span>
-              <span className="value">{formatDate(loan.dueDate)}</span>
-            </div>
-            <div className="detail-item">
-              <span className="label">Amount Paid:</span>
-              <span className="value">{formatCurrency(loan.amountPaid)}</span>
-            </div>
-            <div className="detail-item">
-              <span className="label">Balance:</span>
-              <span className="value">{formatCurrency(loan.remainingBalance)}</span>
-            </div>
-          </div>
-        )}
-
-        {loan.approvalStatus === 'rejected' && loan.rejectionReason && (
-          <div className="rejection-notice">
-            <strong>Rejection Reason:</strong> {loan.rejectionReason}
-          </div>
-        )}
-      </div>
-
-      {/* ── Always show guarantor status + replace for pending loans ── */}
-      {loan.approvalStatus === 'pending' && (
-        <>
-          <LoanGuarantorStatus loanId={loan.id} />
-
-          {/* ── Guarantor replace buttons — always visible, no expand needed ── */}
-          {loan.guarantors && loan.guarantors.length > 0 && (
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0' }}>
-              {loan.guarantors.map((guarantor) => {
-                const isRejected = guarantor.approvalStatus === 'rejected' || guarantor.approvalStatus === 'declined';
-                const isOffice   = Number(guarantor.guarantorId) === -1;
-                if (!isRejected || isOffice) return null;
-                return (
-                  <div
-                    key={guarantor.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 14px', marginBottom: '8px',
-                      background: '#fff5f5', border: '1px solid #f44336', borderRadius: '8px',
-                    }}
-                  >
-                    <div>
-                      <span style={{ fontWeight: 600, color: '#c62828', fontSize: '14px' }}>
-                        ❌ {guarantor.guarantor?.firstName} {guarantor.guarantor?.lastName}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
-                        declined to guarantee this loan
-                      </span>
+                {/* ── Core Details ── */}
+                <div className="loan-details">
+                  <div className="detail-grid">
+                    <div className="detail-item">
+                      <span className="label">Amount</span>
+                      <span className="value">{formatCurrency(loan.amount)}</span>
                     </div>
-                    <button
-                      onClick={() => openReplaceModal(loan.id, guarantor.guarantorId, loan.amount, guarantor.id)}
-                      style={{
-                        padding: '6px 14px', fontSize: '13px', fontWeight: 600,
-                        background: '#1976d2', color: 'white', border: 'none',
-                        borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap',
-                      }}
-                    >
-                      🔄 Replace
+                    <div className="detail-item">
+                      <span className="label">Interest Rate</span>
+                      <span className="value">{loan.interestRate}%</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Duration</span>
+                      <span className="value">{loan.durationMonths} months</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Total Repayment</span>
+                      <span className="value highlight">{formatCurrency(loan.totalRepayment)}</span>
+                    </div>
+                  </div>
+
+                  {loan.approvalStatus === 'approved' && (
+                    <div className="detail-grid detail-grid-approved">
+                      <div className="detail-item">
+                        <span className="label">Disbursed</span>
+                        <span className="value">{formatDate(loan.disbursementDate)}</span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="label">Due Date</span>
+                        <span className="value">{formatDate(loan.dueDate)}</span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="label">Amount Paid</span>
+                        <span className="value">{formatCurrency(loan.amountPaid)}</span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="label">Balance</span>
+                        <span className="value">{formatCurrency(loan.remainingBalance)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {loan.approvalStatus === 'rejected' && loan.rejectionReason && (
+                    <div className="rejection-notice">
+                      <strong>Rejection Reason:</strong> {loan.rejectionReason}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Pending: guarantor status + replace buttons ── */}
+                {loan.approvalStatus === 'pending' && (
+                  <>
+                    <LoanGuarantorStatus loanId={loan.id} />
+
+                    {/* Declined guarantor replace strip */}
+                    {loan.guarantors && loan.guarantors.some(g =>
+                      (g.approvalStatus === 'rejected' || g.approvalStatus === 'declined') &&
+                      Number(g.guarantorId) !== -1
+                    ) && (
+                      <div className="declined-guarantors-strip">
+                        {loan.guarantors.map((guarantor) => {
+                          const isRejected = guarantor.approvalStatus === 'rejected' || guarantor.approvalStatus === 'declined';
+                          const isOffice   = Number(guarantor.guarantorId) === -1;
+                          if (!isRejected || isOffice) return null;
+                          return (
+                            <div key={guarantor.id} className="declined-guarantor-row">
+                              <div className="declined-guarantor-info">
+                                <span className="declined-x">❌</span>
+                                <div>
+                                  <span className="declined-name">
+                                    {guarantor.guarantor?.firstName} {guarantor.guarantor?.lastName}
+                                  </span>
+                                  <span className="declined-label">declined to guarantee this loan</span>
+                                </div>
+                              </div>
+                              <button
+                                className="btn-replace"
+                                onClick={() => openReplaceModal(loan.id, guarantor.guarantorId, loan.amount, guarantor.id)}
+                              >
+                                🔄 Replace
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Expanded eligibility details */}
+                    {expandedLoan === loan.id && renderGuarantorEligibility(loan)}
+                  </>
+                )}
+
+                {loan.approvalStatus === 'pending' && (
+                  <div className="loan-actions">
+                    <button className="btn-secondary" onClick={() => window.location.href = '/member/loans'}>
+                      Apply for Another Loan
                     </button>
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ── Expanded eligibility details ── */}
-          {expandedLoan === loan.id && renderGuarantorEligibility(loan)}
-        </>
-      )}
-
-      {loan.approvalStatus === 'pending' && (
-        <div className="loan-actions">
-          <button className="btn-secondary" onClick={() => window.location.href = '/member/loans'}>
-            Apply for Another Loan
-          </button>
-        </div>
-      )}
-    </div>
-  );
-})}
+                )}
+              </div>
+            ))}
           </div>
         )}
 
-        {/* ── Replace Guarantor Modal ──────────────────────────── */}
+        {/* ── Replace Guarantor Modal ── */}
         {replaceModal && (
           <div className="modal-overlay" onClick={closeReplaceModal}>
-            <div
-              className="modal-content"
-              onClick={e => e.stopPropagation()}
-              style={{ maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' }}
-            >
-              <h2>🔄 Replace Guarantor</h2>
-              <p style={{ color: '#666', fontSize: '14px', marginBottom: '16px' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>🔄 Replace Guarantor</h2>
+                <button className="modal-close" onClick={closeReplaceModal}>✕</button>
+              </div>
+              <p className="modal-subtitle">
                 Select a new guarantor for your <strong>{formatCurrency(replaceModal.loanAmount)}</strong> loan.
-                Only members who are eligible for this loan amount are shown.
+                Only eligible members are shown.
               </p>
 
               {loadingEligible ? (
-                <div style={{ textAlign: 'center', padding: '30px', color: '#666' }}>
-                  Loading eligible guarantors...
-                </div>
+                <div className="modal-loading">Loading eligible guarantors...</div>
               ) : eligibleForReplace.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px', background: '#fff8e1', borderRadius: '8px', color: '#e65100' }}>
-                  <p style={{ margin: 0, fontWeight: 600 }}>No eligible guarantors available</p>
-                  <p style={{ margin: '8px 0 0', fontSize: '13px' }}>No other members currently qualify to guarantee this loan amount.</p>
+                <div className="modal-empty">
+                  <p className="modal-empty-title">No eligible guarantors available</p>
+                  <p className="modal-empty-sub">No other members currently qualify to guarantee this loan amount.</p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                <div className="guarantor-select-list">
+                  {/* Eligible */}
                   {eligibleForReplace.filter(g => g.isEligible).map(g => (
                     <div
                       key={g.id}
+                      className={`guarantor-option eligible-option ${selectedNewGuarantor?.id === g.id ? 'selected' : ''}`}
                       onClick={() => setSelectedNewGuarantor(g)}
-                      style={{
-                        padding: '14px', borderRadius: '8px', cursor: 'pointer',
-                        border: selectedNewGuarantor?.id === g.id ? '2px solid #1976d2' : '2px solid #86efac',
-                        background: selectedNewGuarantor?.id === g.id ? '#e3f2fd' : '#f0fdf4',
-                        transition: 'all 0.15s',
-                      }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <strong style={{ fontSize: '15px' }}>{g.firstName} {g.lastName}</strong>
-                          <span style={{ marginLeft: '10px', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, background: '#d1fae5', color: '#065f46', border: '1px solid #10b981' }}>
-                            ✓ Eligible
-                          </span>
+                      <div className="guarantor-option-header">
+                        <div className="guarantor-option-name">
+                          <strong>{g.firstName} {g.lastName}</strong>
+                          <span className="tag tag-eligible">✓ Eligible</span>
                         </div>
                         {selectedNewGuarantor?.id === g.id && (
-                          <span style={{ color: '#1976d2', fontWeight: 700, fontSize: '18px' }}>✓</span>
+                          <span className="selected-check">✓</span>
                         )}
                       </div>
-                      <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: '12px', color: '#555' }}>
-                        {/* <div><span style={{ color: '#888' }}>Savings:</span> <strong>{formatCurrency(g.totalSavings)}</strong></div>
-                        <div><span style={{ color: '#888' }}>Available:</span> <strong style={{ color: '#2e7d32' }}>{formatCurrency(g.availableSavings)}</strong></div> */}
-                        <div><span style={{ color: '#888' }}>Guarantees:</span> <strong style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#333' }}>{g.activeGuaranteeCount}/3</strong></div>
+                      <div className="guarantor-option-meta">
+                        <span>
+                          Guarantees: <strong style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#333' }}>
+                            {g.activeGuaranteeCount}/3
+                          </strong>
+                        </span>
                       </div>
                     </div>
                   ))}
 
+                  {/* Ineligible */}
                   {eligibleForReplace.filter(g => !g.isEligible).length > 0 && (
                     <>
-                      <div style={{ fontSize: '12px', color: '#999', fontWeight: 600, textTransform: 'uppercase', marginTop: '8px' }}>
-                        Ineligible Members
-                      </div>
+                      <div className="section-divider-label">Ineligible Members</div>
                       {eligibleForReplace.filter(g => !g.isEligible).map(g => (
-                        <div
-                          key={g.id}
-                          style={{
-                            padding: '12px', borderRadius: '8px', opacity: 0.6,
-                            border: '2px solid #fca5a5', background: '#fef2f2',
-                            cursor: 'not-allowed',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <strong style={{ fontSize: '14px' }}>{g.firstName} {g.lastName}</strong>
-                              <span style={{ marginLeft: '10px', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, background: '#fee2e2', color: '#991b1b', border: '1px solid #ef4444' }}>
-                                ✗ Ineligible
-                              </span>
+                        <div key={g.id} className="guarantor-option ineligible-option">
+                          <div className="guarantor-option-header">
+                            <div className="guarantor-option-name">
+                              <strong>{g.firstName} {g.lastName}</strong>
+                              <span className="tag tag-ineligible">✗ Ineligible</span>
                             </div>
                           </div>
-                          {/* <div style={{ marginTop: '6px', fontSize: '12px', color: '#c62828' }}>
-                            {g.ineligibilityReason}
-                          </div> */}
                         </div>
                       ))}
                     </>
@@ -446,7 +402,7 @@ const MyLoanApplications = () => {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={closeReplaceModal}>
                   Cancel
                 </button>
@@ -455,7 +411,6 @@ const MyLoanApplications = () => {
                   className="btn-primary"
                   disabled={!selectedNewGuarantor || replacingId !== null}
                   onClick={handleReplaceGuarantor}
-                  style={{ opacity: !selectedNewGuarantor ? 0.5 : 1 }}
                 >
                   {replacingId ? 'Replacing...' : 'Confirm Replacement'}
                 </button>

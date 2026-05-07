@@ -1,397 +1,580 @@
+/* ═══════════════════════════════════════════════════
+   MY LOAN APPLICATIONS — MOBILE-FIRST STYLESHEET
+   ═══════════════════════════════════════════════════ */
+
+/* ── Container ─────────────────────────────────── */
 .my-loans-container {
-  padding: 20px;
+  padding: 16px;
   max-width: 1200px;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
+@media (min-width: 640px) {
+  .my-loans-container {
+    padding: 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .my-loans-container {
+    padding: 28px 24px;
+  }
+}
+
+/* ── Page Header ────────────────────────────────── */
 .page-header {
-  margin-bottom: 30px;
+  margin-bottom: 20px;
+}
+
+@media (min-width: 640px) {
+  .page-header {
+    margin-bottom: 28px;
+  }
 }
 
 .page-header h1 {
-  margin: 0 0 8px 0;
-  color: #333;
+  margin: 0 0 6px 0;
+  font-size: 22px;
+  color: #1a1a2e;
+  font-weight: 700;
+}
+
+@media (min-width: 640px) {
+  .page-header h1 {
+    font-size: 26px;
+  }
 }
 
 .page-header p {
   margin: 0;
   color: #666;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-.no-loans {
+@media (min-width: 640px) {
+  .page-header p {
+    font-size: 14px;
+  }
+}
+
+/* ── Loading ────────────────────────────────────── */
+.loading {
   text-align: center;
   padding: 60px 20px;
+  color: #666;
+  font-size: 15px;
+}
+
+/* ── Empty State ────────────────────────────────── */
+.no-loans {
+  text-align: center;
+  padding: 48px 20px;
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .empty-icon {
-  font-size: 64px;
-  margin-bottom: 20px;
+  font-size: 56px;
+  margin-bottom: 16px;
   opacity: 0.3;
+  line-height: 1;
 }
 
 .no-loans h3 {
   margin: 0 0 8px 0;
   color: #333;
+  font-size: 18px;
 }
 
 .no-loans p {
   margin: 0 0 20px 0;
   color: #666;
+  font-size: 14px;
 }
 
+/* ── Loans List ─────────────────────────────────── */
 .loans-list {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
+@media (min-width: 640px) {
+  .loans-list {
+    gap: 20px;
+  }
+}
+
+/* ── Loan Card ──────────────────────────────────── */
 .loan-card {
   background: white;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .loan-card {
+    padding: 20px 24px;
+    border-radius: 12px;
+  }
 }
 
 .loan-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
+/* ── Card Header ────────────────────────────────── */
 .loan-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding-bottom: 16px;
+  padding-bottom: 14px;
   border-bottom: 2px solid #f0f0f0;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 640px) {
+  .loan-card-header {
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    flex-wrap: nowrap;
+  }
+}
+
+.loan-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.loan-info h3 {
+  margin: 0 0 3px 0;
+  font-size: 17px;
+  color: #1a1a2e;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 640px) {
+  .loan-info h3 {
+    font-size: 20px;
+  }
+}
+
+.loan-date {
+  margin: 0;
+  font-size: 12px;
+  color: #999;
+}
+
+@media (min-width: 640px) {
+  .loan-date {
+    font-size: 13px;
+  }
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.loan-info h3 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  color: #333;
-}
-
-.loan-date {
-  margin: 0;
-  font-size: 13px;
-  color: #999;
-}
-
+/* ── Badges ─────────────────────────────────────── */
 .badge {
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.badge-warning {
-  background: #fff3e0;
-  color: #e65100;
+@media (min-width: 640px) {
+  .badge {
+    padding: 5px 12px;
+    font-size: 12px;
+  }
 }
 
-.badge-danger {
-  background: #ffebee;
-  color: #c62828;
-}
+.badge-warning  { background: #fff3e0; color: #e65100; }
+.badge-danger   { background: #ffebee; color: #c62828; }
+.badge-success  { background: #e8f5e9; color: #2e7d32; }
+.badge-info     { background: #e3f2fd; color: #1565c0; }
+.badge-secondary{ background: #f5f5f5; color: #666; }
 
-.badge-success {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.badge-info {
-  background: #e3f2fd;
-  color: #1565c0;
-}
-
-.badge-secondary {
-  background: #f5f5f5;
-  color: #666;
-}
-
-/* Expand button */
+/* ── Expand Button ──────────────────────────────── */
 .btn-expand {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 2px solid #1976d2;
   background: white;
   color: #1976d2;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .btn-expand {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+  }
 }
 
 .btn-expand:hover {
   background: #1976d2;
   color: white;
-  transform: scale(1.1);
 }
 
+/* ── Replace Button ─────────────────────────────── */
+.btn-replace {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+@media (min-width: 640px) {
+  .btn-replace {
+    padding: 5px 12px;
+    font-size: 13px;
+  }
+}
+
+.btn-replace:hover {
+  background: #1565c0;
+}
+
+/* ── Detail Grid ────────────────────────────────── */
 .loan-details {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 480px) {
+  .detail-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
+
+@media (min-width: 768px) {
+  .detail-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+}
+
+.detail-grid-approved {
+  padding-top: 12px;
+  border-top: 1px dashed #e0e0e0;
 }
 
 .detail-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .detail-item .label {
-  font-size: 13px;
-  color: #666;
+  font-size: 11px;
+  color: #888;
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 640px) {
+  .detail-item .label {
+    font-size: 12px;
+  }
 }
 
 .detail-item .value {
-  font-size: 16px;
-  color: #333;
+  font-size: 14px;
+  color: #1a1a2e;
   font-weight: 600;
+}
+
+@media (min-width: 640px) {
+  .detail-item .value {
+    font-size: 16px;
+  }
 }
 
 .detail-item .value.highlight {
   color: #1976d2;
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 700;
 }
 
+@media (min-width: 640px) {
+  .detail-item .value.highlight {
+    font-size: 18px;
+  }
+}
+
+/* ── Rejection Notice ───────────────────────────── */
 .rejection-notice {
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: 12px;
+  padding: 10px 14px;
   background: #ffebee;
   border-left: 4px solid #f44336;
-  border-radius: 4px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 13px;
   color: #c62828;
 }
 
 .rejection-notice strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-/* Guarantor Eligibility Section */
+/* ── Declined Guarantors Strip ──────────────────── */
+.declined-guarantors-strip {
+  padding: 12px 0 4px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.declined-guarantor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #fff5f5;
+  border: 1px solid #f44336;
+  border-radius: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 480px) {
+  .declined-guarantor-row {
+    flex-wrap: nowrap;
+  }
+}
+
+.declined-guarantor-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.declined-x {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.declined-name {
+  font-weight: 700;
+  color: #c62828;
+  font-size: 13px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 640px) {
+  .declined-name {
+    font-size: 14px;
+  }
+}
+
+.declined-label {
+  font-size: 11px;
+  color: #888;
+  display: block;
+}
+
+@media (min-width: 480px) {
+  .declined-label {
+    display: inline;
+    margin-left: 6px;
+  }
+}
+
+/* ── Guarantors Eligibility Section ─────────────── */
 .guarantors-eligibility-section {
-  margin-top: 24px;
-  padding-top: 24px;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 2px dashed #e0e0e0;
-  animation: slideDown 0.3s ease;
+  animation: slideDown 0.25s ease;
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .guarantors-eligibility-section h4 {
-  margin: 0 0 16px 0;
-  font-size: 16px;
+  margin: 0 0 12px 0;
+  font-size: 13px;
   font-weight: 700;
-  color: #333;
+  color: #555;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .guarantors-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .guarantor-eligibility-card {
-  padding: 16px;
+  padding: 12px 14px;
   border: 2px solid #e0e0e0;
   border-radius: 8px;
   background: #fafafa;
-  transition: all 0.2s;
+  transition: border-color 0.2s;
 }
 
-.guarantor-eligibility-card.eligible {
-  border-color: #86efac;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
-}
-
-.guarantor-eligibility-card.ineligible {
-  border-color: #fca5a5;
-  background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
-}
+.guarantor-eligibility-card.eligible   { border-color: #86efac; background: #f0fdf4; }
+.guarantor-eligibility-card.ineligible { border-color: #fca5a5; background: #fef2f2; }
 
 .guarantor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .guarantor-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  color: #333;
+  color: #1a1a2e;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .eligibility-badge {
   display: inline-block;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.eligibility-badge.eligible {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #10b981;
-}
-
-.eligibility-badge.ineligible {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #ef4444;
-}
+.eligibility-badge.eligible   { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+.eligibility-badge.ineligible { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
 
 .guarantor-status {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .status-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.status-badge.pending {
-  background: #fff3e0;
-  color: #e65100;
-}
-
-.status-badge.accepted {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.status-badge.declined {
-  background: #ffebee;
-  color: #c62828;
-}
-
-.guarantor-savings-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.savings-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-}
-
-.savings-row .label {
-  color: #666;
-  font-weight: 500;
-}
-
-.savings-row .value {
-  font-weight: 700;
-  color: #333;
-}
-
-.savings-row.highlight {
-  padding: 8px 12px;
-  background: white;
-  border-radius: 6px;
-  margin-top: 4px;
-}
-
-.savings-row.highlight .value {
-  font-size: 15px;
-}
-
-.savings-row .value.success {
-  color: #10b981;
-}
-
-.savings-row .value.error {
-  color: #ef4444;
-}
-
-.savings-row.shortfall {
-  background: #fef2f2;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #fca5a5;
-}
+.status-badge.pending  { background: #fff3e0; color: #e65100; }
+.status-badge.accepted { background: #e8f5e9; color: #2e7d32; }
+.status-badge.declined { background: #ffebee; color: #c62828; border: 1px solid #f44336; }
 
 .decline-reason {
-  margin-top: 12px;
-  padding: 10px 12px;
+  margin-top: 10px;
+  padding: 8px 12px;
   background: #ffebee;
   border-left: 3px solid #f44336;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 12px;
   color: #c62828;
 }
 
 .decline-reason strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
+/* ── Loan Actions ───────────────────────────────── */
 .loan-actions {
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid #f0f0f0;
-  display: flex;
-  gap: 12px;
 }
 
+.loan-actions .btn-secondary {
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .loan-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .loan-actions .btn-secondary {
+    width: auto;
+  }
+}
+
+/* ── Buttons ────────────────────────────────────── */
 .btn-primary,
 .btn-secondary {
-  padding: 10px 20px;
+  padding: 10px 18px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .btn-primary {
@@ -399,58 +582,293 @@
   color: white;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: #1565c0;
-  transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
 }
 
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
-  background: #e0e0e0;
-  color: #333;
+  background: #f0f0f0;
+  color: #444;
 }
 
 .btn-secondary:hover {
-  background: #d0d0d0;
+  background: #e0e0e0;
 }
 
-/* Mobile responsive */
-@media (max-width: 768px) {
-  .my-loans-container {
+/* ── Modal Overlay ──────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;       /* sheet from bottom on mobile */
+  justify-content: center;
+  padding: 0;
+  animation: fadeIn 0.2s ease;
+}
+
+@media (min-width: 640px) {
+  .modal-overlay {
+    align-items: center;
     padding: 16px;
   }
+}
 
-  .loan-card {
-    padding: 16px;
-  }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
-  .loan-card-header {
-    flex-direction: column;
-    gap: 12px;
-  }
+/* ── Modal Content ──────────────────────────────── */
+.modal-content {
+  background: white;
+  border-radius: 16px 16px 0 0;  /* bottom sheet on mobile */
+  padding: 20px 16px 24px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: slideUp 0.25s ease;
+  box-sizing: border-box;
+}
 
-  .header-actions {
+@media (min-width: 640px) {
+  .modal-content {
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 560px;
     width: 100%;
-    justify-content: space-between;
+    max-height: 85vh;
+    animation: none;
   }
+}
 
-  .detail-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+@keyframes slideUp {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Modal Header ───────────────────────────────── */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #1a1a2e;
+  font-weight: 700;
+}
+
+@media (min-width: 640px) {
+  .modal-header h2 {
+    font-size: 20px;
   }
+}
 
-  .guarantor-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+.modal-close {
+  background: #f0f0f0;
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  color: #555;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.modal-close:hover {
+  background: #e0e0e0;
+}
+
+/* ── Modal Subtitle ─────────────────────────────── */
+.modal-subtitle {
+  color: #666;
+  font-size: 13px;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .modal-subtitle {
+    font-size: 14px;
+    margin-bottom: 20px;
   }
+}
 
-  .loan-actions {
-    flex-direction: column;
+/* ── Modal Loading / Empty ──────────────────────── */
+.modal-loading {
+  text-align: center;
+  padding: 28px;
+  color: #666;
+  font-size: 14px;
+}
+
+.modal-empty {
+  text-align: center;
+  padding: 24px 16px;
+  background: #fff8e1;
+  border-radius: 10px;
+  color: #e65100;
+  margin-bottom: 16px;
+}
+
+.modal-empty-title {
+  margin: 0 0 6px 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.modal-empty-sub {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ── Guarantor Select List ──────────────────────── */
+.guarantor-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 640px) {
+  .guarantor-select-list {
+    gap: 10px;
+    margin-bottom: 20px;
   }
+}
 
-  .btn-primary,
-  .btn-secondary {
-    width: 100%;
+.guarantor-option {
+  padding: 12px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .guarantor-option {
+    padding: 14px;
+  }
+}
+
+.eligible-option {
+  background: #f0fdf4;
+  border-color: #86efac;
+  cursor: pointer;
+}
+
+.eligible-option:hover {
+  border-color: #22c55e;
+  background: #dcfce7;
+}
+
+.eligible-option.selected {
+  border-color: #1976d2;
+  background: #e3f2fd;
+}
+
+.ineligible-option {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.guarantor-option-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.guarantor-option-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.selected-check {
+  color: #1976d2;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.guarantor-option-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+/* ── Tags ───────────────────────────────────────── */
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tag-eligible   { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+.tag-ineligible { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+
+/* ── Section Divider Label ──────────────────────── */
+.section-divider-label {
+  font-size: 10px;
+  color: #999;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+/* ── Modal Actions ──────────────────────────────── */
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+@media (min-width: 480px) {
+  .modal-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}
+
+.modal-actions .btn-primary,
+.modal-actions .btn-secondary {
+  width: 100%;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+}
+
+@media (min-width: 480px) {
+  .modal-actions .btn-primary,
+  .modal-actions .btn-secondary {
+    width: auto;
   }
 }
