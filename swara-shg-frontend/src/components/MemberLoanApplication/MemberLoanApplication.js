@@ -327,116 +327,220 @@ const MemberLoanApplication = () => {
   };
 
   // ── Guarantor Picker ─────────────────────────────────────────
-  const GuarantorPicker = () => (
-    <div className="form-group">
-      <label>
-        Select Guarantors *
-        {loanInfo.requiredGuarantors > 0 &&
-          ` (${formData.guarantorIds.length}/${loanInfo.requiredGuarantors} selected)`}
-      </label>
+  const GuarantorPicker = () => {
+    const selectedCount    = formData.guarantorIds.length;
+    const requiredCount    = loanInfo.requiredGuarantors;
+    const progressPercent  = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
+    const progressColor    = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
 
-      {allGuarantors.length > 0 && (
-        <div className="guarantor-filter-bar">
-          {[
-            { key: 'all',        label: `All (${allGuarantors.length})`,                        color: '#1976d2', Icon: Users       },
-            { key: 'eligible',   label: `Eligible (${eligibleCount})`,                          color: '#4caf50', Icon: ShieldCheck },
-            { key: 'ineligible', label: `Ineligible (${allGuarantors.length - eligibleCount})`, color: '#f44336', Icon: ShieldOff   },
-          ].map(({ key, label, color, Icon }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setGuarantorFilter(key)}
-              className={`guarantor-filter-btn ${guarantorFilter === key ? 'active' : ''}`}
-              style={{
-                borderColor:      guarantorFilter === key ? color : '#ddd',
-                background:       guarantorFilter === key ? color : 'white',
-                color:            guarantorFilter === key ? 'white' : '#333',
-              }}
-            >
-              <Icon size={13} />
-              <span className="filter-label">{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loadingEligibility && (
-        <div className="guarantor-loading">
-          <Loader size={16} /> Loading guarantor eligibility...
-        </div>
-      )}
-
-      {!loadingEligibility && effectiveAmount() >= 1000 && (
-        <div className="guarantor-list-scroll">
-          {/* Office guarantor */}
-          {officeGuarantor && (
-            <label
-              className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
-            >
-              <input
-                type="checkbox"
-                checked={formData.guarantorIds.includes(officeGuarantor.id)}
-                onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
-              />
-              <div className="guarantor-item-info">
-                <span className="guarantor-item-name">{officeGuarantor.name}</span>
-                <span className="tag-office">
-                  <Star size={11} /> ADMIN – UNLIMITED
-                </span>
-              </div>
-            </label>
+    return (
+      <div className="form-group guarantor-picker-wrapper">
+        {/* Header row */}
+        <div className="guarantor-picker-header">
+          <label className="guarantor-picker-label">
+            Select Guarantors
+            {requiredCount > 0 && (
+              <span className={`guarantor-count-badge ${selectedCount >= requiredCount ? 'complete' : ''}`}>
+                {selectedCount}/{requiredCount}
+              </span>
+            )}
+          </label>
+          {requiredCount > 0 && (
+            <span className="guarantor-picker-hint">
+              {selectedCount >= requiredCount
+                ? <><CheckCircle size={12} color="#4caf50" /> All selected</>
+                : <>{requiredCount - selectedCount} more needed</>}
+            </span>
           )}
+        </div>
 
-          {/* Regular guarantors */}
-          {filteredGuarantors.map(g => (
+        {/* Progress bar */}
+        {requiredCount > 0 && (
+          <div className="guarantor-progress-track">
             <div
-              key={g.id}
-              className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${formData.guarantorIds.includes(g.id) ? 'selected' : ''}`}
-            >
-              <label style={{ cursor: g.isEligible ? 'pointer' : 'not-allowed', display: 'block', width: '100%' }}>
-                <div className="guarantor-item-row">
+              className="guarantor-progress-fill"
+              style={{ width: `${progressPercent}%`, background: progressColor }}
+            />
+          </div>
+        )}
+
+        {/* Filter tabs — full width on mobile */}
+        {allGuarantors.length > 0 && (
+          <div className="guarantor-filter-bar">
+            {[
+              { key: 'all',        label: 'All',        count: allGuarantors.length,                        color: '#1976d2', Icon: Users       },
+              { key: 'eligible',   label: 'Eligible',   count: eligibleCount,                               color: '#4caf50', Icon: ShieldCheck },
+              { key: 'ineligible', label: 'Ineligible', count: allGuarantors.length - eligibleCount,        color: '#f44336', Icon: ShieldOff   },
+            ].map(({ key, label, count, color, Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGuarantorFilter(key)}
+                className={`guarantor-filter-btn ${guarantorFilter === key ? 'active' : ''}`}
+                style={{
+                  borderColor: guarantorFilter === key ? color : '#ddd',
+                  background:  guarantorFilter === key ? color : 'white',
+                  color:       guarantorFilter === key ? 'white' : '#555',
+                }}
+              >
+                <Icon size={13} />
+                <span className="filter-label-text">{label}</span>
+                <span className="filter-count-pill" style={{
+                  background: guarantorFilter === key ? 'rgba(255,255,255,0.3)' : '#f0f0f0',
+                  color:      guarantorFilter === key ? 'white' : '#555',
+                }}>{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Loading state */}
+        {loadingEligibility && (
+          <div className="guarantor-loading">
+            <Loader size={16} /> Loading guarantors…
+          </div>
+        )}
+
+        {/* Guarantor list */}
+        {!loadingEligibility && effectiveAmount() >= 1000 && (
+          <div className="guarantor-list-scroll">
+
+            {/* Office guarantor (sticky at top) */}
+            {officeGuarantor && (
+              <label
+                className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
+              >
+                <div className="guarantor-checkbox-wrap">
                   <input
                     type="checkbox"
-                    checked={formData.guarantorIds.includes(g.id)}
-                    onChange={() => toggleGuarantor(g)}
-                    disabled={!g.isEligible}
+                    checked={formData.guarantorIds.includes(officeGuarantor.id)}
+                    onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
                   />
-                  <div className="guarantor-item-info" style={{ flex: 1 }}>
+                </div>
+                <div className="guarantor-item-info">
+                  <div className="guarantor-item-top">
+                    <span className="guarantor-item-name">{officeGuarantor.name}</span>
+                    <span className="tag-office">
+                      <Star size={11} /> ADMIN
+                    </span>
+                  </div>
+                  <span className="guarantor-item-sub">Unlimited guarantee capacity</span>
+                </div>
+                {formData.guarantorIds.includes(officeGuarantor.id) && (
+                  <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
+                )}
+              </label>
+            )}
+
+            {/* Regular guarantors */}
+            {filteredGuarantors.map(g => {
+              const isSelected = formData.guarantorIds.includes(g.id);
+              return (
+                <div
+                  key={g.id}
+                  className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${isSelected ? 'selected' : ''}`}
+                  onClick={() => toggleGuarantor(g)}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabIndex={g.isEligible ? 0 : -1}
+                  onKeyDown={e => e.key === ' ' && g.isEligible && toggleGuarantor(g)}
+                >
+                  {/* Checkbox */}
+                  <div className="guarantor-checkbox-wrap">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}}
+                      disabled={!g.isEligible}
+                      tabIndex={-1}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+
+                  {/* Avatar */}
+                  <div className={`guarantor-avatar ${g.isEligible ? 'elig' : 'inelig'}`}>
+                    {g.firstName?.[0]}{g.lastName?.[0]}
+                  </div>
+
+                  {/* Info */}
+                  <div className="guarantor-item-info">
                     <div className="guarantor-item-top">
                       <span className="guarantor-item-name">{g.firstName} {g.lastName}</span>
                       <span className={`tag-elig ${g.isEligible ? 'tag-yes' : 'tag-no'}`}>
-                        {g.isEligible ? <><CheckCircle size={10} /> Eligible</> : <><XCircle size={10} /> Ineligible</>}
+                        {g.isEligible
+                          ? <><CheckCircle size={10} /> Eligible</>
+                          : <><XCircle size={10} /> Ineligible</>}
                       </span>
                     </div>
                     <div className="guarantor-item-meta">
-                      <Users size={11} />
-                      <span style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#666' }}>
-                        {g.activeGuaranteeCount}/3 guarantees
+                      {/* Guarantee usage bar */}
+                      <div className="guarantee-usage-bar">
+                        {[0, 1, 2].map(i => (
+                          <div
+                            key={i}
+                            className={`guarantee-usage-pip ${i < g.activeGuaranteeCount ? 'filled' : ''} ${g.activeGuaranteeCount >= 3 ? 'maxed' : ''}`}
+                          />
+                        ))}
+                      </div>
+                      <span style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#777', fontSize: '11px' }}>
+                        {g.activeGuaranteeCount}/3 active guarantees
                       </span>
                     </div>
+                    {!g.isEligible && (
+                      <div className="guarantor-ineligible-reason">
+                        <AlertTriangle size={11} color="#991b1b" />
+                        {g.activeGuaranteeCount >= 3
+                          ? 'Max guarantees reached'
+                          : 'Insufficient savings'}
+                      </div>
+                    )}
                   </div>
-                </div>
-                {!g.isEligible && (
-                  <div className="guarantor-ineligible-reason">
-                    <AlertTriangle size={11} color="#991b1b" />
-                    {g.activeGuaranteeCount >= 3
-                      ? 'Max guarantees reached (3/3)'
-                      : 'Insufficient savings to guarantee this loan'}
-                  </div>
-                )}
-              </label>
-            </div>
-          ))}
 
-          {filteredGuarantors.length === 0 && (
-            <div className="guarantor-loading">
-              <Users size={16} /> No {guarantorFilter === 'all' ? '' : guarantorFilter} guarantors found
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+                  {/* Selected check */}
+                  {isSelected && g.isEligible && (
+                    <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
+                  )}
+                </div>
+              );
+            })}
+
+            {filteredGuarantors.length === 0 && !officeGuarantor && (
+              <div className="guarantor-loading">
+                <Users size={16} /> No {guarantorFilter === 'all' ? '' : guarantorFilter} guarantors found
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Selected summary chips */}
+        {formData.guarantorIds.length > 0 && (
+          <div className="guarantor-selected-summary">
+            <span className="guarantor-selected-label">Selected:</span>
+            {formData.guarantorIds.map(id => {
+              const g = allGuarantors.find(g => g.id === id);
+              const isOffice = officeGuarantor && id === officeGuarantor.id;
+              const name = isOffice
+                ? officeGuarantor.name
+                : g ? `${g.firstName} ${g.lastName}` : `#${id}`;
+              return (
+                <span key={id} className="guarantor-chip">
+                  {name}
+                  <button
+                    type="button"
+                    className="guarantor-chip-remove"
+                    onClick={() => setFormData(prev => ({ ...prev, guarantorIds: prev.guarantorIds.filter(i => i !== id) }))}
+                    aria-label={`Remove ${name}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ── Loan Summary Box ─────────────────────────────────────────
   function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
@@ -506,7 +610,7 @@ const MemberLoanApplication = () => {
     );
   }
 
-  // ── Loan cards for mobile (replaces table on small screens) ──
+  // ── Loan cards for mobile ──
   const LoanCards = () => (
     <div className="loan-cards-mobile">
       {myLoans.map(loan => {
@@ -1060,16 +1164,19 @@ const MemberLoanApplication = () => {
           display: inline-flex; align-items: center; gap: 3px;
         }
         .tag-office {
-          margin-left: 8px; padding: 3px 10px;
+          padding: 2px 8px;
           background: #ff9800; color: white;
-          border-radius: 12px; font-size: 11px; font-weight: 700;
-          display: inline-flex; align-items: center; gap: 4px;
+          border-radius: 10px; font-size: 10px; font-weight: 700;
+          display: inline-flex; align-items: center; gap: 3px;
+          white-space: nowrap;
+          flex-shrink: 0;
         }
         .tag-elig {
-          padding: 2px 8px; border-radius: 10px;
+          padding: 2px 7px; border-radius: 8px;
           font-size: 10px; font-weight: 700;
           display: inline-flex; align-items: center; gap: 3px;
           white-space: nowrap;
+          flex-shrink: 0;
         }
         .tag-yes { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
         .tag-no  { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
@@ -1078,7 +1185,6 @@ const MemberLoanApplication = () => {
         .mla-modal {
           display: flex; flex-direction: column;
           max-height: 95vh; padding: 0 !important;
-          /* Bottom-sheet on mobile */
           border-radius: 16px 16px 0 0 !important;
           width: 100% !important;
           max-width: 100% !important;
@@ -1098,7 +1204,6 @@ const MemberLoanApplication = () => {
             max-height: 90vh;
           }
         }
-        /* Adjust overlay to align bottom on mobile */
         .modal-overlay {
           align-items: flex-end !important;
         }
@@ -1125,76 +1230,336 @@ const MemberLoanApplication = () => {
 
         .mla-modal-body {
           overflow-y: auto; flex: 1;
-          padding: 16px 20px 24px;
+          padding: 16px 16px 24px;
           -webkit-overflow-scrolling: touch;
         }
         @media (min-width: 640px) { .mla-modal-body { padding: 20px 28px 28px; } }
 
-        /* ── Guarantor picker ──────────────────────────── */
-        .guarantor-filter-bar {
-          display: flex; gap: 6px;
-          background: #f5f5f5; padding: 8px;
-          border-radius: 8px; margin-bottom: 10px;
+        /* ══════════════════════════════════════════════════
+           GUARANTOR PICKER — fully mobile-responsive
+        ══════════════════════════════════════════════════ */
+
+        .guarantor-picker-wrapper {
+          margin-top: 4px;
+        }
+
+        /* Header row */
+        .guarantor-picker-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 6px;
           flex-wrap: wrap;
         }
-        @media (min-width: 480px) { .guarantor-filter-bar { flex-wrap: nowrap; } }
+        .guarantor-picker-label {
+          font-size: 13px;
+          font-weight: 700;
+          color: #1a1a2e;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .guarantor-count-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 10px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 700;
+          background: #e3f2fd;
+          color: #1565c0;
+          border: 1.5px solid #90caf9;
+          transition: background 0.2s, color 0.2s;
+        }
+        .guarantor-count-badge.complete {
+          background: #e8f5e9;
+          color: #2e7d32;
+          border-color: #a5d6a7;
+        }
+        .guarantor-picker-hint {
+          font-size: 11px;
+          color: #888;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          white-space: nowrap;
+        }
+
+        /* Progress bar */
+        .guarantor-progress-track {
+          width: 100%;
+          height: 4px;
+          background: #e0e0e0;
+          border-radius: 4px;
+          margin-bottom: 10px;
+          overflow: hidden;
+        }
+        .guarantor-progress-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.3s ease, background 0.3s ease;
+        }
+
+        /* Filter tabs */
+        .guarantor-filter-bar {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 6px;
+          margin-bottom: 10px;
+        }
 
         .guarantor-filter-btn {
-          flex: 1 1 auto; padding: 7px 8px;
-          border-radius: 6px; font-size: 12px; font-weight: 600;
-          cursor: pointer; border-width: 2px; border-style: solid;
-          display: flex; align-items: center; justify-content: center;
-          gap: 4px; transition: all 0.15s; white-space: nowrap;
-          min-width: 0;
+          padding: 8px 6px;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          border-width: 2px;
+          border-style: solid;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          transition: all 0.15s;
+          white-space: nowrap;
+          width: 100%;
+          flex-direction: column;
+          min-height: 52px;
         }
-        .filter-label { overflow: hidden; text-overflow: ellipsis; }
+        @media (min-width: 400px) {
+          .guarantor-filter-btn {
+            flex-direction: row;
+            min-height: auto;
+            padding: 8px 10px;
+          }
+        }
 
+        .filter-label-text {
+          font-size: 11px;
+          line-height: 1;
+        }
+        @media (min-width: 400px) {
+          .filter-label-text { font-size: 12px; }
+        }
+
+        .filter-count-pill {
+          border-radius: 10px;
+          padding: 1px 6px;
+          font-size: 10px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1.4;
+        }
+
+        /* Loading state */
         .guarantor-loading {
-          text-align: center; padding: 20px;
-          color: #666; display: flex; align-items: center;
-          justify-content: center; gap: 8px; font-size: 14px;
+          text-align: center; padding: 24px 16px;
+          color: #888; display: flex; align-items: center;
+          justify-content: center; gap: 8px; font-size: 13px;
         }
 
+        /* Scrollable list */
         .guarantor-list-scroll {
-          max-height: 280px; overflow-y: auto;
-          border: 1px solid #ddd; padding: 10px;
-          border-radius: 6px; background: #fafafa;
-        }
-        @media (min-width: 640px) { .guarantor-list-scroll { max-height: 320px; } }
-
-        .guarantor-item {
-          margin-bottom: 8px; padding: 10px 12px;
-          border-radius: 8px; border: 2px solid #e0e0e0;
+          max-height: 260px;
+          overflow-y: auto;
+          border: 1.5px solid #e0e0e0;
+          border-radius: 10px;
           background: #fafafa;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
         }
-        .guarantor-item.eligible   { border-color: #86efac; background: #f0fdf4; }
-        .guarantor-item.ineligible { border-color: #fca5a5; background: #fef2f2; opacity: 0.75; }
-        .guarantor-item.selected.eligible { background: #dcfce7; }
-        .guarantor-item.office-guarantor  { background: #fff9c4; border-color: #fbc02d; margin-bottom: 10px; cursor: pointer; }
-        .guarantor-item.office-guarantor.selected { background: #fff3e0; border-color: #ff9800; border-width: 3px; }
+        @media (min-width: 640px) {
+          .guarantor-list-scroll { max-height: 320px; }
+        }
 
-        .guarantor-item-row {
-          display: flex; align-items: flex-start; gap: 8px;
+        /* Guarantor item — tap-friendly */
+        .guarantor-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 12px 12px;
+          border-bottom: 1px solid #ececec;
+          cursor: pointer;
+          transition: background 0.12s;
+          position: relative;
+          -webkit-tap-highlight-color: transparent;
+          user-select: none;
         }
-        .guarantor-item-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
-        .guarantor-item-top  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .guarantor-item-name { font-weight: 700; font-size: 13px; color: #1a1a2e; }
+        .guarantor-item:last-child { border-bottom: none; }
+        .guarantor-item:active { opacity: 0.85; }
+
+        .guarantor-item.eligible         { background: #f0fdf4; }
+        .guarantor-item.eligible:hover   { background: #dcfce7; }
+        .guarantor-item.ineligible       { background: #fef2f2; opacity: 0.78; cursor: default; }
+        .guarantor-item.selected.eligible { background: #dcfce7; }
+
+        .guarantor-item.office-guarantor {
+          background: #fff9c4;
+          border-bottom: 1px solid #f0e57a;
+          cursor: pointer;
+        }
+        .guarantor-item.office-guarantor:hover { background: #fff3e0; }
+        .guarantor-item.office-guarantor.selected { background: #ffe0b2; }
+
+        /* Checkbox area — hidden visually but accessible */
+        .guarantor-checkbox-wrap {
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+          padding-top: 1px;
+        }
+        .guarantor-checkbox-wrap input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          cursor: pointer;
+          accent-color: #1976d2;
+          flex-shrink: 0;
+        }
+
+        /* Avatar */
+        .guarantor-avatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 700;
+          flex-shrink: 0;
+          text-transform: uppercase;
+        }
+        .guarantor-avatar.elig  { background: #bbf7d0; color: #065f46; }
+        .guarantor-avatar.inelig { background: #fecaca; color: #7f1d1d; }
+
+        /* Info column */
+        .guarantor-item-info {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .guarantor-item-top {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .guarantor-item-name {
+          font-weight: 700;
+          font-size: 13px;
+          color: #1a1a2e;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 140px;
+        }
+        @media (min-width: 380px) {
+          .guarantor-item-name { max-width: 180px; }
+        }
+        @media (min-width: 480px) {
+          .guarantor-item-name { max-width: none; white-space: normal; }
+        }
+
+        .guarantor-item-sub {
+          font-size: 11px;
+          color: #888;
+        }
+
+        /* Guarantee usage pips */
         .guarantor-item-meta {
-          display: flex; align-items: center; gap: 4px;
-          font-size: 11px; color: #666;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
         }
+        .guarantee-usage-bar {
+          display: flex;
+          gap: 3px;
+          align-items: center;
+        }
+        .guarantee-usage-pip {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #e0e0e0;
+          transition: background 0.2s;
+        }
+        .guarantee-usage-pip.filled       { background: #4caf50; }
+        .guarantee-usage-pip.filled.maxed { background: #f44336; }
+
+        /* Ineligible reason */
         .guarantor-ineligible-reason {
-          margin-top: 6px; margin-left: 22px;
-          padding: 5px 8px; background: #fee2e2;
-          border-radius: 4px; border: 1px solid #fca5a5;
-          display: flex; align-items: center; gap: 5px;
-          font-size: 11px; font-weight: 600; color: #991b1b;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          font-weight: 600;
+          color: #991b1b;
+          background: #fee2e2;
+          padding: 4px 8px;
+          border-radius: 6px;
+          margin-top: 2px;
+          width: fit-content;
+          max-width: 100%;
         }
+
+        /* Guarantor warning (below picker) */
         .guarantor-warning {
           color: #c62828; font-size: 13px; background: #ffebee;
           padding: 10px 14px; border-radius: 6px;
           display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
         }
+
+        /* Selected chips row */
+        .guarantor-selected-summary {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 8px;
+          padding: 8px 10px;
+          background: #f0fdf4;
+          border: 1.5px solid #a5d6a7;
+          border-radius: 8px;
+        }
+        .guarantor-selected-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: #2e7d32;
+          white-space: nowrap;
+        }
+        .guarantor-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: #d1fae5;
+          color: #065f46;
+          border: 1px solid #6ee7b7;
+          border-radius: 12px;
+          padding: 3px 8px 3px 10px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+        .guarantor-chip-remove {
+          background: none;
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 2px;
+          border-radius: 50%;
+          color: #065f46;
+          transition: background 0.15s;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .guarantor-chip-remove:hover { background: #a7f3d0; }
 
         /* ── Loan summary box ──────────────────────────── */
         .loan-summary-box {
