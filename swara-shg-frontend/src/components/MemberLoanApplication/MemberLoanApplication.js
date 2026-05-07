@@ -38,10 +38,11 @@ const MemberLoanApplication = () => {
   const [loadingEligibility, setLoadingEligibility] = useState(false);
 
   // Stores the full guarantors API response so we can read
-  // liabilityPerGuarantor and requiredGuarantors from the server.
+  // liabilityPerGuarantor, totalRepayment and requiredGuarantors from the server.
   const [guarantorsMeta, setGuarantorsMeta] = useState({
     liabilityPerGuarantor: 0,
-    requiredGuarantors: 0,
+    totalRepayment:        0,
+    requiredGuarantors:    0,
   });
 
   const [formData, setFormData] = useState({
@@ -147,7 +148,7 @@ const MemberLoanApplication = () => {
     } else {
       setAvailableDurations([]);
       setAllGuarantors([]);
-      setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
+      setGuarantorsMeta({ liabilityPerGuarantor: 0, totalRepayment: 0, requiredGuarantors: 0 });
       setLoanInfo(prev => ({ ...prev, requiredGuarantors: 0 }));
       setFormData(prev => ({ ...prev, durationMonths: '', guarantorIds: [] }));
     }
@@ -172,24 +173,27 @@ const MemberLoanApplication = () => {
     } catch { setAvailableDurations([]); }
   };
 
-  // FIX: store the full API response including liabilityPerGuarantor and
-  // requiredGuarantors returned by the (now-corrected) backend so the UI
-  // reflects the real server-side calculation, not a hardcoded /2 split.
+  // Store the full API response including liabilityPerGuarantor, totalRepayment
+  // and requiredGuarantors returned by the backend so the UI reflects the real
+  // server-side calculation using the new formula:
+  //   Step 1: totalRepayment = principal + interest + txFee
+  //   Step 2: oneShare       = totalRepayment / n
+  //   Step 3: reduced        = totalRepayment - oneShare
+  //   Step 4: liabilityEach  = reduced / n
   const fetchEligibleGuarantors = async (loanAmount) => {
     setLoadingEligibility(true);
     try {
-      const res = await guarantorsAPI.getEligible({ loanAmount, excludeMemberId: memberId });
+      const res  = await guarantorsAPI.getEligible({ loanAmount, excludeMemberId: memberId });
       const data = res.data;
       setAllGuarantors(data.guarantors || []);
       setEligibleCount(data.eligibleCount || 0);
 
-      // Keep server-side meta so the picker shows accurate liability figures
       setGuarantorsMeta({
         liabilityPerGuarantor: data.liabilityPerGuarantor || 0,
+        totalRepayment:        data.totalRepayment        || 0,
         requiredGuarantors:    data.requiredGuarantors    || (loanAmount < 80000 ? 3 : 5),
       });
 
-      // Also update loanInfo so the submit guard uses the correct count
       setLoanInfo(prev => ({
         ...prev,
         requiredGuarantors: data.requiredGuarantors || (loanAmount < 80000 ? 3 : 5),
@@ -197,7 +201,7 @@ const MemberLoanApplication = () => {
     } catch {
       setAllGuarantors([]);
       setEligibleCount(0);
-      setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
+      setGuarantorsMeta({ liabilityPerGuarantor: 0, totalRepayment: 0, requiredGuarantors: 0 });
     }
     finally { setLoadingEligibility(false); }
   };
@@ -238,7 +242,7 @@ const MemberLoanApplication = () => {
     setAvailableDurations([]);
     setAllGuarantors([]);
     setGuarantorFilter('all');
-    setGuarantorsMeta({ liabilityPerGuarantor: 0, requiredGuarantors: 0 });
+    setGuarantorsMeta({ liabilityPerGuarantor: 0, totalRepayment: 0, requiredGuarantors: 0 });
   };
 
   const closeModal = () => { setModalMode(null); resetForm(); };
@@ -364,10 +368,18 @@ const MemberLoanApplication = () => {
     const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
     const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
 
-    // Show the server-returned liability per guarantor so the user
-    // understands exactly how much savings each guarantor needs to cover.
-    const liabilityLabel = guarantorsMeta.liabilityPerGuarantor > 0
-      ? `Each guarantor covers ${fmt(guarantorsMeta.liabilityPerGuarantor)}`
+    const n                    = guarantorsMeta.requiredGuarantors || requiredCount;
+    const totalRep             = guarantorsMeta.totalRepayment;
+    const liabilityPerG        = guarantorsMeta.liabilityPerGuarantor;
+
+    // Build a human-readable explanation of the new formula
+    // e.g. "(10,808 - 10,808/3) / 3 = 2,402"
+    const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
+      ? `(${fmt(totalRep)} − ${fmt(totalRep)} ÷ ${n}) ÷ ${n} = ${fmt(liabilityPerG)}`
+      : null;
+
+    const liabilityBannerLabel = liabilityPerG > 0
+      ? `Minimum savings required per guarantor: ${fmt(liabilityPerG)}`
       : null;
 
     return (
@@ -391,16 +403,24 @@ const MemberLoanApplication = () => {
           )}
         </div>
 
-        {/* Liability info banner — new, shows server value */}
-        {liabilityLabel && (
+        {/* Liability info banner — shows server value with formula breakdown */}
+        {liabilityBannerLabel && (
           <div className="guarantor-liability-info">
             <Users size={12} />
-            <span>{liabilityLabel} of loan liability</span>
-            {guarantorsMeta.requiredGuarantors > 0 && (
-              <span className="guarantor-liability-split">
-                ({guarantorsMeta.requiredGuarantors} guarantors × {fmt(guarantorsMeta.liabilityPerGuarantor)})
-              </span>
-            )}
+            <div className="guarantor-liability-info-inner">
+              <span className="guarantor-liability-main">{liabilityBannerLabel}</span>
+              {liabilityFormulaLabel && (
+                <span className="guarantor-liability-formula">
+                  Formula: {liabilityFormulaLabel}
+                </span>
+              )}
+              {n > 0 && totalRep > 0 && (
+                <span className="guarantor-liability-split">
+                  Total repayment {fmt(totalRep)} distributed across {n} guarantors
+                  using the reduced-liability method
+                </span>
+              )}
+            </div>
           </div>
         )}
 
@@ -537,7 +557,7 @@ const MemberLoanApplication = () => {
                       </span>
                     </div>
 
-                    {/* Show savings vs required liability from server */}
+                    {/* Ineligibility reason */}
                     {!g.isEligible && g.ineligibilityReason ? (
                       <div className="guarantor-ineligible-reason">
                         <AlertTriangle size={11} color="#991b1b" />
@@ -550,13 +570,13 @@ const MemberLoanApplication = () => {
                       </div>
                     )}
 
-                    {/* Show available savings for eligible guarantors */}
+                    {/* Show available savings vs required liability for eligible guarantors */}
                     {g.isEligible && g.availableSavings !== undefined && (
                       <div className="guarantor-savings-info">
-                        <span>Available: <strong>{fmt(g.availableSavings)}</strong></span>
-                        {guarantorsMeta.liabilityPerGuarantor > 0 && (
+                        <span>Available savings: <strong>{fmt(g.availableSavings)}</strong></span>
+                        {liabilityPerG > 0 && (
                           <span style={{ color: '#555' }}>
-                            {' '}· Needs: {fmt(guarantorsMeta.liabilityPerGuarantor)}
+                            {' '}· Required: <strong>{fmt(liabilityPerG)}</strong>
                           </span>
                         )}
                       </div>
@@ -613,6 +633,15 @@ const MemberLoanApplication = () => {
   function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
     if (!amt || !formData.durationMonths) return null;
     const fullRepayment = amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE;
+
+    // Re-derive the per-guarantor liability from the full repayment + the
+    // chosen duration's interest so the summary always matches exactly what
+    // the server will compute once a duration is selected.
+    const n               = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
+    const oneShare        = fullRepayment / n;
+    const reduced         = fullRepayment - oneShare;
+    const liabilityEach   = reduced / n;
+
     return (
       <div className="loan-summary-box">
         <h3 className="loan-summary-title">
@@ -651,16 +680,21 @@ const MemberLoanApplication = () => {
             </div>
           </div>
         )}
+
+        {/* Guarantor requirement with per-guarantor liability breakdown */}
         <div className="loan-summary-guarantors">
           <Users size={13} color="#888" />
-          <span>
-            <strong>Guarantors Required:</strong> {loanInfo.requiredGuarantors}
-            {guarantorsMeta.liabilityPerGuarantor > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span>
+              <strong>Guarantors Required:</strong> {n}
               <span style={{ color: '#888', marginLeft: 6 }}>
-                (each covers {fmt(guarantorsMeta.liabilityPerGuarantor)})
+                · Min. savings per guarantor: <strong style={{ color: '#1565c0' }}>{fmt(liabilityEach)}</strong>
               </span>
-            )}
-          </span>
+            </span>
+            <span style={{ fontSize: '11px', color: '#888' }}>
+              Formula: ({fmt(fullRepayment)} − {fmt(fullRepayment)} ÷ {n}) ÷ {n}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -1280,16 +1314,28 @@ const MemberLoanApplication = () => {
           display: flex; align-items: center; gap: 4px; white-space: nowrap;
         }
 
-        /* Liability info banner — NEW */
+        /* Liability info banner */
         .guarantor-liability-info {
-          display: flex; align-items: center; gap: 6px;
+          display: flex; align-items: flex-start; gap: 8px;
           font-size: 12px; color: #1565c0;
-          background: #e3f2fd; padding: 7px 12px;
+          background: #e3f2fd; padding: 10px 12px;
           border-radius: 7px; margin-bottom: 8px;
-          border: 1px solid #90caf9; flex-wrap: wrap;
+          border: 1px solid #90caf9;
+        }
+        .guarantor-liability-info svg { flex-shrink: 0; margin-top: 2px; }
+        .guarantor-liability-info-inner {
+          display: flex; flex-direction: column; gap: 3px;
+        }
+        .guarantor-liability-main {
+          font-weight: 700; color: #1565c0;
+        }
+        .guarantor-liability-formula {
+          font-size: 11px; color: #1976d2; font-family: monospace;
+          background: rgba(25,118,210,0.08); padding: 2px 6px;
+          border-radius: 4px; width: fit-content;
         }
         .guarantor-liability-split {
-          color: #888; font-size: 11px;
+          color: #555; font-size: 11px;
         }
 
         .guarantor-progress-track {
@@ -1406,7 +1452,7 @@ const MemberLoanApplication = () => {
           margin-top: 2px; width: fit-content; max-width: 100%;
         }
 
-        /* NEW: savings info for eligible guarantors */
+        /* Savings info for eligible guarantors */
         .guarantor-savings-info {
           font-size: 11px; color: #666; margin-top: 2px;
         }
@@ -1477,9 +1523,11 @@ const MemberLoanApplication = () => {
         }
         .amount-disburse-value { margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #2e7d32; }
         .amount-balance-value  { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: #1565c0; }
+
         .loan-summary-guarantors {
-          margin-top: 10px; display: flex; align-items: center; gap: 6px;
-          font-size: 12px; color: #888;
+          margin-top: 10px; display: flex; align-items: flex-start; gap: 6px;
+          font-size: 12px; color: #888; padding-top: 10px;
+          border-top: 1px dashed #90caf9;
         }
 
         /* ── Top-up ── */
