@@ -3,34 +3,39 @@ const { Op } = require('sequelize');
 
 const MAX_ACTIVE_GUARANTEES = 3;
 
-// ─── Helper: mirrors loanController logic ────────────────────────
-// Loans < 80,000 require 3 guarantors; loans >= 80,000 require 5.
-// Liability per guarantor is the full loan amount divided by the
-// number of required guarantors — NOT always divided by 2.
-const getRequiredGuarantors = (amount) => Number(amount) < 80000 ? 3 : 5;
+// ─── Helpers ──────────────────────────────────────────────────────
+// IMPORTANT: Must mirror loanController.js exactly.
+// Loans < 80,000  → 3 required guarantors
+// Loans >= 80,000 → 5 required guarantors
+// Liability per guarantor = loanAmount / requiredGuarantors  (NOT always /2)
+const getRequiredGuarantors    = (amount) => Number(amount) < 80000 ? 3 : 5;
+const getLiabilityPerGuarantor = (amount) => Number(amount) / getRequiredGuarantors(amount);
 
-const getLiabilityPerGuarantor = (loanAmount) => {
-  const required = getRequiredGuarantors(loanAmount);
-  return Number(loanAmount) / required;
-};
-
-// ─── GET eligible guarantors ─────────────────────────────────────
+// ─── GET /guarantors/eligible ────────────────────────────────────
 const getEligibleGuarantors = async (req, res) => {
   const { loanAmount, excludeMemberId } = req.query;
 
-  // FIX: split liability across the correct number of guarantors
-  // (3 for loans < 80k, 5 for loans >= 80k) instead of always dividing by 2.
+  if (!loanAmount || isNaN(Number(loanAmount))) {
+    return res.status(400).json({ message: 'loanAmount query param is required and must be a number' });
+  }
+
+  // FIX: was always dividing by 2 regardless of how many guarantors are required.
+  // A KES 10,000 loan needs 3 guarantors → liability = 10,000 / 3 ≈ 3,333 each.
   const liabilityPerGuarantor = getLiabilityPerGuarantor(loanAmount);
+  const requiredGuarantors    = getRequiredGuarantors(loanAmount);
 
   try {
+    const where = {};
+    if (excludeMemberId) where.id = { [Op.ne]: Number(excludeMemberId) };
+
     const members = await Member.findAll({
-      where: excludeMemberId ? { id: { [Op.ne]: excludeMemberId } } : {},
-      attributes: ['id', 'firstName', 'lastName'],
-      include: [{ model: Savings, as: 'savings', attributes: ['amount'], required: false }],
+      where,
+      attributes: ['id', 'firstName', 'lastName', 'isActive'],
+      include: [{ model: Savings, as: 'savings', where: { isPaid: true }, attributes: ['amount'], required: false }],
     });
 
     const guarantorData = await Promise.all(
-      members.map(async (member) => {
+      members.filter(m => m.isActive).map(async (member) => {
         const totalSavings = member.savings?.reduce(
           (sum, s) => sum + Number(s.amount || 0), 0
         ) || 0;
@@ -38,62 +43,60 @@ const getEligibleGuarantors = async (req, res) => {
         // Count pending + accepted guarantees across active/arrears/pending loans
         const activeGuaranteeCount = await LoanGuarantor.count({
           where: {
-            guarantorId: member.id,
+            guarantorId:    member.id,
             approvalStatus: { [Op.in]: ['pending', 'accepted'] },
           },
           include: [{
-            model: Loan, as: 'loan',
-            where: { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
+            model:    Loan,
+            as:       'loan',
+            where:    { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
             required: true,
           }],
         });
 
-        // Calculate current liabilities from accepted guarantees only
+        // FIX: use each guaranteed loan's own amount to calculate the correct
+        // liability share instead of always using remainingBalance / 2.
         let activeGuarantees = [];
         try {
           activeGuarantees = await LoanGuarantor.findAll({
             where: {
-              guarantorId: member.id,
+              guarantorId:    member.id,
               approvalStatus: 'accepted',
             },
             include: [{
-              model: Loan, as: 'loan',
-              where: { status: { [Op.in]: ['active', 'arrears'] } },
+              model:    Loan,
+              as:       'loan',
+              where:    { status: { [Op.in]: ['active', 'arrears'] } },
               attributes: ['amount', 'remainingBalance'],
               required: true,
             }],
           });
-        } catch (err) {
-          // No active guarantees for this member
-        }
+        } catch (_) {}
 
-        // FIX: use the correct per-guarantor liability share for each
-        // guaranteed loan based on its own amount, not a flat /2.
         const currentLiabilities = activeGuarantees.reduce((sum, g) => {
-          const guaranteedLoanAmount = Number(g.loan?.amount || 0);
-          const share = getLiabilityPerGuarantor(guaranteedLoanAmount);
+          const share = getLiabilityPerGuarantor(g.loan?.amount || 0);
           return sum + share;
         }, 0);
 
-        const availableSavings      = totalSavings - currentLiabilities;
-        const hasSufficientSavings  = availableSavings >= liabilityPerGuarantor;
-        const hasGuaranteeCapacity  = activeGuaranteeCount < MAX_ACTIVE_GUARANTEES;
-        const isEligible            = hasSufficientSavings && hasGuaranteeCapacity;
-        const shortfall             = Math.max(0, liabilityPerGuarantor - availableSavings);
+        const availableSavings     = totalSavings - currentLiabilities;
+        const hasSufficientSavings = availableSavings >= liabilityPerGuarantor;
+        const hasGuaranteeCapacity = activeGuaranteeCount < MAX_ACTIVE_GUARANTEES;
+        const isEligible           = hasSufficientSavings && hasGuaranteeCapacity;
+        const shortfall            = Math.max(0, liabilityPerGuarantor - availableSavings);
 
         return {
           id:                      member.id,
           firstName:               member.firstName,
           lastName:                member.lastName,
-          totalSavings,
-          currentLiabilities,
-          availableSavings,
+          totalSavings:            Math.round(totalSavings),
+          currentLiabilities:      Math.round(currentLiabilities),
+          availableSavings:        Math.round(availableSavings),
           activeGuaranteeCount,
           maxGuarantees:           MAX_ACTIVE_GUARANTEES,
           remainingGuaranteeSlots: Math.max(0, MAX_ACTIVE_GUARANTEES - activeGuaranteeCount),
           isEligible,
-          shortfall,
-          requiredLiability:       liabilityPerGuarantor,
+          shortfall:               Math.round(shortfall),
+          requiredLiability:       Math.round(liabilityPerGuarantor),
           ineligibilityReason:     !isEligible
             ? (!hasSufficientSavings
                 ? `Insufficient savings (shortfall: KES ${Math.round(shortfall).toLocaleString()})`
@@ -110,12 +113,12 @@ const getEligibleGuarantors = async (req, res) => {
     });
 
     return res.json({
-      guarantors:          sortedGuarantors,
-      liabilityPerGuarantor,
-      requiredGuarantors:  getRequiredGuarantors(loanAmount),
-      maxActiveGuarantees: MAX_ACTIVE_GUARANTEES,
-      eligibleCount:       sortedGuarantors.filter(g => g.isEligible).length,
-      ineligibleCount:     sortedGuarantors.filter(g => !g.isEligible).length,
+      guarantors:            sortedGuarantors,
+      liabilityPerGuarantor: Math.round(liabilityPerGuarantor),
+      requiredGuarantors,
+      maxActiveGuarantees:   MAX_ACTIVE_GUARANTEES,
+      eligibleCount:         sortedGuarantors.filter(g => g.isEligible).length,
+      ineligibleCount:       sortedGuarantors.filter(g => !g.isEligible).length,
     });
   } catch (error) {
     console.error('Get eligible guarantors error:', error);
@@ -123,19 +126,23 @@ const getEligibleGuarantors = async (req, res) => {
   }
 };
 
-// ─── CHECK specific guarantor eligibility ────────────────────────
+// ─── GET /guarantors/:guarantorId/check-eligibility ──────────────
 const checkGuarantorEligibility = async (req, res) => {
   const { guarantorId } = req.params;
   const { loanAmount }  = req.query;
 
-  // FIX: split liability across the correct number of guarantors
-  // (3 for loans < 80k, 5 for loans >= 80k) instead of always dividing by 2.
+  if (!loanAmount || isNaN(Number(loanAmount))) {
+    return res.status(400).json({ message: 'loanAmount query param is required and must be a number' });
+  }
+
+  // FIX: same as above — was always dividing by 2.
   const liabilityPerGuarantor = getLiabilityPerGuarantor(loanAmount);
+  const requiredGuarantors    = getRequiredGuarantors(loanAmount);
 
   try {
     const member = await Member.findByPk(guarantorId, {
-      attributes: ['id', 'firstName', 'lastName'],
-      include: [{ model: Savings, as: 'savings', attributes: ['amount'], required: false }],
+      attributes: ['id', 'firstName', 'lastName', 'isActive'],
+      include: [{ model: Savings, as: 'savings', where: { isPaid: true }, attributes: ['amount'], required: false }],
     });
     if (!member) return res.status(404).json({ message: 'Member not found' });
 
@@ -143,15 +150,16 @@ const checkGuarantorEligibility = async (req, res) => {
       (sum, s) => sum + Number(s.amount || 0), 0
     ) || 0;
 
-    // Count pending + accepted guarantees
+    // Count pending + accepted guarantees across active/arrears/pending loans
     const activeGuaranteeCount = await LoanGuarantor.count({
       where: {
-        guarantorId,
+        guarantorId:    Number(guarantorId),
         approvalStatus: { [Op.in]: ['pending', 'accepted'] },
       },
       include: [{
-        model: Loan, as: 'loan',
-        where: { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
+        model:    Loan,
+        as:       'loan',
+        where:    { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
         required: true,
       }],
     });
@@ -159,46 +167,43 @@ const checkGuarantorEligibility = async (req, res) => {
     let activeGuarantees = [];
     try {
       activeGuarantees = await LoanGuarantor.findAll({
-        where: { guarantorId, approvalStatus: 'accepted' },
+        where: { guarantorId: Number(guarantorId), approvalStatus: 'accepted' },
         include: [{
-          model: Loan, as: 'loan',
-          where: { status: { [Op.in]: ['active', 'arrears'] } },
+          model:    Loan,
+          as:       'loan',
+          where:    { status: { [Op.in]: ['active', 'arrears'] } },
           attributes: ['id', 'amount', 'remainingBalance'],
           required: true,
         }],
       });
-    } catch (err) {
-      // No active guarantees for this guarantor
-    }
+    } catch (_) {}
 
-    // FIX: use the correct per-guarantor liability share for each
-    // guaranteed loan based on its own amount, not a flat /2.
+    // FIX: correct per-loan liability share based on each loan's own amount.
     const currentLiabilities = activeGuarantees.reduce((sum, g) => {
-      const guaranteedLoanAmount = Number(g.loan?.amount || 0);
-      const share = getLiabilityPerGuarantor(guaranteedLoanAmount);
+      const share = getLiabilityPerGuarantor(g.loan?.amount || 0);
       return sum + share;
     }, 0);
 
-    const availableSavings      = totalSavings - currentLiabilities;
-    const hasSufficientSavings  = availableSavings >= liabilityPerGuarantor;
-    const hasGuaranteeCapacity  = activeGuaranteeCount < MAX_ACTIVE_GUARANTEES;
-    const isEligible            = hasSufficientSavings && hasGuaranteeCapacity;
-    const shortfall             = Math.max(0, liabilityPerGuarantor - availableSavings);
+    const availableSavings     = totalSavings - currentLiabilities;
+    const hasSufficientSavings = availableSavings >= liabilityPerGuarantor;
+    const hasGuaranteeCapacity = activeGuaranteeCount < MAX_ACTIVE_GUARANTEES;
+    const isEligible           = hasSufficientSavings && hasGuaranteeCapacity;
+    const shortfall            = Math.max(0, liabilityPerGuarantor - availableSavings);
 
     return res.json({
       guarantor: {
         id:                      member.id,
         firstName:               member.firstName,
         lastName:                member.lastName,
-        totalSavings,
-        currentLiabilities,
-        availableSavings,
+        totalSavings:            Math.round(totalSavings),
+        currentLiabilities:      Math.round(currentLiabilities),
+        availableSavings:        Math.round(availableSavings),
         activeGuaranteeCount,
         maxGuarantees:           MAX_ACTIVE_GUARANTEES,
         remainingGuaranteeSlots: Math.max(0, MAX_ACTIVE_GUARANTEES - activeGuaranteeCount),
         isEligible,
-        shortfall,
-        requiredLiability:       liabilityPerGuarantor,
+        shortfall:               Math.round(shortfall),
+        requiredLiability:       Math.round(liabilityPerGuarantor),
         ineligibilityReason:     !isEligible
           ? (!hasSufficientSavings
               ? `Insufficient savings (shortfall: KES ${Math.round(shortfall).toLocaleString()})`
@@ -207,11 +212,12 @@ const checkGuarantorEligibility = async (req, res) => {
       },
       activeGuarantees: activeGuarantees.map(g => ({
         loanId:           g.loan.id,
-        loanAmount:       g.loan.amount,
-        remainingBalance: g.loan.remainingBalance,
-        yourLiability:    getLiabilityPerGuarantor(g.loan.amount),
+        loanAmount:       Number(g.loan.amount),
+        remainingBalance: Number(g.loan.remainingBalance),
+        yourLiability:    Math.round(getLiabilityPerGuarantor(g.loan.amount)),
       })),
-      requiredGuarantors: getRequiredGuarantors(loanAmount),
+      requiredGuarantors,
+      liabilityPerGuarantor: Math.round(liabilityPerGuarantor),
     });
   } catch (error) {
     console.error('Check guarantor eligibility error:', error);
