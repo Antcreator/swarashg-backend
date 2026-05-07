@@ -12,6 +12,7 @@ import { useToast, useConfirm, ToastContainer } from '../../useToast';
 
 const TRANSACTION_FEE = 108;
 const MAX_ACTIVE_GUARANTEES = 5;
+const ONE_SHARE_DIVISOR = 3; // oneShare always divides principal by 3
 
 const Ico = ({ icon: Icon, size = 14, style = {} }) => (
   <Icon size={size} style={{ verticalAlign: 'middle', flexShrink: 0, ...style }} />
@@ -174,13 +175,17 @@ const MemberLoanApplication = () => {
     } catch { setAvailableDurations([]); }
   };
 
-  // Store the full API response including liabilityPerGuarantor, totalRepayment
-  // and requiredGuarantors returned by the backend so the UI reflects the real
-  // server-side calculation using the formula:
+  // Guarantor liability formula:
   //   Step 1: totalRepayment = principal + interest + txFee
-  //   Step 2: oneShare       = principal / n          ← uses principal, NOT totalRepayment
+  //   Step 2: oneShare       = principal / ONE_SHARE_DIVISOR (always 3)
   //   Step 3: reduced        = totalRepayment - oneShare
-  //   Step 4: liabilityEach  = reduced / n
+  //   Step 4: liabilityEach  = reduced / n   (n = requiredGuarantors for the loan amount)
+  //
+  // Example (99k, 5 guarantors, 10% interest):
+  //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
+  //   oneShare       = 99,000 / 3 = 33,000
+  //   reduced        = 109,008 - 33,000 = 76,008
+  //   liabilityEach  = 76,008 / 5 = 15,201.60
   const fetchEligibleGuarantors = async (loanAmount) => {
     setLoadingEligibility(true);
     try {
@@ -373,11 +378,12 @@ const MemberLoanApplication = () => {
     const totalRep      = guarantorsMeta.totalRepayment;
     const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
 
-    // Raw principal for formula display: oneShare = principal / n (NOT totalRepayment / n)
+    // oneShare = principal / ONE_SHARE_DIVISOR (always 3)
+    // liabilityEach = (totalRepayment - oneShare) / n
     const principalAmt = effectiveAmount();
-    const oneShareAmt  = n > 0 ? principalAmt / n : 0;
+    const oneShareAmt  = principalAmt / ONE_SHARE_DIVISOR;  // always ÷ 3
 
-    // Formula: (totalRepayment - principal/n) / n  e.g. "(10,808 - 3,333) / 3 = 2,492"
+    // Formula display: e.g. "(109,008 − 33,000) ÷ 5 = 15,201"
     const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
       ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
       : null;
@@ -420,7 +426,7 @@ const MemberLoanApplication = () => {
               )}
               {n > 0 && totalRep > 0 && (
                 <span className="guarantor-liability-split">
-                  Total repayment {fmt(totalRep)} distributed across {n} guarantors
+                  Total repayment {fmt(totalRep)} · one share ({fmt(principalAmt)} ÷ {ONE_SHARE_DIVISOR} = {fmt(oneShareAmt)}) distributed across {n} guarantors
                   using the reduced-liability method
                 </span>
               )}
@@ -634,18 +640,23 @@ const MemberLoanApplication = () => {
   };
 
   // ── Loan Summary Box ─────────────────────────────────────────
+  // Liability formula:
+  //   oneShare    = principal / ONE_SHARE_DIVISOR   (always ÷ 3)
+  //   liabilityEach = (totalRepayment - oneShare) / n
+  //
+  // Example: principal=99,000 | n=5 | rate=10% | fee=108
+  //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
+  //   oneShare       = 99,000 / 3 = 33,000
+  //   reduced        = 109,008 - 33,000 = 76,008
+  //   liabilityEach  = 76,008 / 5 = 15,201.60
   function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
     if (!amt || !formData.durationMonths) return null;
     const fullRepayment = amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE;
 
-    // Re-derive per-guarantor liability locally so the summary updates immediately
-    // when the user picks a duration, before the next API call.
-    // Formula: oneShare = principal / n  (NOT fullRepayment / n)
-    //          liabilityEach = (fullRepayment - oneShare) / n
     const n             = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
-    const oneShare      = amt / n;           // principal ÷ n
-    const reduced       = fullRepayment - oneShare;
-    const liabilityEach = reduced / n;
+    const oneShare      = amt / ONE_SHARE_DIVISOR;         // always principal ÷ 3
+    const reduced       = fullRepayment - oneShare;        // totalRepayment - oneShare
+    const liabilityEach = reduced / n;                     // reduced ÷ n
 
     return (
       <div className="loan-summary-box">
@@ -697,7 +708,7 @@ const MemberLoanApplication = () => {
               </span>
             </span>
             <span style={{ fontSize: '11px', color: '#888' }}>
-              Formula: ({fmt(fullRepayment)} − {fmt(amt)} ÷ {n}) ÷ {n}
+              Formula: ({fmt(fullRepayment)} − {fmt(amt)} ÷ {ONE_SHARE_DIVISOR}) ÷ {n} = ({fmt(fullRepayment)} − {fmt(oneShare)}) ÷ {n}
             </span>
           </div>
         </div>
