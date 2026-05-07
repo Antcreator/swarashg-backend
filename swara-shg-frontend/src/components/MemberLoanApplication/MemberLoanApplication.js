@@ -11,6 +11,7 @@ import '../MembersManagementAdmin/Members.css';
 import { useToast, useConfirm, ToastContainer } from '../../useToast';
 
 const TRANSACTION_FEE = 108;
+const MAX_ACTIVE_GUARANTEES = 5;
 
 const Ico = ({ icon: Icon, size = 14, style = {} }) => (
   <Icon size={size} style={{ verticalAlign: 'middle', flexShrink: 0, ...style }} />
@@ -260,8 +261,8 @@ const MemberLoanApplication = () => {
     if (!guarantor.isEligible) {
       toast.warning(
         `${guarantor.firstName} ${guarantor.lastName} is ineligible`,
-        guarantor.activeGuaranteeCount >= 3
-          ? 'This member has reached the maximum of 3 active guarantees.'
+        guarantor.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES
+          ? `This member has reached the maximum of ${MAX_ACTIVE_GUARANTEES} active guarantees.`
           : 'This member does not have sufficient savings to guarantee this loan.'
       );
       return;
@@ -548,15 +549,15 @@ const MemberLoanApplication = () => {
                     <div className="guarantor-item-meta">
                       {/* Guarantee usage bar */}
                       <div className="guarantee-usage-bar">
-                        {[0, 1, 2].map(i => (
+                        {Array.from({ length: MAX_ACTIVE_GUARANTEES }).map((_, i) => (
                           <div
                             key={i}
-                            className={`guarantee-usage-pip ${i < g.activeGuaranteeCount ? 'filled' : ''} ${g.activeGuaranteeCount >= 3 ? 'maxed' : ''}`}
+                            className={`guarantee-usage-pip ${i < g.activeGuaranteeCount ? 'filled' : ''} ${g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'maxed' : ''}`}
                           />
                         ))}
                       </div>
-                      <span style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#777', fontSize: '11px' }}>
-                        {g.activeGuaranteeCount}/3 active guarantees
+                      <span style={{ color: g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? '#f44336' : '#777', fontSize: '11px' }}>
+                        {g.activeGuaranteeCount}/{MAX_ACTIVE_GUARANTEES} active guarantees
                       </span>
                     </div>
 
@@ -569,7 +570,7 @@ const MemberLoanApplication = () => {
                     ) : !g.isEligible && (
                       <div className="guarantor-ineligible-reason">
                         <AlertTriangle size={11} color="#991b1b" />
-                        {g.activeGuaranteeCount >= 3 ? 'Max guarantees reached' : 'Insufficient savings'}
+                        {g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'Max guarantees reached' : 'Insufficient savings'}
                       </div>
                     )}
 
