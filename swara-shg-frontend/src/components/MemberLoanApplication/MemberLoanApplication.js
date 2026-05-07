@@ -3,7 +3,7 @@ import {
   Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw,
   CreditCard, TrendingUp, DollarSign, Users, ShieldCheck,
   ShieldOff, FileText, ArrowUpCircle, PlusCircle, Loader,
-  Wallet, ReceiptText, Star, Info,
+  Wallet, ReceiptText, Star, Info, X,
 } from 'lucide-react';
 import { loansAPI, membersAPI, guarantorsAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
@@ -21,7 +21,7 @@ const MemberLoanApplication = () => {
   const memberId = user.memberId;
 
   const { toasts, toast, dismiss } = useToast();
-  const {  ConfirmDialog  } = useConfirm();
+  const { ConfirmDialog } = useConfirm();
 
   const [officeGuarantor, setOfficeGuarantor]       = useState(null);
   const [availableDurations, setAvailableDurations] = useState([]);
@@ -98,8 +98,7 @@ const MemberLoanApplication = () => {
 
   const hasPendingLoanInList  = myLoans.some(l => l.approvalStatus === 'pending');
   const hasPendingApplication =
-    hasPendingLoanInList ||
-    (eligibility != null && eligibility.pendingLoan != null);
+    hasPendingLoanInList || (eligibility != null && eligibility.pendingLoan != null);
   const isButtonDisabled = eligibilityLoading || hasPendingApplication;
 
   const ButtonIcon = () => {
@@ -130,17 +129,12 @@ const MemberLoanApplication = () => {
     return Number(formData.amount || 0);
   }, [modalMode, eligibility, formData.topUpAmount, formData.amount]);
 
-  // ── FIX: update requiredGuarantors immediately when amount changes ──
   useEffect(() => {
     const amt = effectiveAmount();
     if (amt >= 1000) {
       fetchDurationOptionsForAmount(amt);
       fetchEligibleGuarantors(amt);
-      // Update guarantor count right away based on amount, before duration is chosen
-      setLoanInfo(prev => ({
-        ...prev,
-        requiredGuarantors: amt < 80000 ? 3 : 5,
-      }));
+      setLoanInfo(prev => ({ ...prev, requiredGuarantors: amt < 80000 ? 3 : 5 }));
     } else {
       setAvailableDurations([]);
       setAllGuarantors([]);
@@ -198,12 +192,9 @@ const MemberLoanApplication = () => {
       await Promise.all([fetchMemberSavings(), fetchMyLoans()]);
       const res = await loansAPI.checkEligibility(memberId);
       setEligibility(res.data);
-
       const freshPending =
-        myLoans.some(l => l.approvalStatus === 'pending') ||
-        res.data.pendingLoan != null;
+        myLoans.some(l => l.approvalStatus === 'pending') || res.data.pendingLoan != null;
       if (freshPending) return;
-
       if (res.data.canApply)      { resetForm(); setModalMode('new');   }
       else if (res.data.canTopUp) { resetForm(); setModalMode('topup'); }
     } catch {
@@ -257,10 +248,7 @@ const MemberLoanApplication = () => {
   const handleSubmitNew = async (e) => {
     e.preventDefault();
     if (formData.guarantorIds.length < loanInfo.requiredGuarantors) {
-      toast.warning(
-        'Insufficient Guarantors',
-        `You need ${loanInfo.requiredGuarantors} guarantors. You've selected ${formData.guarantorIds.length}.`
-      );
+      toast.warning('Insufficient Guarantors', `You need ${loanInfo.requiredGuarantors} guarantors. You've selected ${formData.guarantorIds.length}.`);
       return;
     }
     if (Number(formData.amount) > loanInfo.maxLoan) {
@@ -289,10 +277,7 @@ const MemberLoanApplication = () => {
       return;
     }
     if (formData.guarantorIds.length < loanInfo.requiredGuarantors) {
-      toast.warning(
-        'Insufficient Guarantors',
-        `You need ${loanInfo.requiredGuarantors} guarantors. You've selected ${formData.guarantorIds.length}.`
-      );
+      toast.warning('Insufficient Guarantors', `You need ${loanInfo.requiredGuarantors} guarantors. You've selected ${formData.guarantorIds.length}.`);
       return;
     }
     try {
@@ -341,6 +326,7 @@ const MemberLoanApplication = () => {
     );
   };
 
+  // ── Guarantor Picker ─────────────────────────────────────────
   const GuarantorPicker = () => (
     <div className="form-group">
       <label>
@@ -348,67 +334,102 @@ const MemberLoanApplication = () => {
         {loanInfo.requiredGuarantors > 0 &&
           ` (${formData.guarantorIds.length}/${loanInfo.requiredGuarantors} selected)`}
       </label>
+
       {allGuarantors.length > 0 && (
-        <div style={{ display: 'flex', gap: '8px', background: '#f5f5f5', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
+        <div className="guarantor-filter-bar">
           {[
             { key: 'all',        label: `All (${allGuarantors.length})`,                        color: '#1976d2', Icon: Users       },
             { key: 'eligible',   label: `Eligible (${eligibleCount})`,                          color: '#4caf50', Icon: ShieldCheck },
             { key: 'ineligible', label: `Ineligible (${allGuarantors.length - eligibleCount})`, color: '#f44336', Icon: ShieldOff   },
           ].map(({ key, label, color, Icon }) => (
-            <button key={key} type="button" onClick={() => setGuarantorFilter(key)} style={{
-              flex: 1, padding: '8px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              border: guarantorFilter === key ? `2px solid ${color}` : '1px solid #ddd',
-              background: guarantorFilter === key ? color : 'white',
-              color: guarantorFilter === key ? 'white' : '#333',
-            }}>
-              <Icon size={13} />{label}
+            <button
+              key={key}
+              type="button"
+              onClick={() => setGuarantorFilter(key)}
+              className={`guarantor-filter-btn ${guarantorFilter === key ? 'active' : ''}`}
+              style={{
+                borderColor:      guarantorFilter === key ? color : '#ddd',
+                background:       guarantorFilter === key ? color : 'white',
+                color:            guarantorFilter === key ? 'white' : '#333',
+              }}
+            >
+              <Icon size={13} />
+              <span className="filter-label">{label}</span>
             </button>
           ))}
         </div>
       )}
+
       {loadingEligibility && (
-        <div style={{ textAlign: 'center', padding: '20px', color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <div className="guarantor-loading">
           <Loader size={16} /> Loading guarantor eligibility...
         </div>
       )}
+
       {!loadingEligibility && effectiveAmount() >= 1000 && (
-        <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid #ddd', padding: '12px', borderRadius: '6px', background: '#fafafa' }}>
+        <div className="guarantor-list-scroll">
+          {/* Office guarantor */}
           {officeGuarantor && (
-            <label style={{ display: 'block', marginBottom: '12px', cursor: 'pointer', padding: '12px', background: formData.guarantorIds.includes(officeGuarantor.id) ? '#fff3e0' : '#fff9c4', borderRadius: '6px', border: formData.guarantorIds.includes(officeGuarantor.id) ? '3px solid #ff9800' : '2px solid #fbc02d' }}>
-              <input type="checkbox" checked={formData.guarantorIds.includes(officeGuarantor.id)} onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })} style={{ marginRight: '8px' }} />
-              <strong>{officeGuarantor.name}</strong>
-              <span style={{ marginLeft: '8px', padding: '3px 10px', background: '#ff9800', color: 'white', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Star size={11} /> ADMIN – UNLIMITED
-              </span>
+            <label
+              className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={formData.guarantorIds.includes(officeGuarantor.id)}
+                onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
+              />
+              <div className="guarantor-item-info">
+                <span className="guarantor-item-name">{officeGuarantor.name}</span>
+                <span className="tag-office">
+                  <Star size={11} /> ADMIN – UNLIMITED
+                </span>
+              </div>
             </label>
           )}
+
+          {/* Regular guarantors */}
           {filteredGuarantors.map(g => (
-            <div key={g.id} style={{ marginBottom: '10px', padding: '12px', borderRadius: '8px', border: g.isEligible ? '2px solid #86efac' : '2px solid #fca5a5', background: g.isEligible ? (formData.guarantorIds.includes(g.id) ? '#dcfce7' : '#f0fdf4') : '#fef2f2', opacity: g.isEligible ? 1 : 0.7 }}>
-              <label style={{ cursor: g.isEligible ? 'pointer' : 'not-allowed', display: 'block' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input type="checkbox" checked={formData.guarantorIds.includes(g.id)} onChange={() => toggleGuarantor(g)} disabled={!g.isEligible} />
-                  <strong>{g.firstName} {g.lastName}</strong>
-                  <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 4, background: g.isEligible ? '#d1fae5' : '#fee2e2', color: g.isEligible ? '#065f46' : '#991b1b', border: `1px solid ${g.isEligible ? '#10b981' : '#ef4444'}` }}>
-                    {g.isEligible ? <><CheckCircle size={11} /> Eligible</> : <><XCircle size={11} /> Ineligible</>}
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: '12px', color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#666', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <Users size={11} />{g.activeGuaranteeCount}/3 guarantees
-                  </span>
+            <div
+              key={g.id}
+              className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${formData.guarantorIds.includes(g.id) ? 'selected' : ''}`}
+            >
+              <label style={{ cursor: g.isEligible ? 'pointer' : 'not-allowed', display: 'block', width: '100%' }}>
+                <div className="guarantor-item-row">
+                  <input
+                    type="checkbox"
+                    checked={formData.guarantorIds.includes(g.id)}
+                    onChange={() => toggleGuarantor(g)}
+                    disabled={!g.isEligible}
+                  />
+                  <div className="guarantor-item-info" style={{ flex: 1 }}>
+                    <div className="guarantor-item-top">
+                      <span className="guarantor-item-name">{g.firstName} {g.lastName}</span>
+                      <span className={`tag-elig ${g.isEligible ? 'tag-yes' : 'tag-no'}`}>
+                        {g.isEligible ? <><CheckCircle size={10} /> Eligible</> : <><XCircle size={10} /> Ineligible</>}
+                      </span>
+                    </div>
+                    <div className="guarantor-item-meta">
+                      <Users size={11} />
+                      <span style={{ color: g.activeGuaranteeCount >= 3 ? '#f44336' : '#666' }}>
+                        {g.activeGuaranteeCount}/3 guarantees
+                      </span>
+                    </div>
+                  </div>
                 </div>
                 {!g.isEligible && (
-                  <div style={{ marginTop: '8px', marginLeft: '28px', padding: '6px 10px', background: '#fee2e2', borderRadius: '4px', border: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <AlertTriangle size={12} color="#991b1b" />
-                    <span style={{ color: '#991b1b', fontSize: '11px', fontWeight: 'bold' }}>
-                      {g.activeGuaranteeCount >= 3 ? 'Max guarantees reached (3/3)' : 'Insufficient savings to guarantee this loan'}
-                    </span>
+                  <div className="guarantor-ineligible-reason">
+                    <AlertTriangle size={11} color="#991b1b" />
+                    {g.activeGuaranteeCount >= 3
+                      ? 'Max guarantees reached (3/3)'
+                      : 'Insufficient savings to guarantee this loan'}
                   </div>
                 )}
               </label>
             </div>
           ))}
+
           {filteredGuarantors.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <div className="guarantor-loading">
               <Users size={16} /> No {guarantorFilter === 'all' ? '' : guarantorFilter} guarantors found
             </div>
           )}
@@ -417,321 +438,64 @@ const MemberLoanApplication = () => {
     </div>
   );
 
-  return (
-    <>
-      <Navbar />
-      <ToastContainer toasts={toasts} dismiss={dismiss} />
-      <ConfirmDialog />
-
-      <div className="admin-container">
-        <div className="page-header">
-          <h1>My Loan Applications</h1>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-            <button
-              className="btn-primary"
-              onClick={handleOpenModal}
-              disabled={isButtonDisabled}
-              title={hasPendingApplication ? 'You have a pending application. Wait for the admin to approve or reject it.' : ''}
-              style={{
-                padding: '10px 16px', fontSize: '13px',
-                opacity:    isButtonDisabled ? 0.55 : 1,
-                cursor:     isButtonDisabled ? 'not-allowed' : 'pointer',
-                background: hasPendingApplication ? '#9e9e9e' : undefined,
-                display: 'inline-flex', alignItems: 'center',
-              }}
-            >
-              <ButtonIcon />
-              {buttonLabel()}
-            </button>
-            {hasPendingApplication && (
-              <span style={{ fontSize: '11px', color: '#e65100', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Clock size={11} /> Awaiting admin decision
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Status banners */}
-        {eligibility && (hasPendingApplication || (!eligibility.canApply && eligibility.canTopUp)) && (
-          <div style={{ padding: '16px 20px', borderRadius: '8px', marginBottom: '20px', background: hasPendingApplication ? '#fff8e1' : '#fff3e0', border: `2px solid ${hasPendingApplication ? '#ffc107' : '#ff9800'}` }}>
-            {hasPendingApplication ? (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <Clock size={28} color="#e65100" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <strong style={{ color: '#e65100', fontSize: '15px' }}>
-                    {eligibility.pendingLoan?.loanType === 'top_up' ? 'Top-Up Request Pending Review' : 'Loan Application Pending Review'}
-                  </strong>
-                  <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#5d4037' }}>{eligibility.message}</p>
-                  <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#8d6e63' }}>
-                    {eligibility.pendingLoan?.loanType === 'top_up'
-                      ? 'You cannot request another top-up until an admin approves or rejects the current one.'
-                      : 'You cannot apply for a new loan or request a top-up until an admin approves or rejects this application.'}
-                  </p>
-                  {eligibility.pendingLoan && (
-                    <div style={{ marginTop: '10px', display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '13px', color: '#5d4037', background: '#ffecb3', padding: '8px 12px', borderRadius: '6px', alignItems: 'center' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FileText size={13} /> Loan #{eligibility.pendingLoan.id}</span>
-                      <span>Amount: <strong>{fmt(eligibility.pendingLoan.amount)}</strong></span>
-                      <span>{eligibility.pendingLoan.loanType === 'top_up' ? 'Top-Up Requested' : 'Applied'}: <strong>{new Date(eligibility.pendingLoan.appliedOn).toLocaleDateString()}</strong></span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : eligibility.canTopUp ? (
-              <>
-                <strong style={{ color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CreditCard size={16} /> Active Loan Detected
-                </strong>
-                <p style={{ margin: '8px 0 0', fontSize: '14px' }}>
-                  You have an active loan of <strong>{fmt(eligibility.activeLoan?.amount)}</strong> with a remaining balance of <strong>{fmt(eligibility.activeLoan?.remainingBalance)}</strong>. You can request a <strong>top-up</strong>.
-                </p>
-              </>
-            ) : null}
-          </div>
-        )}
-
-        {/* Eligibility card */}
-        <div style={{ background: '#e8f5e9', padding: '20px', borderRadius: '8px', marginBottom: '20px', border: '2px solid #4caf50' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Wallet size={20} /> Your Loan Eligibility
-            </h3>
-            <button type="button" onClick={fetchMemberSavings} style={{ background: 'none', border: '1px solid #4caf50', color: '#2e7d32', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <RefreshCw size={12} /> Refresh
-            </button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            <div>
-              <p style={{ margin: '4px 0', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: 5 }}><DollarSign size={13} /> Total Savings</p>
-              <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#2e7d32' }}>{fmt(loanInfo.memberSavings)}</p>
-            </div>
-            <div>
-              <p style={{ margin: '4px 0', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: 5 }}><TrendingUp size={13} /> Maximum Eligible Loan</p>
-              <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#1976d2' }}>{fmt(loanInfo.maxLoan)}</p>
-            </div>
-            <div>
-              <p style={{ margin: '4px 0', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: 5 }}><ReceiptText size={13} /> Statutory Deduction</p>
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: loanInfo.statutoryFee > 0 ? '#c62828' : '#aaa' }}>
-                {loanInfo.statutoryFee > 0 ? `− ${fmt(loanInfo.statutoryFee)}` : 'None this year'}
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '4px 0', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: 5 }}><ReceiptText size={13} /> Transaction Fee</p>
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#f57f17' }}>
-                {fmt(TRANSACTION_FEE)} <span style={{ fontSize: '12px', color: '#888', fontWeight: 400 }}>added to repayment</span>
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '4px 0', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: 5 }}><Info size={13} /> Formula</p>
-              <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>(Savings × 3) − Statutory Fee</p>
-            </div>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="loading" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Loader size={16} /> Loading your loans...
-          </div>
-        ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Loan Amount</th><th>Tx Fee</th><th>Cash to You</th><th>Interest</th>
-                  <th>Duration</th><th>Total Repayment</th><th>Applied On</th>
-                  <th>Approval Status</th><th>Loan Status</th><th>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myLoans.length === 0 ? (
-                  <tr><td colSpan="10" style={{ textAlign: 'center', padding: '40px' }}>
-                    No loan applications yet. Click "Apply for Loan" to get started!
-                  </td></tr>
-                ) : myLoans.map(loan => {
-                  const txFee          = Number(loan.transactionFee ?? TRANSACTION_FEE);
-                  const totalRepayment = Number(loan.totalRepayment);
-                  const isTopUp        = loan.loanType === 'top_up';
-                  const cashToMember   = isTopUp
-                    ? Number(loan.amount) - Number(loan.previousBalance || 0)
-                    : Number(loan.amount);
-
-                  return (
-                    <tr key={loan.id}>
-                      <td>
-                        {fmt(loan.amount)}
-                        {isTopUp && (
-                          <span style={{ marginLeft: '6px', padding: '2px 7px', background: '#f3e5f5', color: '#7b1fa2', borderRadius: '10px', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                            <ArrowUpCircle size={10} /> Top-Up
-                          </span>
-                        )}
-                      </td>
-                      <td><span style={{ background: '#fff8e1', color: '#f57f17', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600 }}>{fmt(txFee)}</span></td>
-                      <td>
-                        <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '3px 10px', borderRadius: '10px', fontSize: '13px', fontWeight: 700 }}>{fmt(cashToMember)}</span>
-                        {isTopUp && loan.previousBalance > 0 && (
-                          <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>After clearing {fmt(loan.previousBalance)}</div>
-                        )}
-                      </td>
-                      <td>{loan.interestRate}%</td>
-                      <td>{loan.durationMonths} months</td>
-                      <td>{fmt(totalRepayment)}</td>
-                      <td>{new Date(loan.createdAt).toLocaleDateString()}</td>
-                      <td>
-                        {loan.approvalStatus === 'pending'  && <span style={{ background: '#ff9800', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock size={11} /> Pending</span>}
-                        {loan.approvalStatus === 'approved' && <span style={{ background: '#4caf50', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={11} /> Approved</span>}
-                        {loan.approvalStatus === 'rejected' && <span style={{ background: '#f44336', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><XCircle size={11} /> Rejected</span>}
-                      </td>
-                      <td>{getStatusBadge(loan)}</td>
-                      <td>{loan.approvalStatus === 'approved' ? fmt(loan.remainingBalance) : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ── NEW LOAN MODAL ── */}
-        {modalMode === 'new' && (
-          <div className="modal-overlay" onClick={closeModal}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
-              <h2>Apply for New Loan</h2>
-              <form onSubmit={handleSubmitNew}>
-                <div className="form-group">
-                  <label>Loan Amount *</label>
-                  <input type="number" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} required min="1000" max={loanInfo.maxLoan} placeholder={`Max: ${fmt(loanInfo.maxLoan)}`} />
-                </div>
-                {/* {loanInfo.tierInfo && formData.amount && (
-                  <div style={{ background: '#fff3e0', padding: '14px', borderRadius: '8px', marginBottom: '16px', border: '2px solid #ff9800' }}>
-                    <h4 style={{ margin: '0 0 8px', color: '#e65100' }}>{loanInfo.tierInfo.name}</h4>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>Range: {fmt(loanInfo.tierInfo.minAmount)} – {loanInfo.tierInfo.maxAmount === Infinity ? '∞' : fmt(loanInfo.tierInfo.maxAmount)}</p>
-                  </div>
-                )} */}
-                <div className="form-group">
-                  <label>Loan Duration *</label>
-                  <select value={formData.durationMonths} onChange={e => setFormData({ ...formData, durationMonths: e.target.value })} required disabled={!formData.amount || availableDurations.length === 0}>
-                    <option value="">{!formData.amount ? 'Enter amount first' : availableDurations.length === 0 ? 'Loading...' : 'Select Duration'}</option>
-                    {availableDurations.map(d => <option key={d.months} value={d.months}>{d.months} month{d.months > 1 ? 's' : ''} @ {d.interestRate}%</option>)}
-                  </select>
-                </div>
-                <LoanSummaryBox amt={Number(formData.amount)} />
-                <GuarantorPicker />
-                <ModalActions onClose={closeModal} disabled={!formData.amount || !formData.durationMonths || formData.guarantorIds.length < loanInfo.requiredGuarantors} />
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* ── TOP-UP MODAL ── */}
-        {modalMode === 'topup' && eligibility?.activeLoan && (
-          <div className="modal-overlay" onClick={closeModal}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
-              <h2>Request Loan Top-Up</h2>
-              <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '2px solid #1976d2' }}>
-                <h4 style={{ margin: '0 0 10px', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}><CreditCard size={16} /> Your Current Loan</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '14px' }}>
-                  <div><span style={{ color: '#666' }}>Original Amount:</span> <strong>{fmt(eligibility.activeLoan.amount)}</strong></div>
-                  <div><span style={{ color: '#666' }}>Remaining Balance:</span> <strong style={{ color: '#f44336' }}>{fmt(eligibility.activeLoan.remainingBalance)}</strong></div>
-                  <div><span style={{ color: '#666' }}>Amount Paid:</span> <strong style={{ color: '#4caf50' }}>{fmt(eligibility.activeLoan.amountPaid)}</strong></div>
-                  <div><span style={{ color: '#666' }}>Due Date:</span> <strong>{eligibility.activeLoan.dueDate ? new Date(eligibility.activeLoan.dueDate).toLocaleDateString() : '—'}</strong></div>
-                </div>
-              </div>
-              <form onSubmit={handleSubmitTopUp}>
-                <div className="form-group">
-                  <label>New Top-Up Loan Amount * (must exceed current balance of {fmt(eligibility.activeLoan.remainingBalance)})</label>
-                  <input type="number" value={formData.topUpAmount} onChange={e => setFormData({ ...formData, topUpAmount: e.target.value })} required min={Math.ceil(Number(eligibility.activeLoan.remainingBalance)) + 1} placeholder={`Min: ${fmt(Number(eligibility.activeLoan.remainingBalance) + 1000)}`} />
-                  {formData.topUpAmount && Number(formData.topUpAmount) > Number(eligibility.activeLoan.remainingBalance) && (
-                    <div style={{ marginTop: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                      <div style={{ background: '#f9fafb', padding: '8px 14px', fontSize: '12px', fontWeight: 700, color: '#374151', textTransform: 'uppercase' }}>Breakdown</div>
-                      <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#666' }}>New Loan Amount (Principal):</span><strong>{fmt(formData.topUpAmount)}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e65100' }}><span>+ Interest ({loanInfo.interestRate}%):</span><strong>+ {fmt(Number(formData.topUpAmount) * loanInfo.interestRate / 100)}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f57f17' }}><span>+ Transaction Fee:</span><strong>+ {fmt(TRANSACTION_FEE)}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #1976d2', paddingTop: '6px', fontWeight: 700, color: '#1565c0' }}><span>= New Loan Balance (Total Repayment):</span><strong style={{ fontSize: '15px' }}>{fmt(Number(formData.topUpAmount) + (Number(formData.topUpAmount) * loanInfo.interestRate / 100) + TRANSACTION_FEE)}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #e5e7eb', paddingTop: '6px', color: '#888' }}><span>Old Balance Cleared (on approval):</span><strong style={{ color: '#c62828' }}>− {fmt(eligibility.activeLoan.remainingBalance)}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2e7d32', fontWeight: 700 }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><DollarSign size={13} /> Cash You Receive:</span>
-                          <strong style={{ fontSize: '15px' }}>{fmt(Math.max(0, Number(formData.topUpAmount) - Number(eligibility.activeLoan.remainingBalance)))}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {formData.topUpAmount && Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) && (
-                    <div style={{ marginTop: '8px', padding: '10px', background: '#ffebee', borderRadius: '6px', fontSize: '13px', color: '#c62828', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <AlertTriangle size={14} /> Amount must be greater than your current balance of {fmt(eligibility.activeLoan.remainingBalance)}
-                    </div>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label>New Loan Duration *</label>
-                  <select value={formData.durationMonths} onChange={e => setFormData({ ...formData, durationMonths: e.target.value })} required disabled={!formData.topUpAmount || Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) || availableDurations.length === 0}>
-                    <option value="">{!formData.topUpAmount ? 'Enter amount first' : availableDurations.length === 0 ? 'Loading...' : 'Select Duration'}</option>
-                    {availableDurations.map(d => <option key={d.months} value={d.months}>{d.months} month{d.months > 1 ? 's' : ''} @ {d.interestRate}%</option>)}
-                  </select>
-                </div>
-                <LoanSummaryBox amt={effectiveAmount()} label="New Loan Amount" />
-                <GuarantorPicker />
-                <ModalActions onClose={closeModal} disabled={!formData.topUpAmount || Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) || !formData.durationMonths || formData.guarantorIds.length < loanInfo.requiredGuarantors} submitLabel="Submit Top-Up Request" />
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-
+  // ── Loan Summary Box ─────────────────────────────────────────
   function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
     if (!amt || !formData.durationMonths) return null;
     const fullRepayment = amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE;
     return (
-      <div style={{ background: '#e3f2fd', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '2px solid #1976d2' }}>
-        <h3 style={{ margin: '0 0 12px', color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}><FileText size={18} /> Loan Summary</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '14px' }}>
-          <div><p style={{ margin: '4px 0', color: '#666' }}>{label}:</p><p style={{ margin: '4px 0', fontWeight: 'bold' }}>{fmt(amt)}</p></div>
-          <div><p style={{ margin: '4px 0', color: '#666' }}>Interest Rate:</p><p style={{ margin: '4px 0', fontWeight: 'bold' }}>{loanInfo.interestRate}%</p></div>
-          <div><p style={{ margin: '4px 0', color: '#666' }}>Interest Amount:</p><p style={{ margin: '4px 0', fontWeight: 'bold' }}>{fmt(amt * loanInfo.interestRate / 100)}</p></div>
-          <div><p style={{ margin: '4px 0', color: '#666' }}>Transaction Fee:</p><p style={{ margin: '4px 0', fontWeight: 'bold', color: '#f57f17' }}>+ {fmt(TRANSACTION_FEE)}</p></div>
+      <div className="loan-summary-box">
+        <h3 className="loan-summary-title">
+          <FileText size={16} /> Loan Summary
+        </h3>
+        <div className="loan-summary-grid">
+          <div><p className="sum-label">{label}:</p><p className="sum-value">{fmt(amt)}</p></div>
+          <div><p className="sum-label">Interest Rate:</p><p className="sum-value">{loanInfo.interestRate}%</p></div>
+          <div><p className="sum-label">Interest Amount:</p><p className="sum-value">{fmt(amt * loanInfo.interestRate / 100)}</p></div>
+          <div><p className="sum-label">Transaction Fee:</p><p className="sum-value" style={{ color: '#f57f17' }}>+ {fmt(TRANSACTION_FEE)}</p></div>
         </div>
         {modalMode === 'topup' && eligibility?.activeLoan ? (
-          <div style={{ marginTop: '14px' }}>
-            <div style={{ background: '#e3f2fd', borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', border: '2px solid #1976d2' }}>
-              <div style={{ fontSize: '12px', color: '#1565c0', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}><ReceiptText size={13} /> YOUR NEW LOAN BALANCE</div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#1565c0', marginTop: '2px' }}>{fmt(fullRepayment)}</div>
-              <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>Principal + {loanInfo.interestRate}% interest + {fmt(TRANSACTION_FEE)} fee</div>
+          <div className="loan-summary-amounts">
+            <div className="amount-box blue">
+              <div className="amount-box-label"><ReceiptText size={13} /> NEW LOAN BALANCE</div>
+              <div className="amount-box-value">{fmt(fullRepayment)}</div>
+              <div className="amount-box-sub">Principal + {loanInfo.interestRate}% interest + {fmt(TRANSACTION_FEE)} fee</div>
             </div>
-            <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '12px 14px', border: '2px solid #4caf50' }}>
-              <div style={{ fontSize: '12px', color: '#2e7d32', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}><DollarSign size={13} /> CASH YOU RECEIVE</div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#2e7d32', marginTop: '2px' }}>{fmt(Math.max(0, amt - Number(eligibility.activeLoan.remainingBalance)))}</div>
-              <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>After clearing old balance of {fmt(eligibility.activeLoan.remainingBalance)}</div>
+            <div className="amount-box green">
+              <div className="amount-box-label"><DollarSign size={13} /> CASH YOU RECEIVE</div>
+              <div className="amount-box-value">{fmt(Math.max(0, amt - Number(eligibility.activeLoan.remainingBalance)))}</div>
+              <div className="amount-box-sub">After clearing old balance of {fmt(eligibility.activeLoan.remainingBalance)}</div>
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: '14px', padding: '14px', background: '#e8f5e9', borderRadius: '8px', border: '2px solid #4caf50', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="loan-summary-disburse">
             <div>
-              <p style={{ margin: 0, fontSize: '12px', color: '#555', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><DollarSign size={13} /> YOU WILL RECEIVE</p>
-              <p style={{ margin: '4px 0 0', fontSize: '26px', fontWeight: 800, color: '#2e7d32' }}>{fmt(amt)}</p>
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#777' }}>Full loan amount disbursed to you</p>
+              <p className="amount-box-label" style={{ margin: 0 }}><DollarSign size={13} /> YOU WILL RECEIVE</p>
+              <p className="amount-disburse-value">{fmt(amt)}</p>
+              <p className="amount-box-sub" style={{ margin: '2px 0 0' }}>Full loan amount disbursed to you</p>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <p style={{ margin: 0, fontSize: '12px', color: '#555', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}><ReceiptText size={13} /> LOAN BALANCE</p>
-              <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 700, color: '#1565c0' }}>{fmt(fullRepayment)}</p>
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#777' }}>Principal + {loanInfo.interestRate}% interest + {fmt(TRANSACTION_FEE)} fee</p>
+              <p className="amount-box-label" style={{ margin: 0, justifyContent: 'flex-end', display: 'flex', alignItems: 'center', gap: 5 }}><ReceiptText size={13} /> LOAN BALANCE</p>
+              <p className="amount-balance-value">{fmt(fullRepayment)}</p>
+              <p className="amount-box-sub" style={{ margin: '2px 0 0' }}>Principal + {loanInfo.interestRate}% interest + {fmt(TRANSACTION_FEE)} fee</p>
             </div>
           </div>
         )}
-        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="loan-summary-guarantors">
           <Users size={13} color="#888" />
-          <p style={{ margin: 0, fontSize: '12px', color: '#888' }}><strong>Guarantors Required:</strong> {loanInfo.requiredGuarantors}</p>
+          <span><strong>Guarantors Required:</strong> {loanInfo.requiredGuarantors}</span>
         </div>
       </div>
     );
   }
 
+  // ── Modal Actions ────────────────────────────────────────────
   function ModalActions({ onClose, disabled, submitLabel = 'Submit Application' }) {
     return (
       <>
         {loanInfo.requiredGuarantors > 0 && formData.guarantorIds.length < loanInfo.requiredGuarantors && (
-          <p style={{ color: '#c62828', fontSize: '14px', background: '#ffebee', padding: '12px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={16} /> You need {loanInfo.requiredGuarantors - formData.guarantorIds.length} more guarantor(s)
+          <p className="guarantor-warning">
+            <AlertTriangle size={14} />
+            You need {loanInfo.requiredGuarantors - formData.guarantorIds.length} more guarantor(s)
           </p>
         )}
         <div className="modal-actions">
@@ -741,6 +505,824 @@ const MemberLoanApplication = () => {
       </>
     );
   }
+
+  // ── Loan cards for mobile (replaces table on small screens) ──
+  const LoanCards = () => (
+    <div className="loan-cards-mobile">
+      {myLoans.map(loan => {
+        const txFee        = Number(loan.transactionFee ?? TRANSACTION_FEE);
+        const isTopUp      = loan.loanType === 'top_up';
+        const cashToMember = isTopUp
+          ? Number(loan.amount) - Number(loan.previousBalance || 0)
+          : Number(loan.amount);
+
+        return (
+          <div key={loan.id} className="loan-card-mobile">
+            <div className="loan-card-mobile-header">
+              <div>
+                <span className="loan-card-mobile-id">Loan #{loan.id}</span>
+                {isTopUp && (
+                  <span className="tag-topup">
+                    <ArrowUpCircle size={10} /> Top-Up
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {loan.approvalStatus === 'pending'  && <span className="mob-badge orange"><Clock size={10} /> Pending</span>}
+                {loan.approvalStatus === 'approved' && <span className="mob-badge green"><CheckCircle size={10} /> Approved</span>}
+                {loan.approvalStatus === 'rejected' && <span className="mob-badge red"><XCircle size={10} /> Rejected</span>}
+                {getStatusBadge(loan)}
+              </div>
+            </div>
+
+            <div className="loan-card-mobile-grid">
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Amount</span>
+                <span className="lcm-value">{fmt(loan.amount)}</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Tx Fee</span>
+                <span className="lcm-value" style={{ color: '#f57f17' }}>{fmt(txFee)}</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Cash to You</span>
+                <span className="lcm-value" style={{ color: '#2e7d32', fontWeight: 700 }}>{fmt(cashToMember)}</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Interest</span>
+                <span className="lcm-value">{loan.interestRate}%</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Duration</span>
+                <span className="lcm-value">{loan.durationMonths}m</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Total Repayment</span>
+                <span className="lcm-value" style={{ color: '#1976d2' }}>{fmt(loan.totalRepayment)}</span>
+              </div>
+              <div className="loan-card-mobile-field">
+                <span className="lcm-label">Applied On</span>
+                <span className="lcm-value">{new Date(loan.createdAt).toLocaleDateString()}</span>
+              </div>
+              {loan.approvalStatus === 'approved' && (
+                <div className="loan-card-mobile-field">
+                  <span className="lcm-label">Balance</span>
+                  <span className="lcm-value">{fmt(loan.remainingBalance)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <>
+      <Navbar />
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
+      <ConfirmDialog />
+
+      <div className="admin-container mla-container">
+
+        {/* ── Page Header ── */}
+        <div className="mla-page-header">
+          <div>
+            <h1>My Loan Applications</h1>
+          </div>
+          <div className="mla-header-actions">
+            <button
+              className="btn-primary"
+              onClick={handleOpenModal}
+              disabled={isButtonDisabled}
+              title={hasPendingApplication ? 'You have a pending application.' : ''}
+              style={{
+                opacity:    isButtonDisabled ? 0.55 : 1,
+                cursor:     isButtonDisabled ? 'not-allowed' : 'pointer',
+                background: hasPendingApplication ? '#9e9e9e' : undefined,
+                display:    'inline-flex', alignItems: 'center',
+                padding:    '10px 16px', fontSize: '13px',
+              }}
+            >
+              <ButtonIcon />
+              {buttonLabel()}
+            </button>
+            {hasPendingApplication && (
+              <span className="mla-pending-hint">
+                <Clock size={11} /> Awaiting admin decision
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Status Banner ── */}
+        {eligibility && (hasPendingApplication || (!eligibility.canApply && eligibility.canTopUp)) && (
+          <div className={`mla-status-banner ${hasPendingApplication ? 'banner-warning' : 'banner-info'}`}>
+            {hasPendingApplication ? (
+              <div className="banner-inner">
+                <Clock size={24} color="#e65100" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong className="banner-title">
+                    {eligibility.pendingLoan?.loanType === 'top_up'
+                      ? 'Top-Up Request Pending Review'
+                      : 'Loan Application Pending Review'}
+                  </strong>
+                  <p className="banner-msg">{eligibility.message}</p>
+                  <p className="banner-sub">
+                    {eligibility.pendingLoan?.loanType === 'top_up'
+                      ? 'You cannot request another top-up until an admin approves or rejects the current one.'
+                      : 'You cannot apply for a new loan or request a top-up until an admin approves or rejects this application.'}
+                  </p>
+                  {eligibility.pendingLoan && (
+                    <div className="banner-meta">
+                      <span><FileText size={13} /> Loan #{eligibility.pendingLoan.id}</span>
+                      <span>Amount: <strong>{fmt(eligibility.pendingLoan.amount)}</strong></span>
+                      <span>
+                        {eligibility.pendingLoan.loanType === 'top_up' ? 'Top-Up Requested' : 'Applied'}:{' '}
+                        <strong>{new Date(eligibility.pendingLoan.appliedOn).toLocaleDateString()}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : eligibility.canTopUp ? (
+              <>
+                <strong className="banner-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CreditCard size={15} /> Active Loan Detected
+                </strong>
+                <p className="banner-msg">
+                  You have an active loan of <strong>{fmt(eligibility.activeLoan?.amount)}</strong> with a remaining balance of{' '}
+                  <strong>{fmt(eligibility.activeLoan?.remainingBalance)}</strong>. You can request a <strong>top-up</strong>.
+                </p>
+              </>
+            ) : null}
+          </div>
+        )}
+
+        {/* ── Eligibility Card ── */}
+        <div className="mla-eligibility-card">
+          <div className="mla-eligibility-header">
+            <h3><Wallet size={18} /> Your Loan Eligibility</h3>
+            <button type="button" onClick={fetchMemberSavings} className="mla-refresh-btn">
+              <RefreshCw size={12} /> Refresh
+            </button>
+          </div>
+          <div className="mla-eligibility-grid">
+            <div className="elig-item">
+              <p className="elig-label"><DollarSign size={12} /> Total Savings</p>
+              <p className="elig-value green">{fmt(loanInfo.memberSavings)}</p>
+            </div>
+            <div className="elig-item">
+              <p className="elig-label"><TrendingUp size={12} /> Maximum Eligible Loan</p>
+              <p className="elig-value blue">{fmt(loanInfo.maxLoan)}</p>
+            </div>
+            <div className="elig-item">
+              <p className="elig-label"><ReceiptText size={12} /> Statutory Deduction</p>
+              <p className="elig-value" style={{ color: loanInfo.statutoryFee > 0 ? '#c62828' : '#aaa', fontSize: '14px', fontWeight: 700 }}>
+                {loanInfo.statutoryFee > 0 ? `− ${fmt(loanInfo.statutoryFee)}` : 'None this year'}
+              </p>
+            </div>
+            <div className="elig-item">
+              <p className="elig-label"><ReceiptText size={12} /> Transaction Fee</p>
+              <p className="elig-value" style={{ color: '#f57f17', fontSize: '14px', fontWeight: 700 }}>
+                {fmt(TRANSACTION_FEE)} <span style={{ fontSize: '11px', color: '#888', fontWeight: 400 }}>added to repayment</span>
+              </p>
+            </div>
+            <div className="elig-item">
+              <p className="elig-label"><Info size={12} /> Formula</p>
+              <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>(Savings × 3) − Statutory Fee</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Loans Table / Cards ── */}
+        {loading ? (
+          <div className="loading" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Loader size={16} /> Loading your loans...
+          </div>
+        ) : myLoans.length === 0 ? (
+          <div className="mla-empty">
+            No loan applications yet. Click "<strong>{buttonLabel()}</strong>" to get started!
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="table-container mla-table-desktop">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Loan Amount</th><th>Tx Fee</th><th>Cash to You</th><th>Interest</th>
+                    <th>Duration</th><th>Total Repayment</th><th>Applied On</th>
+                    <th>Approval Status</th><th>Loan Status</th><th>Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myLoans.map(loan => {
+                    const txFee          = Number(loan.transactionFee ?? TRANSACTION_FEE);
+                    const isTopUp        = loan.loanType === 'top_up';
+                    const cashToMember   = isTopUp
+                      ? Number(loan.amount) - Number(loan.previousBalance || 0)
+                      : Number(loan.amount);
+
+                    return (
+                      <tr key={loan.id}>
+                        <td>
+                          {fmt(loan.amount)}
+                          {isTopUp && (
+                            <span style={{ marginLeft: '6px', padding: '2px 7px', background: '#f3e5f5', color: '#7b1fa2', borderRadius: '10px', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <ArrowUpCircle size={10} /> Top-Up
+                            </span>
+                          )}
+                        </td>
+                        <td><span style={{ background: '#fff8e1', color: '#f57f17', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 600 }}>{fmt(txFee)}</span></td>
+                        <td>
+                          <span style={{ background: '#e8f5e9', color: '#2e7d32', padding: '3px 10px', borderRadius: '10px', fontSize: '13px', fontWeight: 700 }}>{fmt(cashToMember)}</span>
+                          {isTopUp && loan.previousBalance > 0 && (
+                            <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>After clearing {fmt(loan.previousBalance)}</div>
+                          )}
+                        </td>
+                        <td>{loan.interestRate}%</td>
+                        <td>{loan.durationMonths} months</td>
+                        <td>{fmt(loan.totalRepayment)}</td>
+                        <td>{new Date(loan.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          {loan.approvalStatus === 'pending'  && <span style={{ background: '#ff9800', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock size={11} /> Pending</span>}
+                          {loan.approvalStatus === 'approved' && <span style={{ background: '#4caf50', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle size={11} /> Approved</span>}
+                          {loan.approvalStatus === 'rejected' && <span style={{ background: '#f44336', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><XCircle size={11} /> Rejected</span>}
+                        </td>
+                        <td>{getStatusBadge(loan)}</td>
+                        <td>{loan.approvalStatus === 'approved' ? fmt(loan.remainingBalance) : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <LoanCards />
+          </>
+        )}
+
+        {/* ── NEW LOAN MODAL ── */}
+        {modalMode === 'new' && (
+          <div className="modal-overlay" onClick={closeModal}>
+            <div className="modal-content mla-modal" onClick={e => e.stopPropagation()}>
+              <div className="mla-modal-header">
+                <h2>Apply for New Loan</h2>
+                <button className="mla-modal-close" onClick={closeModal}><X size={18} /></button>
+              </div>
+              <div className="mla-modal-body">
+                <form onSubmit={handleSubmitNew}>
+                  <div className="form-group">
+                    <label>Loan Amount *</label>
+                    <input
+                      type="number"
+                      value={formData.amount}
+                      onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                      required
+                      min="1000"
+                      max={loanInfo.maxLoan}
+                      placeholder={`Max: ${fmt(loanInfo.maxLoan)}`}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Loan Duration *</label>
+                    <select
+                      value={formData.durationMonths}
+                      onChange={e => setFormData({ ...formData, durationMonths: e.target.value })}
+                      required
+                      disabled={!formData.amount || availableDurations.length === 0}
+                    >
+                      <option value="">{!formData.amount ? 'Enter amount first' : availableDurations.length === 0 ? 'Loading...' : 'Select Duration'}</option>
+                      {availableDurations.map(d => (
+                        <option key={d.months} value={d.months}>{d.months} month{d.months > 1 ? 's' : ''} @ {d.interestRate}%</option>
+                      ))}
+                    </select>
+                  </div>
+                  <LoanSummaryBox amt={Number(formData.amount)} />
+                  <GuarantorPicker />
+                  <ModalActions
+                    onClose={closeModal}
+                    disabled={!formData.amount || !formData.durationMonths || formData.guarantorIds.length < loanInfo.requiredGuarantors}
+                  />
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TOP-UP MODAL ── */}
+        {modalMode === 'topup' && eligibility?.activeLoan && (
+          <div className="modal-overlay" onClick={closeModal}>
+            <div className="modal-content mla-modal" onClick={e => e.stopPropagation()}>
+              <div className="mla-modal-header">
+                <h2>Request Loan Top-Up</h2>
+                <button className="mla-modal-close" onClick={closeModal}><X size={18} /></button>
+              </div>
+              <div className="mla-modal-body">
+                {/* Current loan info */}
+                <div className="topup-current-loan">
+                  <h4><CreditCard size={15} /> Your Current Loan</h4>
+                  <div className="topup-current-grid">
+                    <div><span className="tcg-label">Original Amount:</span> <strong>{fmt(eligibility.activeLoan.amount)}</strong></div>
+                    <div><span className="tcg-label">Remaining Balance:</span> <strong style={{ color: '#f44336' }}>{fmt(eligibility.activeLoan.remainingBalance)}</strong></div>
+                    <div><span className="tcg-label">Amount Paid:</span> <strong style={{ color: '#4caf50' }}>{fmt(eligibility.activeLoan.amountPaid)}</strong></div>
+                    <div><span className="tcg-label">Due Date:</span> <strong>{eligibility.activeLoan.dueDate ? new Date(eligibility.activeLoan.dueDate).toLocaleDateString() : '—'}</strong></div>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSubmitTopUp}>
+                  <div className="form-group">
+                    <label>
+                      New Top-Up Loan Amount *{' '}
+                      <span style={{ fontSize: '12px', color: '#888', fontWeight: 400 }}>
+                        (must exceed {fmt(eligibility.activeLoan.remainingBalance)})
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.topUpAmount}
+                      onChange={e => setFormData({ ...formData, topUpAmount: e.target.value })}
+                      required
+                      min={Math.ceil(Number(eligibility.activeLoan.remainingBalance)) + 1}
+                      placeholder={`Min: ${fmt(Number(eligibility.activeLoan.remainingBalance) + 1000)}`}
+                    />
+                    {formData.topUpAmount && Number(formData.topUpAmount) > Number(eligibility.activeLoan.remainingBalance) && (
+                      <div className="topup-breakdown">
+                        <div className="tbd-header">Breakdown</div>
+                        <div className="tbd-body">
+                          <div className="tbd-row"><span>New Loan Amount (Principal):</span><strong>{fmt(formData.topUpAmount)}</strong></div>
+                          <div className="tbd-row orange"><span>+ Interest ({loanInfo.interestRate}%):</span><strong>+ {fmt(Number(formData.topUpAmount) * loanInfo.interestRate / 100)}</strong></div>
+                          <div className="tbd-row amber"><span>+ Transaction Fee:</span><strong>+ {fmt(TRANSACTION_FEE)}</strong></div>
+                          <div className="tbd-row blue total-row"><span>= New Loan Balance (Total Repayment):</span><strong>{fmt(Number(formData.topUpAmount) + (Number(formData.topUpAmount) * loanInfo.interestRate / 100) + TRANSACTION_FEE)}</strong></div>
+                          <div className="tbd-row muted"><span>Old Balance Cleared (on approval):</span><strong style={{ color: '#c62828' }}>− {fmt(eligibility.activeLoan.remainingBalance)}</strong></div>
+                          <div className="tbd-row green cash-row"><span><DollarSign size={12} /> Cash You Receive:</span><strong>{fmt(Math.max(0, Number(formData.topUpAmount) - Number(eligibility.activeLoan.remainingBalance)))}</strong></div>
+                        </div>
+                      </div>
+                    )}
+                    {formData.topUpAmount && Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) && (
+                      <div className="topup-error-hint">
+                        <AlertTriangle size={13} /> Amount must be greater than your current balance of {fmt(eligibility.activeLoan.remainingBalance)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label>New Loan Duration *</label>
+                    <select
+                      value={formData.durationMonths}
+                      onChange={e => setFormData({ ...formData, durationMonths: e.target.value })}
+                      required
+                      disabled={!formData.topUpAmount || Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) || availableDurations.length === 0}
+                    >
+                      <option value="">{!formData.topUpAmount ? 'Enter amount first' : availableDurations.length === 0 ? 'Loading...' : 'Select Duration'}</option>
+                      {availableDurations.map(d => (
+                        <option key={d.months} value={d.months}>{d.months} month{d.months > 1 ? 's' : ''} @ {d.interestRate}%</option>
+                      ))}
+                    </select>
+                  </div>
+                  <LoanSummaryBox amt={effectiveAmount()} label="New Loan Amount" />
+                  <GuarantorPicker />
+                  <ModalActions
+                    onClose={closeModal}
+                    disabled={
+                      !formData.topUpAmount ||
+                      Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) ||
+                      !formData.durationMonths ||
+                      formData.guarantorIds.length < loanInfo.requiredGuarantors
+                    }
+                    submitLabel="Submit Top-Up Request"
+                  />
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Scoped styles ── */}
+      <style>{`
+        /* ── Page layout ───────────────────────────────── */
+        .mla-container { box-sizing: border-box; }
+
+        .mla-page-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 20px;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .mla-page-header h1 { margin: 0; font-size: 20px; }
+        @media (min-width: 640px) { .mla-page-header h1 { font-size: 24px; } }
+
+        .mla-header-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 4px;
+          flex-shrink: 0;
+        }
+        .mla-pending-hint {
+          font-size: 11px;
+          color: #e65100;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        /* ── Status banner ─────────────────────────────── */
+        .mla-status-banner {
+          padding: 14px 16px;
+          border-radius: 10px;
+          margin-bottom: 16px;
+          border: 2px solid;
+        }
+        .banner-warning { background: #fff8e1; border-color: #ffc107; }
+        .banner-info    { background: #fff3e0; border-color: #ff9800; }
+
+        .banner-inner { display: flex; align-items: flex-start; gap: 12px; }
+        .banner-title { color: #e65100; font-size: 14px; display: block; margin-bottom: 4px; }
+        @media (min-width: 640px) { .banner-title { font-size: 15px; } }
+        .banner-msg   { margin: 0 0 4px; font-size: 13px; color: #5d4037; }
+        .banner-sub   { margin: 0 0 8px; font-size: 12px; color: #8d6e63; }
+        .banner-meta  {
+          display: flex; flex-wrap: wrap; gap: 8px 16px;
+          font-size: 12px; color: #5d4037;
+          background: #ffecb3; padding: 8px 12px;
+          border-radius: 6px; align-items: center;
+        }
+        @media (min-width: 640px) { .banner-meta { font-size: 13px; } }
+
+        /* ── Eligibility card ──────────────────────────── */
+        .mla-eligibility-card {
+          background: #e8f5e9;
+          padding: 16px;
+          border-radius: 10px;
+          margin-bottom: 20px;
+          border: 2px solid #4caf50;
+        }
+        @media (min-width: 640px) { .mla-eligibility-card { padding: 20px; } }
+
+        .mla-eligibility-header {
+          display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+        }
+        .mla-eligibility-header h3 {
+          margin: 0; color: #2e7d32; font-size: 15px;
+          display: flex; align-items: center; gap: 8px;
+        }
+        @media (min-width: 640px) { .mla-eligibility-header h3 { font-size: 17px; } }
+
+        .mla-refresh-btn {
+          background: none; border: 1px solid #4caf50; color: #2e7d32;
+          border-radius: 6px; padding: 5px 12px; cursor: pointer;
+          font-size: 12px; font-weight: 600;
+          display: inline-flex; align-items: center; gap: 5px;
+        }
+
+        .mla-eligibility-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+        @media (min-width: 768px) {
+          .mla-eligibility-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+        }
+
+        .elig-item {}
+        .elig-label {
+          margin: 0 0 4px; font-size: 12px; color: #555;
+          display: flex; align-items: center; gap: 4px;
+        }
+        .elig-value { margin: 0; font-size: 18px; font-weight: 700; }
+        @media (min-width: 640px) { .elig-value { font-size: 20px; } }
+        .elig-value.green { color: #2e7d32; }
+        .elig-value.blue  { color: #1976d2; }
+
+        /* ── Empty state ───────────────────────────────── */
+        .mla-empty {
+          text-align: center; padding: 40px 20px;
+          color: #666; font-size: 14px;
+          background: white; border-radius: 10px;
+          border: 1px solid #eee;
+        }
+
+        /* ── Desktop table / Mobile card toggle ─────────── */
+        .mla-table-desktop { display: none; }
+        @media (min-width: 900px) {
+          .mla-table-desktop { display: block; }
+          .loan-cards-mobile  { display: none; }
+        }
+
+        /* ── Mobile loan cards ─────────────────────────── */
+        .loan-cards-mobile {
+          display: flex; flex-direction: column; gap: 12px;
+        }
+        .loan-card-mobile {
+          background: white; border-radius: 10px;
+          padding: 14px 16px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          border-left: 4px solid #1976d2;
+        }
+        .loan-card-mobile-header {
+          display: flex; justify-content: space-between;
+          align-items: flex-start; margin-bottom: 12px;
+          gap: 8px; flex-wrap: wrap;
+        }
+        .loan-card-mobile-id { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+        .loan-card-mobile-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        @media (min-width: 480px) {
+          .loan-card-mobile-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        .loan-card-mobile-field { display: flex; flex-direction: column; gap: 2px; }
+        .lcm-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
+        .lcm-value { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+
+        .mob-badge {
+          padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+          display: inline-flex; align-items: center; gap: 3px;
+        }
+        .mob-badge.orange { background: #ff9800; color: white; }
+        .mob-badge.green  { background: #4caf50; color: white; }
+        .mob-badge.red    { background: #f44336; color: white; }
+
+        /* ── Tags ──────────────────────────────────────── */
+        .tag-topup {
+          margin-left: 6px; padding: 2px 7px;
+          background: #f3e5f5; color: #7b1fa2;
+          border-radius: 10px; font-size: 11px; font-weight: 700;
+          display: inline-flex; align-items: center; gap: 3px;
+        }
+        .tag-office {
+          margin-left: 8px; padding: 3px 10px;
+          background: #ff9800; color: white;
+          border-radius: 12px; font-size: 11px; font-weight: 700;
+          display: inline-flex; align-items: center; gap: 4px;
+        }
+        .tag-elig {
+          padding: 2px 8px; border-radius: 10px;
+          font-size: 10px; font-weight: 700;
+          display: inline-flex; align-items: center; gap: 3px;
+          white-space: nowrap;
+        }
+        .tag-yes { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+        .tag-no  { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+
+        /* ── Modal ─────────────────────────────────────── */
+        .mla-modal {
+          display: flex; flex-direction: column;
+          max-height: 95vh; padding: 0 !important;
+          /* Bottom-sheet on mobile */
+          border-radius: 16px 16px 0 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          position: fixed !important;
+          bottom: 0 !important;
+          left: 0 !important;
+        }
+        @media (min-width: 640px) {
+          .mla-modal {
+            position: relative !important;
+            bottom: auto !important;
+            left: auto !important;
+            border-radius: 12px !important;
+            max-width: 720px !important;
+            width: 100% !important;
+            max-height: 90vh;
+          }
+        }
+        /* Adjust overlay to align bottom on mobile */
+        .modal-overlay {
+          align-items: flex-end !important;
+        }
+        @media (min-width: 640px) {
+          .modal-overlay { align-items: center !important; }
+        }
+
+        .mla-modal-header {
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 18px 20px 14px;
+          border-bottom: 1px solid #f0f0f0;
+          flex-shrink: 0;
+        }
+        .mla-modal-header h2 { margin: 0; font-size: 17px; }
+        @media (min-width: 640px) { .mla-modal-header h2 { font-size: 20px; } }
+
+        .mla-modal-close {
+          background: #f0f0f0; border: none; border-radius: 50%;
+          width: 30px; height: 30px; display: flex; align-items: center;
+          justify-content: center; cursor: pointer; flex-shrink: 0;
+          color: #555; transition: background 0.15s;
+        }
+        .mla-modal-close:hover { background: #e0e0e0; }
+
+        .mla-modal-body {
+          overflow-y: auto; flex: 1;
+          padding: 16px 20px 24px;
+          -webkit-overflow-scrolling: touch;
+        }
+        @media (min-width: 640px) { .mla-modal-body { padding: 20px 28px 28px; } }
+
+        /* ── Guarantor picker ──────────────────────────── */
+        .guarantor-filter-bar {
+          display: flex; gap: 6px;
+          background: #f5f5f5; padding: 8px;
+          border-radius: 8px; margin-bottom: 10px;
+          flex-wrap: wrap;
+        }
+        @media (min-width: 480px) { .guarantor-filter-bar { flex-wrap: nowrap; } }
+
+        .guarantor-filter-btn {
+          flex: 1 1 auto; padding: 7px 8px;
+          border-radius: 6px; font-size: 12px; font-weight: 600;
+          cursor: pointer; border-width: 2px; border-style: solid;
+          display: flex; align-items: center; justify-content: center;
+          gap: 4px; transition: all 0.15s; white-space: nowrap;
+          min-width: 0;
+        }
+        .filter-label { overflow: hidden; text-overflow: ellipsis; }
+
+        .guarantor-loading {
+          text-align: center; padding: 20px;
+          color: #666; display: flex; align-items: center;
+          justify-content: center; gap: 8px; font-size: 14px;
+        }
+
+        .guarantor-list-scroll {
+          max-height: 280px; overflow-y: auto;
+          border: 1px solid #ddd; padding: 10px;
+          border-radius: 6px; background: #fafafa;
+        }
+        @media (min-width: 640px) { .guarantor-list-scroll { max-height: 320px; } }
+
+        .guarantor-item {
+          margin-bottom: 8px; padding: 10px 12px;
+          border-radius: 8px; border: 2px solid #e0e0e0;
+          background: #fafafa;
+        }
+        .guarantor-item.eligible   { border-color: #86efac; background: #f0fdf4; }
+        .guarantor-item.ineligible { border-color: #fca5a5; background: #fef2f2; opacity: 0.75; }
+        .guarantor-item.selected.eligible { background: #dcfce7; }
+        .guarantor-item.office-guarantor  { background: #fff9c4; border-color: #fbc02d; margin-bottom: 10px; cursor: pointer; }
+        .guarantor-item.office-guarantor.selected { background: #fff3e0; border-color: #ff9800; border-width: 3px; }
+
+        .guarantor-item-row {
+          display: flex; align-items: flex-start; gap: 8px;
+        }
+        .guarantor-item-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+        .guarantor-item-top  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .guarantor-item-name { font-weight: 700; font-size: 13px; color: #1a1a2e; }
+        .guarantor-item-meta {
+          display: flex; align-items: center; gap: 4px;
+          font-size: 11px; color: #666;
+        }
+        .guarantor-ineligible-reason {
+          margin-top: 6px; margin-left: 22px;
+          padding: 5px 8px; background: #fee2e2;
+          border-radius: 4px; border: 1px solid #fca5a5;
+          display: flex; align-items: center; gap: 5px;
+          font-size: 11px; font-weight: 600; color: #991b1b;
+        }
+        .guarantor-warning {
+          color: #c62828; font-size: 13px; background: #ffebee;
+          padding: 10px 14px; border-radius: 6px;
+          display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+        }
+
+        /* ── Loan summary box ──────────────────────────── */
+        .loan-summary-box {
+          background: #e3f2fd; padding: 14px;
+          border-radius: 10px; margin-bottom: 18px;
+          border: 2px solid #1976d2;
+        }
+        @media (min-width: 640px) { .loan-summary-box { padding: 16px; } }
+        .loan-summary-title {
+          margin: 0 0 12px; color: #1565c0;
+          font-size: 14px; display: flex; align-items: center; gap: 8px;
+        }
+        @media (min-width: 640px) { .loan-summary-title { font-size: 16px; } }
+
+        .loan-summary-grid {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: 10px; font-size: 13px; margin-bottom: 12px;
+        }
+        .sum-label { margin: 0 0 2px; color: #666; font-size: 11px; }
+        .sum-value { margin: 0; font-weight: 700; font-size: 13px; }
+        @media (min-width: 640px) { .sum-value { font-size: 14px; } }
+
+        .loan-summary-amounts { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+        @media (min-width: 480px) { .loan-summary-amounts { flex-direction: row; } }
+
+        .amount-box {
+          flex: 1; border-radius: 8px; padding: 12px;
+          border: 2px solid;
+        }
+        .amount-box.blue  { background: #e3f2fd; border-color: #1976d2; }
+        .amount-box.green { background: #e8f5e9; border-color: #4caf50; }
+        .amount-box-label {
+          font-size: 11px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.05em;
+          display: flex; align-items: center; gap: 5px;
+        }
+        .amount-box.blue .amount-box-label  { color: #1565c0; }
+        .amount-box.green .amount-box-label { color: #2e7d32; }
+        .amount-box-value {
+          font-size: 20px; font-weight: 800; margin-top: 2px;
+        }
+        @media (min-width: 640px) { .amount-box-value { font-size: 24px; } }
+        .amount-box.blue .amount-box-value  { color: #1565c0; }
+        .amount-box.green .amount-box-value { color: #2e7d32; }
+        .amount-box-sub { font-size: 11px; color: #777; margin-top: 2px; }
+
+        .loan-summary-disburse {
+          margin-top: 12px; padding: 14px;
+          background: #e8f5e9; border-radius: 8px;
+          border: 2px solid #4caf50;
+          display: flex; justify-content: space-between; align-items: center;
+          flex-wrap: wrap; gap: 12px;
+        }
+        .amount-disburse-value { margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #2e7d32; }
+        .amount-balance-value  { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: #1565c0; }
+
+        .loan-summary-guarantors {
+          margin-top: 10px; display: flex; align-items: center;
+          gap: 6px; font-size: 12px; color: #888;
+        }
+
+        /* ── Top-up modal ──────────────────────────────── */
+        .topup-current-loan {
+          background: #e3f2fd; padding: 14px; border-radius: 8px;
+          margin-bottom: 18px; border: 2px solid #1976d2;
+        }
+        .topup-current-loan h4 {
+          margin: 0 0 10px; color: #1565c0; font-size: 14px;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .topup-current-grid {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: 8px; font-size: 13px;
+        }
+        .tcg-label { color: #666; }
+
+        .topup-breakdown {
+          margin-top: 10px; border-radius: 8px;
+          border: 1px solid #e5e7eb; overflow: hidden;
+        }
+        .tbd-header {
+          background: #f9fafb; padding: 7px 14px;
+          font-size: 11px; font-weight: 700;
+          color: #374151; text-transform: uppercase;
+        }
+        .tbd-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+        @media (min-width: 640px) { .tbd-body { font-size: 13px; } }
+        .tbd-row {
+          display: flex; justify-content: space-between;
+          align-items: center; gap: 8px;
+        }
+        .tbd-row.orange { color: #e65100; }
+        .tbd-row.amber  { color: #f57f17; }
+        .tbd-row.blue   { color: #1565c0; }
+        .tbd-row.green  { color: #2e7d32; font-weight: 700; }
+        .tbd-row.muted  { color: #888; }
+        .total-row { border-top: 2px solid #1976d2; padding-top: 6px; font-weight: 700; }
+        .cash-row  { border-top: 1px dashed #e5e7eb; padding-top: 6px; }
+
+        .topup-error-hint {
+          margin-top: 8px; padding: 8px 12px;
+          background: #ffebee; border-radius: 6px;
+          font-size: 12px; color: #c62828;
+          display: flex; align-items: center; gap: 6px;
+        }
+
+        /* ── Modal actions ─────────────────────────────── */
+        .modal-actions {
+          display: flex; flex-direction: column; gap: 10px; margin-top: 16px;
+        }
+        @media (min-width: 480px) {
+          .modal-actions {
+            flex-direction: row; justify-content: flex-end;
+          }
+        }
+        .modal-actions .btn-primary,
+        .modal-actions .btn-secondary {
+          width: 100%;
+        }
+        @media (min-width: 480px) {
+          .modal-actions .btn-primary,
+          .modal-actions .btn-secondary {
+            width: auto;
+          }
+        }
+      `}</style>
+    </>
+  );
 };
 
 export default MemberLoanApplication;
