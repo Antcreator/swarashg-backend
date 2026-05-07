@@ -175,9 +175,9 @@ const MemberLoanApplication = () => {
 
   // Store the full API response including liabilityPerGuarantor, totalRepayment
   // and requiredGuarantors returned by the backend so the UI reflects the real
-  // server-side calculation using the new formula:
+  // server-side calculation using the formula:
   //   Step 1: totalRepayment = principal + interest + txFee
-  //   Step 2: oneShare       = totalRepayment / n
+  //   Step 2: oneShare       = principal / n          ← uses principal, NOT totalRepayment
   //   Step 3: reduced        = totalRepayment - oneShare
   //   Step 4: liabilityEach  = reduced / n
   const fetchEligibleGuarantors = async (loanAmount) => {
@@ -368,14 +368,17 @@ const MemberLoanApplication = () => {
     const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
     const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
 
-    const n                    = guarantorsMeta.requiredGuarantors || requiredCount;
-    const totalRep             = guarantorsMeta.totalRepayment;
-    const liabilityPerG        = guarantorsMeta.liabilityPerGuarantor;
+    const n             = guarantorsMeta.requiredGuarantors || requiredCount;
+    const totalRep      = guarantorsMeta.totalRepayment;
+    const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
 
-    // Build a human-readable explanation of the new formula
-    // e.g. "(10,808 - 10,808/3) / 3 = 2,402"
+    // Raw principal for formula display: oneShare = principal / n (NOT totalRepayment / n)
+    const principalAmt = effectiveAmount();
+    const oneShareAmt  = n > 0 ? principalAmt / n : 0;
+
+    // Formula: (totalRepayment - principal/n) / n  e.g. "(10,808 - 3,333) / 3 = 2,492"
     const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
-      ? `(${fmt(totalRep)} − ${fmt(totalRep)} ÷ ${n}) ÷ ${n} = ${fmt(liabilityPerG)}`
+      ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
       : null;
 
     const liabilityBannerLabel = liabilityPerG > 0
@@ -634,13 +637,14 @@ const MemberLoanApplication = () => {
     if (!amt || !formData.durationMonths) return null;
     const fullRepayment = amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE;
 
-    // Re-derive the per-guarantor liability from the full repayment + the
-    // chosen duration's interest so the summary always matches exactly what
-    // the server will compute once a duration is selected.
-    const n               = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
-    const oneShare        = fullRepayment / n;
-    const reduced         = fullRepayment - oneShare;
-    const liabilityEach   = reduced / n;
+    // Re-derive per-guarantor liability locally so the summary updates immediately
+    // when the user picks a duration, before the next API call.
+    // Formula: oneShare = principal / n  (NOT fullRepayment / n)
+    //          liabilityEach = (fullRepayment - oneShare) / n
+    const n             = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
+    const oneShare      = amt / n;           // principal ÷ n
+    const reduced       = fullRepayment - oneShare;
+    const liabilityEach = reduced / n;
 
     return (
       <div className="loan-summary-box">
@@ -692,7 +696,7 @@ const MemberLoanApplication = () => {
               </span>
             </span>
             <span style={{ fontSize: '11px', color: '#888' }}>
-              Formula: ({fmt(fullRepayment)} − {fmt(fullRepayment)} ÷ {n}) ÷ {n}
+              Formula: ({fmt(fullRepayment)} − {fmt(amt)} ÷ {n}) ÷ {n}
             </span>
           </div>
         </div>
