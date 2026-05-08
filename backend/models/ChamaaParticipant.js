@@ -19,6 +19,19 @@ const ChamaaParticipant = sequelize.define('ChamaaParticipant', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  // Month (1–12) when this slot is scheduled to receive the pot.
+  // Multiple participants can share the same scheduledMonth (e.g. two members
+  // both receive in March). NULL means not yet scheduled.
+  scheduledMonth: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 12 },
+  },
+  // Year in which the slot receives the pot (e.g. 2025).
+  scheduledYear: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   hasReceived: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
@@ -32,9 +45,6 @@ const ChamaaParticipant = sequelize.define('ChamaaParticipant', {
   freezeTableName: true,
   timestamps: true,
   indexes: [
-    // A member can hold multiple positions in the same cycle
-    // (e.g. Mary at positions 1, 5, and 7).
-    // Only position must be unique per cycle — NOT (cycleId, memberId).
     { unique: true, fields: ['cycleId', 'position'] },
   ],
 });

@@ -179,6 +179,45 @@ const updateParticipantPosition = async (req, res) => {
   }
 };
 
+// ─── PUT /chamaa/participant/:id/schedule ───────────────────────
+// Updates the scheduledMonth and scheduledYear for a participant slot.
+// Multiple slots can share the same month (e.g. two members both receive in March).
+const updateParticipantSchedule = async (req, res) => {
+  const { id } = req.params;
+  const { scheduledMonth, scheduledYear } = req.body;
+
+  try {
+    const participant = await ChamaaParticipant.findByPk(id);
+    if (!participant) {
+      return res.status(404).json({ message: 'Participant not found' });
+    }
+
+    // Validate month range
+    if (scheduledMonth !== null && scheduledMonth !== undefined) {
+      const m = Number(scheduledMonth);
+      if (!Number.isInteger(m) || m < 1 || m > 12) {
+        return res.status(400).json({ message: 'scheduledMonth must be between 1 and 12' });
+      }
+      participant.scheduledMonth = m;
+    } else {
+      participant.scheduledMonth = null;
+    }
+
+    if (scheduledYear !== null && scheduledYear !== undefined) {
+      participant.scheduledYear = Number(scheduledYear);
+    } else {
+      participant.scheduledYear = null;
+    }
+
+    await participant.save();
+
+    return res.json({ message: 'Schedule updated successfully', participant });
+  } catch (error) {
+    console.error('Update schedule error:', error);
+    return res.status(500).json({ message: 'Failed to update participant schedule' });
+  }
+};
+
 // ─── POST /chamaa/contribution ──────────────────────────────────
 // Contributions are tracked per participant slot (id), so Mary's slot at
 // position 1 and her slot at position 5 each have independent contribution records.
@@ -310,15 +349,17 @@ const getMonthlyChamaaReport = async (req, res) => {
           where: { participantId: p.id, month, year },
         });
         return {
-          id:         p.id,
-          position:   p.position,
-          firstName:  p.member.firstName,
-          lastName:   p.member.lastName,
-          amount:     contribution ? contribution.amount     : null,
-          isPaid:     contribution ? contribution.isPaid     : false,
-          isLate:     contribution ? contribution.isLate     : false,
-          fineAmount: contribution ? contribution.fineAmount : 0,
-          status:     !contribution ? 'Not Paid' : (contribution.isLate ? 'Late' : 'On Time'),
+          id:             p.id,
+          position:       p.position,
+          scheduledMonth: p.scheduledMonth,
+          scheduledYear:  p.scheduledYear,
+          firstName:      p.member.firstName,
+          lastName:       p.member.lastName,
+          amount:         contribution ? contribution.amount     : null,
+          isPaid:         contribution ? contribution.isPaid     : false,
+          isLate:         contribution ? contribution.isLate     : false,
+          fineAmount:     contribution ? contribution.fineAmount : 0,
+          status:         !contribution ? 'Not Paid' : (contribution.isLate ? 'Late' : 'On Time'),
         };
       })
     );
@@ -344,6 +385,7 @@ module.exports = {
   createCycle,
   addParticipant,
   updateParticipantPosition,
+  updateParticipantSchedule,
   recordContribution,
   markAsReceived,
   endCycle,
