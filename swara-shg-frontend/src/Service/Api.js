@@ -109,6 +109,7 @@ export const chamaaAPI = {
   createCycle:               (cycleData)            => api.post('/chamaa', cycleData),
   addParticipant:            (participantData)      => api.post('/chamaa/participant', participantData),
   updateParticipantPosition: (id, newPosition)      => api.put(`/chamaa/participant/${id}/position`, { newPosition }),
+  updateParticipantSchedule: (id, data)             => api.put(`/chamaa/participant/${id}/schedule`, data),
   recordContribution:        (contributionData)     => api.post('/chamaa/contribution', contributionData),
   markAsReceived:            (receivedData)         => api.post('/chamaa/received', receivedData),
   endCycle:                  (id)                   => api.put(`/chamaa/${id}/end`),
@@ -137,9 +138,6 @@ export const finesAPI = {
 };
 
 // ── Seed Capital API ─────────────────────────────────────────────────────────
-// update(id, data) → PUT  /seed-capital/:id  (edit a single contribution row)
-// delete(id)       → DELETE /seed-capital/:id (remove a single contribution row)
-// create(data)     → POST /seed-capital       (add a new contribution)
 export const seedCapitalAPI = {
   getStats: ()         => api.get('/seed-capital/stats'),
   getAll:   ()         => api.get('/seed-capital'),
