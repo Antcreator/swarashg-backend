@@ -12,7 +12,7 @@ import { useToast, useConfirm, ToastContainer } from '../../useToast';
 
 const TRANSACTION_FEE = 108;
 const MAX_ACTIVE_GUARANTEES = 5;
-const ONE_SHARE_DIVISOR = 3; // oneShare always divides principal by 3
+const ONE_SHARE_DIVISOR = 3;
 
 const Ico = ({ icon: Icon, size = 14, style = {} }) => (
   <Icon size={size} style={{ verticalAlign: 'middle', flexShrink: 0, ...style }} />
@@ -39,8 +39,6 @@ const MemberLoanApplication = () => {
   const [eligibleCount, setEligibleCount]           = useState(0);
   const [loadingEligibility, setLoadingEligibility] = useState(false);
 
-  // Stores the full guarantors API response so we can read
-  // liabilityPerGuarantor, totalRepayment and requiredGuarantors from the server.
   const [guarantorsMeta, setGuarantorsMeta] = useState({
     liabilityPerGuarantor: 0,
     totalRepayment:        0,
@@ -111,27 +109,6 @@ const MemberLoanApplication = () => {
     hasPendingLoanInList || (eligibility != null && eligibility.pendingLoan != null);
   const isButtonDisabled = eligibilityLoading || hasPendingApplication;
 
-  const ButtonIcon = () => {
-    if (eligibilityLoading)    return <Ico icon={Loader}        size={15} style={{ marginRight: 6 }} />;
-    if (hasPendingApplication) return <Ico icon={Clock}         size={15} style={{ marginRight: 6 }} />;
-    if (eligibility?.canApply) return <Ico icon={PlusCircle}    size={15} style={{ marginRight: 6 }} />;
-    if (eligibility?.canTopUp) return <Ico icon={ArrowUpCircle} size={15} style={{ marginRight: 6 }} />;
-    return <Ico icon={PlusCircle} size={15} style={{ marginRight: 6 }} />;
-  };
-
-  const buttonLabel = () => {
-    if (eligibilityLoading)    return 'Checking...';
-    if (!eligibility)          return 'Apply for Loan';
-    if (hasPendingApplication) {
-      return eligibility.pendingLoan?.loanType === 'top_up'
-        ? 'Top-Up Pending'
-        : 'Application Pending';
-    }
-    if (eligibility.canApply)  return 'Apply for Loan';
-    if (eligibility.canTopUp)  return 'Request Top-Up';
-    return 'Apply for Loan';
-  };
-
   const effectiveAmount = useCallback(() => {
     if (modalMode === 'topup' && eligibility?.activeLoan) {
       return Number(formData.topUpAmount || 0);
@@ -144,7 +121,6 @@ const MemberLoanApplication = () => {
     if (amt >= 1000) {
       fetchDurationOptionsForAmount(amt);
       fetchEligibleGuarantors(amt);
-      // Set required guarantors locally too so UI responds immediately
       const req = amt < 80000 ? 3 : 5;
       setLoanInfo(prev => ({ ...prev, requiredGuarantors: req }));
     } else {
@@ -167,7 +143,10 @@ const MemberLoanApplication = () => {
     try {
       const res = await loansAPI.getDurationOptions(amount);
       setAvailableDurations(res.data.durationOptions || []);
-      setLoanInfo(prev => ({ ...prev, tierInfo: { name: res.data.tier, minAmount: res.data.minAmount, maxAmount: res.data.maxAmount } }));
+      setLoanInfo(prev => ({
+        ...prev,
+        tierInfo: { name: res.data.tier, minAmount: res.data.minAmount, maxAmount: res.data.maxAmount },
+      }));
       if (formData.durationMonths) {
         const valid = res.data.durationOptions?.some(d => d.months === Number(formData.durationMonths));
         if (!valid) setFormData(prev => ({ ...prev, durationMonths: '' }));
@@ -175,17 +154,6 @@ const MemberLoanApplication = () => {
     } catch { setAvailableDurations([]); }
   };
 
-  // Guarantor liability formula:
-  //   Step 1: totalRepayment = principal + interest + txFee
-  //   Step 2: oneShare       = principal / ONE_SHARE_DIVISOR (always 3)
-  //   Step 3: reduced        = totalRepayment - oneShare
-  //   Step 4: liabilityEach  = reduced / n   (n = requiredGuarantors for the loan amount)
-  //
-  // Example (99k, 5 guarantors, 10% interest):
-  //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
-  //   oneShare       = 99,000 / 3 = 33,000
-  //   reduced        = 109,008 - 33,000 = 76,008
-  //   liabilityEach  = 76,008 / 5 = 15,201.60  → ceiled to 15,202
   const fetchEligibleGuarantors = async (loanAmount) => {
     setLoadingEligibility(true);
     try {
@@ -193,13 +161,11 @@ const MemberLoanApplication = () => {
       const data = res.data;
       setAllGuarantors(data.guarantors || []);
       setEligibleCount(data.eligibleCount || 0);
-
       setGuarantorsMeta({
         liabilityPerGuarantor: data.liabilityPerGuarantor || 0,
         totalRepayment:        data.totalRepayment        || 0,
         requiredGuarantors:    data.requiredGuarantors    || (loanAmount < 80000 ? 3 : 5),
       });
-
       setLoanInfo(prev => ({
         ...prev,
         requiredGuarantors: data.requiredGuarantors || (loanAmount < 80000 ? 3 : 5),
@@ -253,7 +219,11 @@ const MemberLoanApplication = () => {
 
   const closeModal = () => { setModalMode(null); resetForm(); };
 
-  const toggleGuarantor = (guarantor) => {
+  // ── Toggle guarantor selection ────────────────────────────────
+  // FIX: Accept an optional `fromCheckbox` flag so the div's onClick
+  // can defer to the checkbox's onChange and avoid double-toggling on mobile.
+  const toggleGuarantor = (guarantor, fromCheckbox = false) => {
+    // Office guarantor: always toggleable
     if (guarantor.id === officeGuarantor?.id) {
       setFormData(prev => ({
         ...prev,
@@ -263,13 +233,17 @@ const MemberLoanApplication = () => {
       }));
       return;
     }
+    // Ineligible: show warning, don't select
     if (!guarantor.isEligible) {
-      toast.warning(
-        `${guarantor.firstName} ${guarantor.lastName} is ineligible`,
-        guarantor.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES
-          ? `This member has reached the maximum of ${MAX_ACTIVE_GUARANTEES} active guarantees.`
-          : 'This member does not have sufficient savings to guarantee this loan.'
-      );
+      // Only show warning once — when clicking the row directly, not via checkbox
+      if (!fromCheckbox) {
+        toast.warning(
+          `${guarantor.firstName} ${guarantor.lastName} is ineligible`,
+          guarantor.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES
+            ? `This member has reached the maximum of ${MAX_ACTIVE_GUARANTEES} active guarantees.`
+            : 'This member does not have sufficient savings to guarantee this loan.'
+        );
+      }
       return;
     }
     setFormData(prev => ({
@@ -280,13 +254,17 @@ const MemberLoanApplication = () => {
     }));
   };
 
+  const removeGuarantor = (gid) => {
+    setFormData(prev => ({ ...prev, guarantorIds: prev.guarantorIds.filter(i => i !== gid) }));
+  };
+
   const filteredGuarantors = allGuarantors.filter(g => {
     if (guarantorFilter === 'eligible')   return g.isEligible;
     if (guarantorFilter === 'ineligible') return !g.isEligible;
     return true;
   });
 
-  // fmt: rounds UP to the nearest whole number (ceiling), then formats as KES integer
+  // fmt: rounds UP to nearest whole number, formats as KES integer
   const fmt = (amount) => new Intl.NumberFormat('en-KE', {
     style: 'currency', currency: 'KES', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(Math.ceil(amount || 0));
@@ -368,296 +346,35 @@ const MemberLoanApplication = () => {
     );
   };
 
-  // ── Guarantor Picker ─────────────────────────────────────────
-  const GuarantorPicker = () => {
-    const selectedCount   = formData.guarantorIds.length;
-    const requiredCount   = loanInfo.requiredGuarantors;
-    const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
-    const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
+  const ButtonIcon = () => {
+    if (eligibilityLoading)    return <Ico icon={Loader}        size={15} style={{ marginRight: 6 }} />;
+    if (hasPendingApplication) return <Ico icon={Clock}         size={15} style={{ marginRight: 6 }} />;
+    if (eligibility?.canApply) return <Ico icon={PlusCircle}    size={15} style={{ marginRight: 6 }} />;
+    if (eligibility?.canTopUp) return <Ico icon={ArrowUpCircle} size={15} style={{ marginRight: 6 }} />;
+    return <Ico icon={PlusCircle} size={15} style={{ marginRight: 6 }} />;
+  };
 
-    const n             = guarantorsMeta.requiredGuarantors || requiredCount;
-    const totalRep      = guarantorsMeta.totalRepayment;
-    const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
-
-    // oneShare = principal / ONE_SHARE_DIVISOR (always 3)
-    // liabilityEach = (totalRepayment - oneShare) / n  → ceiled
-    const principalAmt = effectiveAmount();
-    const oneShareAmt  = principalAmt / ONE_SHARE_DIVISOR;  // always ÷ 3
-
-    // Formula display: e.g. "(109,008 − 33,000) ÷ 5 = 15,202"
-    const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
-      ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
-      : null;
-
-    const liabilityBannerLabel = liabilityPerG > 0
-      ? `Minimum savings required per guarantor: ${fmt(liabilityPerG)}`
-      : null;
-
-    return (
-      <div className="form-group guarantor-picker-wrapper">
-        {/* Header row */}
-        <div className="guarantor-picker-header">
-          <label className="guarantor-picker-label">
-            Select Guarantors
-            {requiredCount > 0 && (
-              <span className={`guarantor-count-badge ${selectedCount >= requiredCount ? 'complete' : ''}`}>
-                {selectedCount}/{requiredCount}
-              </span>
-            )}
-          </label>
-          {requiredCount > 0 && (
-            <span className="guarantor-picker-hint">
-              {selectedCount >= requiredCount
-                ? <><CheckCircle size={12} color="#4caf50" /> All selected</>
-                : <>{requiredCount - selectedCount} more needed</>}
-            </span>
-          )}
-        </div>
-
-        {/* Liability info banner — shows server value with formula breakdown */}
-        {liabilityBannerLabel && (
-          <div className="guarantor-liability-info">
-            <Users size={12} />
-            <div className="guarantor-liability-info-inner">
-              <span className="guarantor-liability-main">{liabilityBannerLabel}</span>
-              {liabilityFormulaLabel && (
-                <span className="guarantor-liability-formula">
-                  Formula: {liabilityFormulaLabel}
-                </span>
-              )}
-              {n > 0 && totalRep > 0 && (
-                <span className="guarantor-liability-split">
-                  Total repayment {fmt(totalRep)} · one share ({fmt(principalAmt)} ÷ {ONE_SHARE_DIVISOR} = {fmt(oneShareAmt)}) distributed across {n} guarantors
-                  using the reduced-liability method
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Progress bar */}
-        {requiredCount > 0 && (
-          <div className="guarantor-progress-track">
-            <div
-              className="guarantor-progress-fill"
-              style={{ width: `${progressPercent}%`, background: progressColor }}
-            />
-          </div>
-        )}
-
-        {/* Filter tabs */}
-        {allGuarantors.length > 0 && (
-          <div className="guarantor-filter-bar">
-            {[
-              { key: 'all',        label: 'All',        count: allGuarantors.length,                  color: '#1976d2', Icon: Users       },
-              { key: 'eligible',   label: 'Eligible',   count: eligibleCount,                          color: '#4caf50', Icon: ShieldCheck },
-              { key: 'ineligible', label: 'Ineligible', count: allGuarantors.length - eligibleCount,  color: '#f44336', Icon: ShieldOff   },
-            ].map(({ key, label, count, color, Icon }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setGuarantorFilter(key)}
-                className={`guarantor-filter-btn ${guarantorFilter === key ? 'active' : ''}`}
-                style={{
-                  borderColor: guarantorFilter === key ? color : '#ddd',
-                  background:  guarantorFilter === key ? color : 'white',
-                  color:       guarantorFilter === key ? 'white' : '#555',
-                }}
-              >
-                <Icon size={13} />
-                <span className="filter-label-text">{label}</span>
-                <span className="filter-count-pill" style={{
-                  background: guarantorFilter === key ? 'rgba(255,255,255,0.3)' : '#f0f0f0',
-                  color:      guarantorFilter === key ? 'white' : '#555',
-                }}>{count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Loading state */}
-        {loadingEligibility && (
-          <div className="guarantor-loading">
-            <Loader size={16} /> Loading guarantors…
-          </div>
-        )}
-
-        {/* Guarantor list */}
-        {!loadingEligibility && effectiveAmount() >= 1000 && (
-          <div className="guarantor-list-scroll">
-
-            {/* Office guarantor (sticky at top) */}
-            {officeGuarantor && (
-              <label
-                className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
-              >
-                <div className="guarantor-checkbox-wrap">
-                  <input
-                    type="checkbox"
-                    checked={formData.guarantorIds.includes(officeGuarantor.id)}
-                    onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
-                  />
-                </div>
-                <div className="guarantor-item-info">
-                  <div className="guarantor-item-top">
-                    <span className="guarantor-item-name">{officeGuarantor.name}</span>
-                    <span className="tag-office">
-                      <Star size={11} /> ADMIN
-                    </span>
-                  </div>
-                  <span className="guarantor-item-sub">Unlimited guarantee capacity</span>
-                </div>
-                {formData.guarantorIds.includes(officeGuarantor.id) && (
-                  <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
-                )}
-              </label>
-            )}
-
-            {/* Regular guarantors */}
-            {filteredGuarantors.map(g => {
-              const isSelected = formData.guarantorIds.includes(g.id);
-              return (
-                <div
-                  key={g.id}
-                  className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${isSelected ? 'selected' : ''}`}
-                  onClick={() => toggleGuarantor(g)}
-                  role="checkbox"
-                  aria-checked={isSelected}
-                  tabIndex={g.isEligible ? 0 : -1}
-                  onKeyDown={e => e.key === ' ' && g.isEligible && toggleGuarantor(g)}
-                >
-                  {/* Checkbox */}
-                  <div className="guarantor-checkbox-wrap">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {}}
-                      disabled={!g.isEligible}
-                      tabIndex={-1}
-                      onClick={e => e.stopPropagation()}
-                    />
-                  </div>
-
-                  {/* Avatar */}
-                  <div className={`guarantor-avatar ${g.isEligible ? 'elig' : 'inelig'}`}>
-                    {g.firstName?.[0]}{g.lastName?.[0]}
-                  </div>
-
-                  {/* Info */}
-                  <div className="guarantor-item-info">
-                    <div className="guarantor-item-top">
-                      <span className="guarantor-item-name">{g.firstName} {g.lastName}</span>
-                      <span className={`tag-elig ${g.isEligible ? 'tag-yes' : 'tag-no'}`}>
-                        {g.isEligible
-                          ? <><CheckCircle size={10} /> Eligible</>
-                          : <><XCircle size={10} /> Ineligible</>}
-                      </span>
-                    </div>
-                    <div className="guarantor-item-meta">
-                      {/* Guarantee usage bar */}
-                      <div className="guarantee-usage-bar">
-                        {Array.from({ length: MAX_ACTIVE_GUARANTEES }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`guarantee-usage-pip ${i < g.activeGuaranteeCount ? 'filled' : ''} ${g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'maxed' : ''}`}
-                          />
-                        ))}
-                      </div>
-                      <span style={{ color: g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? '#f44336' : '#777', fontSize: '11px' }}>
-                        {g.activeGuaranteeCount}/{MAX_ACTIVE_GUARANTEES} active guarantees
-                      </span>
-                    </div>
-
-                    {/* Ineligibility reason */}
-                    {!g.isEligible && g.ineligibilityReason ? (
-                      <div className="guarantor-ineligible-reason">
-                        <AlertTriangle size={11} color="#991b1b" />
-                        {g.ineligibilityReason}
-                      </div>
-                    ) : !g.isEligible && (
-                      <div className="guarantor-ineligible-reason">
-                        <AlertTriangle size={11} color="#991b1b" />
-                        {g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'Max guarantees reached' : 'Insufficient savings'}
-                      </div>
-                    )}
-
-                    {/* Show available savings vs required liability for eligible guarantors */}
-                    {g.isEligible && g.availableSavings !== undefined && (
-                      <div className="guarantor-savings-info">
-                        <span>Available savings: <strong>{fmt(g.availableSavings)}</strong></span>
-                        {liabilityPerG > 0 && (
-                          <span style={{ color: '#555' }}>
-                            {' '}· Required: <strong>{fmt(liabilityPerG)}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Selected check */}
-                  {isSelected && g.isEligible && (
-                    <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
-                  )}
-                </div>
-              );
-            })}
-
-            {filteredGuarantors.length === 0 && !officeGuarantor && (
-              <div className="guarantor-loading">
-                <Users size={16} /> No {guarantorFilter === 'all' ? '' : guarantorFilter} guarantors found
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Selected summary chips */}
-        {formData.guarantorIds.length > 0 && (
-          <div className="guarantor-selected-summary">
-            <span className="guarantor-selected-label">Selected:</span>
-            {formData.guarantorIds.map(id => {
-              const g        = allGuarantors.find(g => g.id === id);
-              const isOffice = officeGuarantor && id === officeGuarantor.id;
-              const name     = isOffice
-                ? officeGuarantor.name
-                : g ? `${g.firstName} ${g.lastName}` : `#${id}`;
-              return (
-                <span key={id} className="guarantor-chip">
-                  {name}
-                  <button
-                    type="button"
-                    className="guarantor-chip-remove"
-                    onClick={() => setFormData(prev => ({ ...prev, guarantorIds: prev.guarantorIds.filter(i => i !== id) }))}
-                    aria-label={`Remove ${name}`}
-                  >
-                    <X size={10} />
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
+  const buttonLabel = () => {
+    if (eligibilityLoading)    return 'Checking...';
+    if (!eligibility)          return 'Apply for Loan';
+    if (hasPendingApplication) {
+      return eligibility.pendingLoan?.loanType === 'top_up'
+        ? 'Top-Up Pending'
+        : 'Application Pending';
+    }
+    if (eligibility.canApply)  return 'Apply for Loan';
+    if (eligibility.canTopUp)  return 'Request Top-Up';
+    return 'Apply for Loan';
   };
 
   // ── Loan Summary Box ─────────────────────────────────────────
-  // Liability formula:
-  //   oneShare    = principal / ONE_SHARE_DIVISOR   (always ÷ 3)
-  //   liabilityEach = (totalRepayment - oneShare) / n  → ceiled to whole number
-  //
-  // Example: principal=99,000 | n=5 | rate=10% | fee=108
-  //   totalRepayment = 99,000 + 9,900 + 108 = 109,008
-  //   oneShare       = 99,000 / 3 = 33,000
-  //   reduced        = 109,008 - 33,000 = 76,008
-  //   liabilityEach  = 76,008 / 5 = 15,201.60  → ceiled to 15,202
-  function LoanSummaryBox({ amt, label = 'Loan Amount' }) {
+  const renderLoanSummaryBox = (amt, label = 'Loan Amount') => {
     if (!amt || !formData.durationMonths) return null;
     const fullRepayment = Math.ceil(amt + (amt * loanInfo.interestRate / 100) + TRANSACTION_FEE);
-
     const n             = loanInfo.requiredGuarantors || (amt < 80000 ? 3 : 5);
-    const oneShare      = Math.ceil(amt / ONE_SHARE_DIVISOR);   // always principal ÷ 3, ceiled
-    const reduced       = fullRepayment - oneShare;              // totalRepayment - oneShare
-    const liabilityEach = Math.ceil(reduced / n);               // ceiled to whole number
+    const oneShare      = Math.ceil(amt / ONE_SHARE_DIVISOR);
+    const reduced       = fullRepayment - oneShare;
+    const liabilityEach = Math.ceil(reduced / n);
 
     return (
       <div className="loan-summary-box">
@@ -697,8 +414,6 @@ const MemberLoanApplication = () => {
             </div>
           </div>
         )}
-
-        {/* Guarantor requirement with per-guarantor liability breakdown */}
         <div className="loan-summary-guarantors">
           <Users size={13} color="#888" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -715,27 +430,310 @@ const MemberLoanApplication = () => {
         </div>
       </div>
     );
-  }
+  };
 
-  // ── Modal Actions ────────────────────────────────────────────
-  function ModalActions({ onClose, disabled, submitLabel = 'Submit Application' }) {
+  // ── Guarantor Picker ─────────────────────────────────────────
+  // Rendered as a plain JSX expression (not a nested component definition)
+  // to keep it stable in the component tree and avoid unmount/remount on
+  // every parent re-render.
+  //
+  // FIX (mobile double-toggle):
+  // Root cause: on mobile, tapping the checkbox fires BOTH the checkbox's
+  // onChange AND the parent div's onClick (two separate events, not bubbling).
+  // The existing e.stopPropagation() on the checkbox click event only stops
+  // click-event bubbling — but on mobile, a tap on the checkbox still triggers
+  // the div's onClick separately via touch event synthesis.
+  //
+  // Solution: The div's onClick handler checks if the native event target is
+  // the checkbox input itself (e.target.type === 'checkbox'). If so, it returns
+  // early and lets the checkbox's onChange be the single source of truth.
+  // This cleanly prevents the double-toggle without needing pointer-events hacks.
+  const renderGuarantorPicker = () => {
+    const selectedCount   = formData.guarantorIds.length;
+    const requiredCount   = loanInfo.requiredGuarantors;
+    const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
+    const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
+
+    const n             = guarantorsMeta.requiredGuarantors || requiredCount;
+    const totalRep      = guarantorsMeta.totalRepayment;
+    const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
+    const principalAmt  = effectiveAmount();
+    const oneShareAmt   = principalAmt / ONE_SHARE_DIVISOR;
+
+    const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
+      ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
+      : null;
+
+    const liabilityBannerLabel = liabilityPerG > 0
+      ? `Minimum savings required per guarantor: ${fmt(liabilityPerG)}`
+      : null;
+
     return (
-      <>
-        {loanInfo.requiredGuarantors > 0 && formData.guarantorIds.length < loanInfo.requiredGuarantors && (
-          <p className="guarantor-warning">
-            <AlertTriangle size={14} />
-            You need {loanInfo.requiredGuarantors - formData.guarantorIds.length} more guarantor(s)
-          </p>
-        )}
-        <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary" disabled={disabled}>{submitLabel}</button>
+      <div className="form-group guarantor-picker-wrapper">
+        {/* Header row */}
+        <div className="guarantor-picker-header">
+          <label className="guarantor-picker-label">
+            Select Guarantors
+            {requiredCount > 0 && (
+              <span className={`guarantor-count-badge ${selectedCount >= requiredCount ? 'complete' : ''}`}>
+                {selectedCount}/{requiredCount}
+              </span>
+            )}
+          </label>
+          {requiredCount > 0 && (
+            <span className="guarantor-picker-hint">
+              {selectedCount >= requiredCount
+                ? <><CheckCircle size={12} color="#4caf50" /> All selected</>
+                : <>{requiredCount - selectedCount} more needed</>}
+            </span>
+          )}
         </div>
-      </>
-    );
-  }
 
-  // ── Loan cards for mobile ──
+        {/* Liability info banner */}
+        {liabilityBannerLabel && (
+          <div className="guarantor-liability-info">
+            <Users size={12} />
+            <div className="guarantor-liability-info-inner">
+              <span className="guarantor-liability-main">{liabilityBannerLabel}</span>
+              {liabilityFormulaLabel && (
+                <span className="guarantor-liability-formula">
+                  Formula: {liabilityFormulaLabel}
+                </span>
+              )}
+              {n > 0 && totalRep > 0 && (
+                <span className="guarantor-liability-split">
+                  Total repayment {fmt(totalRep)} · one share ({fmt(principalAmt)} ÷ {ONE_SHARE_DIVISOR} = {fmt(oneShareAmt)}) distributed across {n} guarantors using the reduced-liability method
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {requiredCount > 0 && (
+          <div className="guarantor-progress-track">
+            <div
+              className="guarantor-progress-fill"
+              style={{ width: `${progressPercent}%`, background: progressColor }}
+            />
+          </div>
+        )}
+
+        {/* Filter tabs */}
+        {allGuarantors.length > 0 && (
+          <div className="guarantor-filter-bar">
+            {[
+              { key: 'all',        label: 'All',        count: allGuarantors.length,                 color: '#1976d2', Icon: Users       },
+              { key: 'eligible',   label: 'Eligible',   count: eligibleCount,                         color: '#4caf50', Icon: ShieldCheck },
+              { key: 'ineligible', label: 'Ineligible', count: allGuarantors.length - eligibleCount, color: '#f44336', Icon: ShieldOff   },
+            ].map(({ key, label, count, color, Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGuarantorFilter(key)}
+                className={`guarantor-filter-btn ${guarantorFilter === key ? 'active' : ''}`}
+                style={{
+                  borderColor: guarantorFilter === key ? color : '#ddd',
+                  background:  guarantorFilter === key ? color : 'white',
+                  color:       guarantorFilter === key ? 'white' : '#555',
+                }}
+              >
+                <Icon size={13} />
+                <span className="filter-label-text">{label}</span>
+                <span className="filter-count-pill" style={{
+                  background: guarantorFilter === key ? 'rgba(255,255,255,0.3)' : '#f0f0f0',
+                  color:      guarantorFilter === key ? 'white' : '#555',
+                }}>{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Loading state */}
+        {loadingEligibility && (
+          <div className="guarantor-loading">
+            <Loader size={16} /> Loading guarantors…
+          </div>
+        )}
+
+        {/* Guarantor list */}
+        {!loadingEligibility && effectiveAmount() >= 1000 && (
+          <div className="guarantor-list-scroll">
+
+            {/* Office guarantor (sticky at top) */}
+            {officeGuarantor && (
+              <div
+                className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
+                onClick={(e) => {
+                  // FIX: if the tap landed directly on the checkbox input, let
+                  // its own onChange handle the toggle — don't double-fire here.
+                  if (e.target.type === 'checkbox') return;
+                  toggleGuarantor({ id: officeGuarantor.id, isEligible: true });
+                }}
+                role="checkbox"
+                aria-checked={formData.guarantorIds.includes(officeGuarantor.id)}
+                tabIndex={0}
+                onKeyDown={e => e.key === ' ' && toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
+              >
+                <div className="guarantor-checkbox-wrap">
+                  <input
+                    type="checkbox"
+                    checked={formData.guarantorIds.includes(officeGuarantor.id)}
+                    onChange={() => toggleGuarantor({ id: officeGuarantor.id, isEligible: true })}
+                    tabIndex={-1}
+                  />
+                </div>
+                <div className="guarantor-item-info">
+                  <div className="guarantor-item-top">
+                    <span className="guarantor-item-name">{officeGuarantor.name}</span>
+                    <span className="tag-office">
+                      <Star size={11} /> ADMIN
+                    </span>
+                  </div>
+                  <span className="guarantor-item-sub">Unlimited guarantee capacity</span>
+                </div>
+                {formData.guarantorIds.includes(officeGuarantor.id) && (
+                  <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
+                )}
+              </div>
+            )}
+
+            {/* Regular guarantors */}
+            {filteredGuarantors.map(g => {
+              const isSelected = formData.guarantorIds.includes(g.id);
+              return (
+                <div
+                  key={g.id}
+                  className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${isSelected ? 'selected' : ''}`}
+                  onClick={(e) => {
+                    // FIX: if the tap landed directly on the checkbox input, let
+                    // its own onChange handle the toggle — don't double-fire here.
+                    if (e.target.type === 'checkbox') return;
+                    toggleGuarantor(g);
+                  }}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabIndex={g.isEligible ? 0 : -1}
+                  onKeyDown={e => e.key === ' ' && g.isEligible && toggleGuarantor(g)}
+                >
+                  <div className="guarantor-checkbox-wrap">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleGuarantor(g, true)}
+                      disabled={!g.isEligible}
+                      tabIndex={-1}
+                    />
+                  </div>
+
+                  <div className={`guarantor-avatar ${g.isEligible ? 'elig' : 'inelig'}`}>
+                    {g.firstName?.[0]}{g.lastName?.[0]}
+                  </div>
+
+                  <div className="guarantor-item-info">
+                    <div className="guarantor-item-top">
+                      <span className="guarantor-item-name">{g.firstName} {g.lastName}</span>
+                      <span className={`tag-elig ${g.isEligible ? 'tag-yes' : 'tag-no'}`}>
+                        {g.isEligible
+                          ? <><CheckCircle size={10} /> Eligible</>
+                          : <><XCircle size={10} /> Ineligible</>}
+                      </span>
+                    </div>
+                    <div className="guarantor-item-meta">
+                      <div className="guarantee-usage-bar">
+                        {Array.from({ length: MAX_ACTIVE_GUARANTEES }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={`guarantee-usage-pip ${i < g.activeGuaranteeCount ? 'filled' : ''} ${g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'maxed' : ''}`}
+                          />
+                        ))}
+                      </div>
+                      <span style={{ color: g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? '#f44336' : '#777', fontSize: '11px' }}>
+                        {g.activeGuaranteeCount}/{MAX_ACTIVE_GUARANTEES} active guarantees
+                      </span>
+                    </div>
+
+                    {!g.isEligible && (
+                      <div className="guarantor-ineligible-reason">
+                        <AlertTriangle size={11} color="#991b1b" />
+                        {g.ineligibilityReason || (g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'Max guarantees reached' : 'Insufficient savings')}
+                      </div>
+                    )}
+
+                    {g.isEligible && g.availableSavings !== undefined && (
+                      <div className="guarantor-savings-info">
+                        <span>Available savings: <strong>{fmt(g.availableSavings)}</strong></span>
+                        {liabilityPerG > 0 && (
+                          <span style={{ color: '#555' }}>
+                            {' '}· Required: <strong>{fmt(liabilityPerG)}</strong>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {isSelected && g.isEligible && (
+                    <CheckCircle size={16} color="#4caf50" style={{ flexShrink: 0 }} />
+                  )}
+                </div>
+              );
+            })}
+
+            {filteredGuarantors.length === 0 && !officeGuarantor && (
+              <div className="guarantor-loading">
+                <Users size={16} /> No {guarantorFilter === 'all' ? '' : guarantorFilter} guarantors found
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Selected summary chips */}
+        {formData.guarantorIds.length > 0 && (
+          <div className="guarantor-selected-summary">
+            <span className="guarantor-selected-label">Selected:</span>
+            {formData.guarantorIds.map(gid => {
+              const g        = allGuarantors.find(g => g.id === gid);
+              const isOffice = officeGuarantor && gid === officeGuarantor.id;
+              const name     = isOffice
+                ? officeGuarantor.name
+                : g ? `${g.firstName} ${g.lastName}` : `#${gid}`;
+              return (
+                <span key={gid} className="guarantor-chip">
+                  {name}
+                  <button
+                    type="button"
+                    className="guarantor-chip-remove"
+                    onClick={() => removeGuarantor(gid)}
+                    aria-label={`Remove ${name}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Modal actions ─────────────────────────────────────────────
+  const renderModalActions = (onClose, disabled, submitLabel = 'Submit Application') => (
+    <>
+      {loanInfo.requiredGuarantors > 0 && formData.guarantorIds.length < loanInfo.requiredGuarantors && (
+        <p className="guarantor-warning">
+          <AlertTriangle size={14} />
+          You need {loanInfo.requiredGuarantors - formData.guarantorIds.length} more guarantor(s)
+        </p>
+      )}
+      <div className="modal-actions">
+        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button type="submit" className="btn-primary" disabled={disabled}>{submitLabel}</button>
+      </div>
+    </>
+  );
+
+  // ── Mobile loan cards ─────────────────────────────────────────
   const LoanCards = () => (
     <div className="loan-cards-mobile">
       {myLoans.map(loan => {
@@ -763,41 +761,16 @@ const MemberLoanApplication = () => {
                 {getStatusBadge(loan)}
               </div>
             </div>
-
             <div className="loan-card-mobile-grid">
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Amount</span>
-                <span className="lcm-value">{fmt(loan.amount)}</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Tx Fee</span>
-                <span className="lcm-value" style={{ color: '#f57f17' }}>{fmt(txFee)}</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Cash to You</span>
-                <span className="lcm-value" style={{ color: '#2e7d32', fontWeight: 700 }}>{fmt(cashToMember)}</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Interest</span>
-                <span className="lcm-value">{loan.interestRate}%</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Duration</span>
-                <span className="lcm-value">{loan.durationMonths}m</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Total Repayment</span>
-                <span className="lcm-value" style={{ color: '#1976d2' }}>{fmt(loan.totalRepayment)}</span>
-              </div>
-              <div className="loan-card-mobile-field">
-                <span className="lcm-label">Applied On</span>
-                <span className="lcm-value">{new Date(loan.createdAt).toLocaleDateString()}</span>
-              </div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Amount</span><span className="lcm-value">{fmt(loan.amount)}</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Tx Fee</span><span className="lcm-value" style={{ color: '#f57f17' }}>{fmt(txFee)}</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Cash to You</span><span className="lcm-value" style={{ color: '#2e7d32', fontWeight: 700 }}>{fmt(cashToMember)}</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Interest</span><span className="lcm-value">{loan.interestRate}%</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Duration</span><span className="lcm-value">{loan.durationMonths}m</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Total Repayment</span><span className="lcm-value" style={{ color: '#1976d2' }}>{fmt(loan.totalRepayment)}</span></div>
+              <div className="loan-card-mobile-field"><span className="lcm-label">Applied On</span><span className="lcm-value">{new Date(loan.createdAt).toLocaleDateString()}</span></div>
               {loan.approvalStatus === 'approved' && (
-                <div className="loan-card-mobile-field">
-                  <span className="lcm-label">Balance</span>
-                  <span className="lcm-value">{fmt(loan.remainingBalance)}</span>
-                </div>
+                <div className="loan-card-mobile-field"><span className="lcm-label">Balance</span><span className="lcm-value">{fmt(loan.remainingBalance)}</span></div>
               )}
             </div>
           </div>
@@ -816,9 +789,7 @@ const MemberLoanApplication = () => {
 
         {/* ── Page Header ── */}
         <div className="mla-page-header">
-          <div>
-            <h1>My Loan Applications</h1>
-          </div>
+          <div><h1>My Loan Applications</h1></div>
           <div className="mla-header-actions">
             <button
               className="btn-primary"
@@ -935,7 +906,6 @@ const MemberLoanApplication = () => {
           </div>
         ) : (
           <>
-            {/* Desktop table */}
             <div className="table-container mla-table-desktop">
               <table>
                 <thead>
@@ -947,12 +917,11 @@ const MemberLoanApplication = () => {
                 </thead>
                 <tbody>
                   {myLoans.map(loan => {
-                    const txFee          = Number(loan.transactionFee ?? TRANSACTION_FEE);
-                    const isTopUp        = loan.loanType === 'top_up';
-                    const cashToMember   = isTopUp
+                    const txFee        = Number(loan.transactionFee ?? TRANSACTION_FEE);
+                    const isTopUp      = loan.loanType === 'top_up';
+                    const cashToMember = isTopUp
                       ? Number(loan.amount) - Number(loan.previousBalance || 0)
                       : Number(loan.amount);
-
                     return (
                       <tr key={loan.id}>
                         <td>
@@ -987,8 +956,6 @@ const MemberLoanApplication = () => {
                 </tbody>
               </table>
             </div>
-
-            {/* Mobile cards */}
             <LoanCards />
           </>
         )}
@@ -1029,12 +996,12 @@ const MemberLoanApplication = () => {
                       ))}
                     </select>
                   </div>
-                  <LoanSummaryBox amt={Number(formData.amount)} />
-                  <GuarantorPicker />
-                  <ModalActions
-                    onClose={closeModal}
-                    disabled={!formData.amount || !formData.durationMonths || formData.guarantorIds.length < loanInfo.requiredGuarantors}
-                  />
+                  {renderLoanSummaryBox(Number(formData.amount))}
+                  {renderGuarantorPicker()}
+                  {renderModalActions(
+                    closeModal,
+                    !formData.amount || !formData.durationMonths || formData.guarantorIds.length < loanInfo.requiredGuarantors
+                  )}
                 </form>
               </div>
             </div>
@@ -1050,7 +1017,6 @@ const MemberLoanApplication = () => {
                 <button className="mla-modal-close" onClick={closeModal}><X size={18} /></button>
               </div>
               <div className="mla-modal-body">
-                {/* Current loan info */}
                 <div className="topup-current-loan">
                   <h4><CreditCard size={15} /> Your Current Loan</h4>
                   <div className="topup-current-grid">
@@ -1110,18 +1076,16 @@ const MemberLoanApplication = () => {
                       ))}
                     </select>
                   </div>
-                  <LoanSummaryBox amt={effectiveAmount()} label="New Loan Amount" />
-                  <GuarantorPicker />
-                  <ModalActions
-                    onClose={closeModal}
-                    disabled={
-                      !formData.topUpAmount ||
-                      Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) ||
-                      !formData.durationMonths ||
-                      formData.guarantorIds.length < loanInfo.requiredGuarantors
-                    }
-                    submitLabel="Submit Top-Up Request"
-                  />
+                  {renderLoanSummaryBox(effectiveAmount(), 'New Loan Amount')}
+                  {renderGuarantorPicker()}
+                  {renderModalActions(
+                    closeModal,
+                    !formData.topUpAmount ||
+                    Number(formData.topUpAmount) <= Number(eligibility.activeLoan.remainingBalance) ||
+                    !formData.durationMonths ||
+                    formData.guarantorIds.length < loanInfo.requiredGuarantors,
+                    'Submit Top-Up Request'
+                  )}
                 </form>
               </div>
             </div>
@@ -1331,7 +1295,6 @@ const MemberLoanApplication = () => {
           display: flex; align-items: center; gap: 4px; white-space: nowrap;
         }
 
-        /* Liability info banner */
         .guarantor-liability-info {
           display: flex; align-items: flex-start; gap: 8px;
           font-size: 12px; color: #1565c0;
@@ -1340,20 +1303,14 @@ const MemberLoanApplication = () => {
           border: 1px solid #90caf9;
         }
         .guarantor-liability-info svg { flex-shrink: 0; margin-top: 2px; }
-        .guarantor-liability-info-inner {
-          display: flex; flex-direction: column; gap: 3px;
-        }
-        .guarantor-liability-main {
-          font-weight: 700; color: #1565c0;
-        }
+        .guarantor-liability-info-inner { display: flex; flex-direction: column; gap: 3px; }
+        .guarantor-liability-main { font-weight: 700; color: #1565c0; }
         .guarantor-liability-formula {
           font-size: 11px; color: #1976d2; font-family: monospace;
           background: rgba(25,118,210,0.08); padding: 2px 6px;
           border-radius: 4px; width: fit-content;
         }
-        .guarantor-liability-split {
-          color: #555; font-size: 11px;
-        }
+        .guarantor-liability-split { color: #555; font-size: 11px; }
 
         .guarantor-progress-track {
           width: 100%; height: 4px; background: #e0e0e0;
@@ -1407,6 +1364,7 @@ const MemberLoanApplication = () => {
           display: flex; align-items: flex-start; gap: 10px;
           padding: 12px; border-bottom: 1px solid #ececec;
           cursor: pointer; transition: background 0.12s;
+          /* FIX: disable default tap highlight on mobile */
           -webkit-tap-highlight-color: transparent;
           user-select: none;
         }
@@ -1418,7 +1376,7 @@ const MemberLoanApplication = () => {
         .guarantor-item.ineligible         { background: #fef2f2; opacity: 0.78; cursor: default; }
         .guarantor-item.selected.eligible  { background: #dcfce7; }
 
-        .guarantor-item.office-guarantor          { background: #fff9c4; border-bottom: 1px solid #f0e57a; }
+        .guarantor-item.office-guarantor          { background: #fff9c4; border-bottom: 1px solid #f0e57a; cursor: pointer; }
         .guarantor-item.office-guarantor:hover    { background: #fff3e0; }
         .guarantor-item.office-guarantor.selected { background: #ffe0b2; }
 
@@ -1432,7 +1390,7 @@ const MemberLoanApplication = () => {
           display: flex; align-items: center; justify-content: center;
           font-size: 12px; font-weight: 700; flex-shrink: 0; text-transform: uppercase;
         }
-        .guarantor-avatar.elig  { background: #bbf7d0; color: #065f46; }
+        .guarantor-avatar.elig   { background: #bbf7d0; color: #065f46; }
         .guarantor-avatar.inelig { background: #fecaca; color: #7f1d1d; }
 
         .guarantor-item-info {
@@ -1469,10 +1427,7 @@ const MemberLoanApplication = () => {
           margin-top: 2px; width: fit-content; max-width: 100%;
         }
 
-        /* Savings info for eligible guarantors */
-        .guarantor-savings-info {
-          font-size: 11px; color: #666; margin-top: 2px;
-        }
+        .guarantor-savings-info { font-size: 11px; color: #666; margin-top: 2px; }
 
         .guarantor-warning {
           color: #c62828; font-size: 13px; background: #ffebee;

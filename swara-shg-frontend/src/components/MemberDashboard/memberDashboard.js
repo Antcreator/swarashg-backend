@@ -148,8 +148,8 @@ const MemberDashboard = () => {
   //
   //    requiredGuarantors = amount < 80,000 → 3, else → 5
   const calcGuarantorLiability = (loan) => {
-    const principal         = Number(loan.amount) || 0;
-    const interestRate      = Number(loan.interestRate) || 0;
+    const principal          = Number(loan.amount) || 0;
+    const interestRate       = Number(loan.interestRate) || 0;
     const requiredGuarantors = principal < 80000 ? 3 : 5;
 
     const totalRepayment = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
@@ -158,16 +158,20 @@ const MemberDashboard = () => {
     return Math.ceil(reduced / requiredGuarantors);
   };
 
-  // ── Resolve the correct due date for a guaranteed loan ────────
-  // Prefers disbursementDate-based due date if dueDate is missing/null
+  // ── FIX: Resolve the correct due date for ANY loan ────────────
+  // dueDate from the server on freshly approved loans is often the
+  // approval date, not the actual repayment due date.
+  // We compute the real due date as: disbursementDate + durationMonths.
+  // Priority: computed date (if disbursementDate + durationMonths available)
+  //           → server dueDate
+  //           → 'N/A'
   const resolveDueDate = (loan) => {
-    if (loan.dueDate) return fd(loan.dueDate);
-    // Fallback: disbursement + durationMonths
     if (loan.disbursementDate && loan.durationMonths) {
       const d = new Date(loan.disbursementDate);
       d.setMonth(d.getMonth() + Number(loan.durationMonths));
       return fd(d);
     }
+    if (loan.dueDate) return fd(loan.dueDate);
     return 'N/A';
   };
 
@@ -373,13 +377,15 @@ const MemberDashboard = () => {
             {loans?.length > 0 ? (
               <div className="table-container">
                 <table>
+                  {/* FIX: Due Date now uses resolveDueDate (disbursement + duration)
+                      instead of the raw dueDate field which was showing approval date */}
                   <thead><tr><th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
                   <tbody>
                     {loans.map(loan => (
                       <tr key={loan.id}>
                         <td>{fc(loan.amount)}</td>
                         <td>{fd(loan.disbursementDate)}</td>
-                        <td>{fd(loan.dueDate)}</td>
+                        <td>{resolveDueDate(loan)}</td>
                         <td>{fc(loan.total_paid)}</td>
                         <td>{fc(loan.remainingBalance)}</td>
                         <td><span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>{loan.isOverdue ? 'Overdue' : 'Active'}</span></td>
@@ -411,9 +417,7 @@ const MemberDashboard = () => {
                   <tbody>
                     {guaranteedLoansData.map(loan => {
                       const balance   = calcBalance(loan);
-                      // Due date: prefer loan.dueDate; fall back to disbursement + duration
                       const dueDate   = resolveDueDate(loan);
-                      // Liability mirrors MemberLoanApplication formula exactly
                       const liability = calcGuarantorLiability(loan);
 
                       return (
