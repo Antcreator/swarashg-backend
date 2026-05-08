@@ -11,7 +11,7 @@ import '../MembersManagementAdmin/Members.css';
 import { useToast, useConfirm, ToastContainer } from '../../useToast';
 
 const TRANSACTION_FEE = 108;
-const MAX_ACTIVE_GUARANTEES = 5;
+const MAX_ACTIVE_GUARANTEES = 3;
 const ONE_SHARE_DIVISOR = 3;
 
 const Ico = ({ icon: Icon, size = 14, style = {} }) => (
