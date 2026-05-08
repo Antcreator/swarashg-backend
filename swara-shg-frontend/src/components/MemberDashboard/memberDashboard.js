@@ -12,6 +12,8 @@ import {
 
 const CURRENT_YEAR = new Date().getFullYear();
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const TRANSACTION_FEE = 108;
+const ONE_SHARE_DIVISOR = 3;
 
 const MemberDashboard = () => {
   const { id } = useParams();
@@ -131,10 +133,42 @@ const MemberDashboard = () => {
   const fd = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
   const monthName = (m) => MONTH_NAMES[(m - 1)] || '—';
 
+  // ── Guaranteed loan balance calculation ───────────────────────
   const calcBalance = (loan) => {
     if (loan.remainingBalance != null) return loan.remainingBalance;
     const p = Number(loan.amount) || 0;
     return p + (p * (Number(loan.interestRate) || 0) / 100) + Number(loan.penaltyInterest || 0) - Number(loan.amountPaid || 0);
+  };
+
+  // ── Guaranteed loan liability — mirrors MemberLoanApplication formula exactly:
+  //    Step 1: totalRepayment = principal + (principal × interestRate/100) + TRANSACTION_FEE
+  //    Step 2: oneShare       = principal / ONE_SHARE_DIVISOR  (always ÷ 3)
+  //    Step 3: reduced        = totalRepayment − oneShare
+  //    Step 4: liabilityEach  = ceil(reduced / requiredGuarantors)
+  //
+  //    requiredGuarantors = amount < 80,000 → 3, else → 5
+  const calcGuarantorLiability = (loan) => {
+    const principal         = Number(loan.amount) || 0;
+    const interestRate      = Number(loan.interestRate) || 0;
+    const requiredGuarantors = principal < 80000 ? 3 : 5;
+
+    const totalRepayment = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
+    const oneShare       = principal / ONE_SHARE_DIVISOR;
+    const reduced        = totalRepayment - oneShare;
+    return Math.ceil(reduced / requiredGuarantors);
+  };
+
+  // ── Resolve the correct due date for a guaranteed loan ────────
+  // Prefers disbursementDate-based due date if dueDate is missing/null
+  const resolveDueDate = (loan) => {
+    if (loan.dueDate) return fd(loan.dueDate);
+    // Fallback: disbursement + durationMonths
+    if (loan.disbursementDate && loan.durationMonths) {
+      const d = new Date(loan.disbursementDate);
+      d.setMonth(d.getMonth() + Number(loan.durationMonths));
+      return fd(d);
+    }
+    return 'N/A';
   };
 
   // ── Map a guaranteed loan status → CSS class and display label ──
@@ -184,18 +218,13 @@ const MemberDashboard = () => {
   );
 
   // ── Build a tidy scheduled-months list from chamaa slots ───────
-  // Groups the member's slots by cycle and shows the scheduled month
-  // for each of their positions (including multiple turns).
   const buildChamaaSchedule = (chamaaSlots) => {
     if (!chamaaSlots || chamaaSlots.length === 0) return [];
     return chamaaSlots.map((p) => {
       const scheduledLabel = p.scheduledMonth
         ? `${monthName(p.scheduledMonth)}${p.scheduledYear ? ' ' + p.scheduledYear : ''}`
         : null;
-      return {
-        ...p,
-        scheduledLabel,
-      };
+      return { ...p, scheduledLabel };
     });
   };
 
@@ -362,22 +391,54 @@ const MemberDashboard = () => {
             ) : <p className="no-data">No active loans</p>}
           </section>
 
+          {/* ── Loans I Guaranteed — with corrected due date and liability ── */}
           <section className="section">
             <h2>Loans I Guaranteed</h2>
             {guaranteedLoansData?.length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Borrower</th><th>Loan Amount</th><th>Balance</th><th>Disbursed</th><th>Due Date</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Borrower</th>
+                      <th>Loan Amount</th>
+                      <th>Balance</th>
+                      <th>Disbursed</th>
+                      <th>Due Date</th>
+                      <th>My Liability</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {guaranteedLoansData.map(loan => {
-                      const balance = calcBalance(loan);
+                      const balance   = calcBalance(loan);
+                      // Due date: prefer loan.dueDate; fall back to disbursement + duration
+                      const dueDate   = resolveDueDate(loan);
+                      // Liability mirrors MemberLoanApplication formula exactly
+                      const liability = calcGuarantorLiability(loan);
+
                       return (
                         <tr key={loan.loanId}>
                           <td>{loan.borrowerName}</td>
                           <td>{fc(loan.amount)}</td>
-                          <td style={{ fontWeight: 'bold', color: balance > 0 ? '#c62828' : '#2e7d32' }}>{fc(balance)}</td>
+                          <td style={{ fontWeight: 'bold', color: balance > 0 ? '#c62828' : '#2e7d32' }}>
+                            {fc(balance)}
+                          </td>
                           <td>{fd(loan.disbursementDate)}</td>
-                          <td>{fd(loan.dueDate)}</td>
+                          <td>{dueDate}</td>
+                          <td>
+                            <span style={{
+                              display: 'inline-block',
+                              background: '#fff3e0',
+                              color: '#e65100',
+                              border: '1px solid #ffcc80',
+                              borderRadius: '10px',
+                              padding: '2px 8px',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}>
+                              {fc(liability)}
+                            </span>
+                          </td>
                           <td>
                             <span className={`status ${guaranteedLoanStatusClass(loan.status)}`}>
                               {guaranteedLoanStatusLabel(loan.status)}
@@ -416,7 +477,6 @@ const MemberDashboard = () => {
                         <td>#{p.position}</td>
                         <td>
                           {p.scheduledLabel ? (
-                            // Highlight the upcoming month if it hasn't been received yet
                             <span style={{
                               display: 'inline-block',
                               background: p.hasReceived ? '#e8f5e9' : '#fff3e0',

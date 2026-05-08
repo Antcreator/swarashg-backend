@@ -1,12 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { loansAPI, membersAPI } from '../../Service/Api';
+import { loansAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './GuarantorRequests.css';
 import { ClipboardList, CheckCircle, XCircle, AlertTriangle, Clock } from 'lucide-react';
 
+// ── Must match MemberLoanApplication constants exactly ────────────
+const TRANSACTION_FEE    = 108;
+const ONE_SHARE_DIVISOR  = 3;   // oneShare always divides principal by 3
+
+// ── Liability formula (mirrors MemberLoanApplication / LoanSummaryBox):
+//    Step 1: totalRepayment = principal + (principal × interestRate/100) + TRANSACTION_FEE
+//    Step 2: oneShare       = principal / ONE_SHARE_DIVISOR            (always ÷ 3)
+//    Step 3: reduced        = totalRepayment − oneShare
+//    Step 4: liabilityEach  = ceil(reduced / requiredGuarantors)
+//
+//    requiredGuarantors = loanAmount < 80,000 → 3, else → 5
+//
+// Example (99k, 5 guarantors, 10% interest):
+//   totalRepayment = 99,000 + 9,900 + 108 = 109,008
+//   oneShare       = 99,000 / 3 = 33,000
+//   reduced        = 109,008 − 33,000 = 76,008
+//   liabilityEach  = ceil(76,008 / 5) = 15,202
+const computeLiability = (loanAmount, interestRate) => {
+  const principal          = Number(loanAmount)    || 0;
+  const rate               = Number(interestRate)  || 0;
+  const requiredGuarantors = principal < 80000 ? 3 : 5;
+
+  const totalRepayment = principal + (principal * rate / 100) + TRANSACTION_FEE;
+  const oneShare       = principal / ONE_SHARE_DIVISOR;
+  const reduced        = totalRepayment - oneShare;
+  return {
+    liability:           Math.ceil(reduced / requiredGuarantors),
+    totalRepayment:      Math.ceil(totalRepayment),
+    oneShare:            Math.ceil(oneShare),
+    requiredGuarantors,
+  };
+};
+
 const GuarantorRequests = () => {
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [requests, setRequests]       = useState([]);
+  const [loading, setLoading]         = useState(true);
   const [respondingTo, setRespondingTo] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -19,12 +52,15 @@ const GuarantorRequests = () => {
     try {
       setLoading(true);
       const res = await loansAPI.getMyGuarantorRequests();
-      const enrichedRequests = await Promise.all(
-        res.data.requests.map(async (req) => {
-          const liability = await calculateLiability(req);
-          return { ...req, liability };
-        })
-      );
+
+      // Compute liability locally using the same formula as MemberLoanApplication
+      // No extra API call needed — all required fields come from the request itself
+      const enrichedRequests = (res.data.requests || []).map((req) => {
+        const { liability, totalRepayment, oneShare, requiredGuarantors } =
+          computeLiability(req.loanAmount, req.interestRate);
+        return { ...req, liability, totalRepayment, oneShare, requiredGuarantors };
+      });
+
       setRequests(enrichedRequests);
     } catch (err) {
       console.error('Error:', err);
@@ -34,24 +70,10 @@ const GuarantorRequests = () => {
     }
   };
 
-  const calculateLiability = async (request) => {
-    try {
-      const applicantResponse = await membersAPI.getById(request.applicantId);
-      const applicantSavings = Number(applicantResponse.data.member.totalSavings || 0);
-      const loanAmount = Number(request.loanAmount);
-      const remainingAfterSavings = Math.max(0, loanAmount - applicantSavings);
-      const guarantorCount = request.guarantorCount || 1;
-      return Math.round(remainingAfterSavings / guarantorCount);
-    } catch (err) {
-      console.error('Calculate liability error:', err);
-      return Math.round(Number(request.loanAmount) / (request.guarantorCount || 1));
-    }
-  };
-
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-KE', {
       style: 'currency', currency: 'KES', minimumFractionDigits: 0,
-    }).format(Math.round(amount || 0));
+    }).format(Math.ceil(amount || 0));
 
   const formatDate = (dateString) =>
     new Date(dateString).toLocaleDateString('en-KE', {
@@ -157,7 +179,7 @@ const GuarantorRequests = () => {
                   </div>
                   <div className="gr-stat">
                     <span className="gr-stat-label">Duration</span>
-                    <span className="gr-stat-value">{request.durationMonths} Month</span>
+                    <span className="gr-stat-value">{request.durationMonths} Month{request.durationMonths !== 1 ? 's' : ''}</span>
                   </div>
                 </div>
 
@@ -167,13 +189,21 @@ const GuarantorRequests = () => {
                   <span className="gr-repayment-value">{formatCurrency(request.totalRepayment)}</span>
                 </div>
 
-                {/* Liability */}
+                {/* Liability — computed with the same formula as MemberLoanApplication */}
                 <div className="gr-liability">
                   <div className="gr-liability-icon">
                     <AlertTriangle size={16} strokeWidth={2} />
                   </div>
                   <div className="gr-liability-body">
-                    <p className="gr-liability-label">Your Liability if Defaulted</p>
+                    <p className="gr-liability-label">
+                      Your Liability if Defaulted
+                      <span style={{
+                        marginLeft: 6, fontSize: '10px', color: '#888',
+                        fontWeight: 400, display: 'block', marginTop: 2,
+                      }}>
+                        ({formatCurrency(request.totalRepayment)} − {formatCurrency(request.oneShare)}) ÷ {request.requiredGuarantors}
+                      </span>
+                    </p>
                     <p className="gr-liability-value">
                       {request.liability != null
                         ? formatCurrency(request.liability)
