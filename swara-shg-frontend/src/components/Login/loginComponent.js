@@ -56,8 +56,8 @@ const Login = () => {
       <div className="login-card">
         <div className="login-header">
           <img src="logo2.png" alt="Swara SHG Logo" className="login-logo" />
-          <h1>Swara SHG</h1>
-          <p>Self Help Group Management System</p>
+          <h1>Swara</h1>
+          <p>Self Help Group</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
