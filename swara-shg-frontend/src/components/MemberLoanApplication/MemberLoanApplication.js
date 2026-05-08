@@ -219,11 +219,7 @@ const MemberLoanApplication = () => {
 
   const closeModal = () => { setModalMode(null); resetForm(); };
 
-  // ── Toggle guarantor selection ────────────────────────────────
-  // FIX: Accept an optional `fromCheckbox` flag so the div's onClick
-  // can defer to the checkbox's onChange and avoid double-toggling on mobile.
   const toggleGuarantor = (guarantor, fromCheckbox = false) => {
-    // Office guarantor: always toggleable
     if (guarantor.id === officeGuarantor?.id) {
       setFormData(prev => ({
         ...prev,
@@ -233,9 +229,7 @@ const MemberLoanApplication = () => {
       }));
       return;
     }
-    // Ineligible: show warning, don't select
     if (!guarantor.isEligible) {
-      // Only show warning once — when clicking the row directly, not via checkbox
       if (!fromCheckbox) {
         toast.warning(
           `${guarantor.firstName} ${guarantor.lastName} is ineligible`,
@@ -264,7 +258,6 @@ const MemberLoanApplication = () => {
     return true;
   });
 
-  // fmt: rounds UP to nearest whole number, formats as KES integer
   const fmt = (amount) => new Intl.NumberFormat('en-KE', {
     style: 'currency', currency: 'KES', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(Math.ceil(amount || 0));
@@ -414,17 +407,15 @@ const MemberLoanApplication = () => {
             </div>
           </div>
         )}
+        {/* CHANGED: label updated to "Minimum savings required per guarantor", formula line removed */}
         <div className="loan-summary-guarantors">
           <Users size={13} color="#888" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span>
               <strong>Guarantors Required:</strong> {n}
               <span style={{ color: '#888', marginLeft: 6 }}>
-                · Min. savings per guarantor: <strong style={{ color: '#1565c0' }}>{fmt(liabilityEach)}</strong>
+                · Min. savings required per guarantor: <strong style={{ color: '#1565c0' }}>{fmt(liabilityEach)}</strong>
               </span>
-            </span>
-            <span style={{ fontSize: '11px', color: '#888' }}>
-              Formula: ({fmt(fullRepayment)} − {fmt(amt)} ÷ {ONE_SHARE_DIVISOR}) ÷ {n} = ({fmt(fullRepayment)} − {fmt(oneShare)}) ÷ {n}
             </span>
           </div>
         </div>
@@ -433,37 +424,15 @@ const MemberLoanApplication = () => {
   };
 
   // ── Guarantor Picker ─────────────────────────────────────────
-  // Rendered as a plain JSX expression (not a nested component definition)
-  // to keep it stable in the component tree and avoid unmount/remount on
-  // every parent re-render.
-  //
-  // FIX (mobile double-toggle):
-  // Root cause: on mobile, tapping the checkbox fires BOTH the checkbox's
-  // onChange AND the parent div's onClick (two separate events, not bubbling).
-  // The existing e.stopPropagation() on the checkbox click event only stops
-  // click-event bubbling — but on mobile, a tap on the checkbox still triggers
-  // the div's onClick separately via touch event synthesis.
-  //
-  // Solution: The div's onClick handler checks if the native event target is
-  // the checkbox input itself (e.target.type === 'checkbox'). If so, it returns
-  // early and lets the checkbox's onChange be the single source of truth.
-  // This cleanly prevents the double-toggle without needing pointer-events hacks.
   const renderGuarantorPicker = () => {
     const selectedCount   = formData.guarantorIds.length;
     const requiredCount   = loanInfo.requiredGuarantors;
     const progressPercent = requiredCount > 0 ? Math.min(100, (selectedCount / requiredCount) * 100) : 0;
     const progressColor   = selectedCount >= requiredCount ? '#4caf50' : selectedCount > 0 ? '#ff9800' : '#e0e0e0';
 
-    const n             = guarantorsMeta.requiredGuarantors || requiredCount;
-    const totalRep      = guarantorsMeta.totalRepayment;
     const liabilityPerG = guarantorsMeta.liabilityPerGuarantor;
-    const principalAmt  = effectiveAmount();
-    const oneShareAmt   = principalAmt / ONE_SHARE_DIVISOR;
 
-    const liabilityFormulaLabel = liabilityPerG > 0 && totalRep > 0 && n > 0
-      ? `(${fmt(totalRep)} − ${fmt(oneShareAmt)}) ÷ ${n} = ${fmt(liabilityPerG)}`
-      : null;
-
+    // CHANGED: simplified liability banner — label only, no formula or split lines
     const liabilityBannerLabel = liabilityPerG > 0
       ? `Minimum savings required per guarantor: ${fmt(liabilityPerG)}`
       : null;
@@ -489,22 +458,12 @@ const MemberLoanApplication = () => {
           )}
         </div>
 
-        {/* Liability info banner */}
+        {/* CHANGED: liability info banner — label only, formula/split lines removed */}
         {liabilityBannerLabel && (
           <div className="guarantor-liability-info">
             <Users size={12} />
             <div className="guarantor-liability-info-inner">
               <span className="guarantor-liability-main">{liabilityBannerLabel}</span>
-              {liabilityFormulaLabel && (
-                <span className="guarantor-liability-formula">
-                  Formula: {liabilityFormulaLabel}
-                </span>
-              )}
-              {n > 0 && totalRep > 0 && (
-                <span className="guarantor-liability-split">
-                  Total repayment {fmt(totalRep)} · one share ({fmt(principalAmt)} ÷ {ONE_SHARE_DIVISOR} = {fmt(oneShareAmt)}) distributed across {n} guarantors using the reduced-liability method
-                </span>
-              )}
             </div>
           </div>
         )}
@@ -565,8 +524,6 @@ const MemberLoanApplication = () => {
               <div
                 className={`guarantor-item office-guarantor ${formData.guarantorIds.includes(officeGuarantor.id) ? 'selected' : ''}`}
                 onClick={(e) => {
-                  // FIX: if the tap landed directly on the checkbox input, let
-                  // its own onChange handle the toggle — don't double-fire here.
                   if (e.target.type === 'checkbox') return;
                   toggleGuarantor({ id: officeGuarantor.id, isEligible: true });
                 }}
@@ -606,8 +563,6 @@ const MemberLoanApplication = () => {
                   key={g.id}
                   className={`guarantor-item ${g.isEligible ? 'eligible' : 'ineligible'} ${isSelected ? 'selected' : ''}`}
                   onClick={(e) => {
-                    // FIX: if the tap landed directly on the checkbox input, let
-                    // its own onChange handle the toggle — don't double-fire here.
                     if (e.target.type === 'checkbox') return;
                     toggleGuarantor(g);
                   }}
@@ -660,16 +615,7 @@ const MemberLoanApplication = () => {
                       </div>
                     )}
 
-                    {g.isEligible && g.availableSavings !== undefined && (
-                      <div className="guarantor-savings-info">
-                        <span>Available savings: <strong>{fmt(g.availableSavings)}</strong></span>
-                        {liabilityPerG > 0 && (
-                          <span style={{ color: '#555' }}>
-                            {' '}· Required: <strong>{fmt(liabilityPerG)}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {/* REMOVED: available savings / required / shortfall info for eligible guarantors */}
                   </div>
 
                   {isSelected && g.isEligible && (
@@ -1305,12 +1251,6 @@ const MemberLoanApplication = () => {
         .guarantor-liability-info svg { flex-shrink: 0; margin-top: 2px; }
         .guarantor-liability-info-inner { display: flex; flex-direction: column; gap: 3px; }
         .guarantor-liability-main { font-weight: 700; color: #1565c0; }
-        .guarantor-liability-formula {
-          font-size: 11px; color: #1976d2; font-family: monospace;
-          background: rgba(25,118,210,0.08); padding: 2px 6px;
-          border-radius: 4px; width: fit-content;
-        }
-        .guarantor-liability-split { color: #555; font-size: 11px; }
 
         .guarantor-progress-track {
           width: 100%; height: 4px; background: #e0e0e0;
@@ -1364,7 +1304,6 @@ const MemberLoanApplication = () => {
           display: flex; align-items: flex-start; gap: 10px;
           padding: 12px; border-bottom: 1px solid #ececec;
           cursor: pointer; transition: background 0.12s;
-          /* FIX: disable default tap highlight on mobile */
           -webkit-tap-highlight-color: transparent;
           user-select: none;
         }
@@ -1426,8 +1365,6 @@ const MemberLoanApplication = () => {
           background: #fee2e2; padding: 4px 8px; border-radius: 6px;
           margin-top: 2px; width: fit-content; max-width: 100%;
         }
-
-        .guarantor-savings-info { font-size: 11px; color: #666; margin-top: 2px; }
 
         .guarantor-warning {
           color: #c62828; font-size: 13px; background: #ffebee;
