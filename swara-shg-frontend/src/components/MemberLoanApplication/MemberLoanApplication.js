@@ -611,7 +611,7 @@ const MemberLoanApplication = () => {
                     {!g.isEligible && (
                       <div className="guarantor-ineligible-reason">
                         <AlertTriangle size={11} color="#991b1b" />
-                        {g.ineligibilityReason || (g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'Max guarantees reached' : 'Insufficient savings')}
+                        {g.activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES ? 'Max guarantees reached' : 'Insufficient savings'}
                       </div>
                     )}
 
