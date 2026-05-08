@@ -10,7 +10,8 @@ router.get ('/report/:cycleId/:month/:year', requireAdmin,     chamaaController.
 router.get ('/:id',                          requireAdmin,     chamaaController.getCycleById);
 router.post('/',                             requireAdminOnly, chamaaController.createCycle);
 router.post('/participant',                  requireAdminOnly, chamaaController.addParticipant);
-router.put ('/participant/:id/position',     requireAdminOnly, chamaaController.updateParticipantPosition); // ← fixed
+router.put ('/participant/:id/position',     requireAdminOnly, chamaaController.updateParticipantPosition);
+router.put ('/participant/:id/schedule',     requireAdminOnly, chamaaController.updateParticipantSchedule);
 router.post('/contribution',                 requireAdminOnly, chamaaController.recordContribution);
 router.post('/received',                     requireAdminOnly, chamaaController.markAsReceived);
 router.put ('/:id/end',                      requireAdminOnly, chamaaController.endCycle);
