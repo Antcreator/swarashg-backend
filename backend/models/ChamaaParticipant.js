@@ -25,12 +25,14 @@ const ChamaaParticipant = sequelize.define('ChamaaParticipant', {
   scheduledMonth: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    field: 'scheduledmonth',
     validate: { min: 1, max: 12 },
   },
   // Year in which the slot receives the pot (e.g. 2025).
   scheduledYear: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    field: 'scheduledyear',
   },
   hasReceived: {
     type: DataTypes.BOOLEAN,
