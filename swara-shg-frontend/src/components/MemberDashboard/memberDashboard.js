@@ -377,8 +377,6 @@ const MemberDashboard = () => {
             {loans?.length > 0 ? (
               <div className="table-container">
                 <table>
-                  {/* FIX: Due Date now uses resolveDueDate (disbursement + duration)
-                      instead of the raw dueDate field which was showing approval date */}
                   <thead><tr><th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
                   <tbody>
                     {loans.map(loan => (
@@ -469,7 +467,6 @@ const MemberDashboard = () => {
                       <th>Contribution</th>
                       <th>My Position</th>
                       <th>My Payout Month</th>
-                      <th>Participants</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -497,7 +494,6 @@ const MemberDashboard = () => {
                             <span style={{ color: '#bbb', fontStyle: 'italic', fontSize: '13px' }}>Not scheduled yet</span>
                           )}
                         </td>
-                        <td>{p.cycle?.participants?.length || '—'}</td>
                         <td>
                           <span className={`status ${p.hasReceived ? 'received' : 'pending'}`}>
                             {p.hasReceived ? `Received ${fd(p.receivedDate)}` : 'Pending'}
