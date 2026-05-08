@@ -13,7 +13,7 @@ const LOAN_TIERS = [
   { minAmount: 100000, maxAmount: Infinity, name: 'Tier 5', durations: [{ months: 1, interestRate: 7 }, { months: 2, interestRate: 8.5 }, { months: 3, interestRate: 10 }, { months: 4, interestRate: 11.5 }, { months: 5, interestRate: 13 }] }
 ];
 
-const MAX_ACTIVE_GUARANTEES = 3;
+const MAX_ACTIVE_GUARANTEES = 5;
 const OFFICE_GUARANTOR_ID   = -1;
 const OFFICE_GUARANTOR_NAME = 'The Office';
 
