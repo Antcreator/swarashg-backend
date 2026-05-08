@@ -360,6 +360,7 @@ const Chamaa = () => {
                                               value={scheduleDraft.month}
                                               onChange={(e) => setScheduleDraft((d) => ({ ...d, month: e.target.value }))}
                                               onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
+                                              onClick={(e) => e.stopPropagation()}
                                               style={scheduleSelect}
                                               disabled={scheduleSaving}
                                               autoFocus
@@ -375,12 +376,13 @@ const Chamaa = () => {
                                               value={scheduleDraft.year}
                                               onChange={(e) => setScheduleDraft((d) => ({ ...d, year: e.target.value }))}
                                               onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
+                                              onClick={(e) => e.stopPropagation()}
                                               style={{ ...positionInput, width: '72px' }}
                                               placeholder="Year"
                                               disabled={scheduleSaving}
                                             />
-                                            <button style={iconBtn('#2e7d32')} onClick={() => saveSchedule(p.id)} disabled={scheduleSaving}>{scheduleSaving ? '…' : '✓'}</button>
-                                            <button style={iconBtn('#c62828')} onClick={cancelEditingSchedule} disabled={scheduleSaving}>✕</button>
+                                            <button style={iconBtn('#2e7d32')} onClick={(e) => { e.stopPropagation(); saveSchedule(p.id); }} disabled={scheduleSaving}>{scheduleSaving ? '…' : '✓'}</button>
+                                            <button style={iconBtn('#c62828')} onClick={(e) => { e.stopPropagation(); cancelEditingSchedule(); }} disabled={scheduleSaving}>✕</button>
                                           </span>
                                         ) : (
                                           <span
