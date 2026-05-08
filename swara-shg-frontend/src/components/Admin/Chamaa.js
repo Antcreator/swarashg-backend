@@ -5,6 +5,8 @@ import '../MembersManagementAdmin/Members.css';
 import { chamaaAPI, membersAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 const Chamaa = () => {
   const isStaff = useIsStaff();
   const [cycles, setCycles]     = useState([]);
@@ -21,6 +23,11 @@ const Chamaa = () => {
   const [positionDraft, setPositionDraft]         = useState('');
   const [positionSaving, setPositionSaving]       = useState(false);
 
+  // schedule (month/year) editing state
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const [scheduleDraft, setScheduleDraft]         = useState({ month: '', year: '' });
+  const [scheduleSaving, setScheduleSaving]       = useState(false);
+
   const [contribForm, setContribForm] = useState({
     amount: '', month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
@@ -30,8 +37,6 @@ const Chamaa = () => {
   const createDefaults = {
     name: '', contributionAmount: '',
     startDate: new Date().toISOString().split('T')[0],
-    // slotList is the ordered array: e.g. [Mary, Paul, James, Mary, Mary, Levis, Paul]
-    // Each index+1 = payout position; duplicates are fully allowed.
     slotList: [],
   };
   const [createForm, setCreateForm] = useState(createDefaults);
@@ -50,13 +55,10 @@ const Chamaa = () => {
   };
 
   // ── slot list helpers ──────────────────────────────────────────
-
-  // Append a member to the bottom of the list (next available position).
   const appendSlot = (memberId) => {
     setCreateForm((prev) => ({ ...prev, slotList: [...prev.slotList, memberId] }));
   };
 
-  // Remove the slot at a specific index.
   const removeSlot = (index) => {
     setCreateForm((prev) => ({
       ...prev,
@@ -64,7 +66,6 @@ const Chamaa = () => {
     }));
   };
 
-  // Move a slot up or down.
   const moveSlot = (index, direction) => {
     const list     = [...createForm.slotList];
     const swapIdx  = index + direction;
@@ -81,7 +82,7 @@ const Chamaa = () => {
         name: createForm.name,
         contributionAmount: Number(createForm.contributionAmount),
         startDate: createForm.startDate,
-        memberIds: createForm.slotList,   // order preserved; duplicates allowed
+        memberIds: createForm.slotList,
       });
       alert('Chamaa cycle created successfully');
       setShowCreateModal(false);
@@ -92,7 +93,11 @@ const Chamaa = () => {
 
   const toggleExpand = async (cycleId) => {
     if (expandedCycleId === cycleId) {
-      setExpandedCycleId(null); setParticipants([]); setEditingPositionId(null); return;
+      setExpandedCycleId(null);
+      setParticipants([]);
+      setEditingPositionId(null);
+      setEditingScheduleId(null);
+      return;
     }
     try {
       const res = await chamaaAPI.getCycleById(cycleId);
@@ -150,8 +155,12 @@ const Chamaa = () => {
     } catch (err) { alert(err.response?.data?.message || 'Failed to end cycle'); }
   };
 
-  // position editing
-  const startEditingPosition = (p) => { setEditingPositionId(p.id); setPositionDraft(String(p.position)); };
+  // ── position editing ──────────────────────────────────────────
+  const startEditingPosition = (p) => {
+    setEditingScheduleId(null);
+    setEditingPositionId(p.id);
+    setPositionDraft(String(p.position));
+  };
   const cancelEditingPosition = () => { setEditingPositionId(null); setPositionDraft(''); };
   const savePosition = async (participantId) => {
     const newPos = parseInt(positionDraft, 10);
@@ -176,13 +185,51 @@ const Chamaa = () => {
     if (e.key === 'Escape') cancelEditingPosition();
   };
 
-  // helpers
+  // ── schedule (month/year) editing ─────────────────────────────
+  const startEditingSchedule = (p) => {
+    setEditingPositionId(null);
+    setEditingScheduleId(p.id);
+    setScheduleDraft({
+      month: p.scheduledMonth ? String(p.scheduledMonth) : '',
+      year:  p.scheduledYear  ? String(p.scheduledYear)  : String(new Date().getFullYear()),
+    });
+  };
+  const cancelEditingSchedule = () => { setEditingScheduleId(null); setScheduleDraft({ month: '', year: '' }); };
+  const saveSchedule = async (participantId) => {
+    const month = scheduleDraft.month ? parseInt(scheduleDraft.month, 10) : null;
+    const year  = scheduleDraft.year  ? parseInt(scheduleDraft.year, 10)  : null;
+    if (month !== null && (month < 1 || month > 12)) { alert('Month must be between 1 and 12'); return; }
+    setScheduleSaving(true);
+    try {
+      const res = await chamaaAPI.updateParticipantSchedule(participantId, { scheduledMonth: month, scheduledYear: year });
+      const updated = res.data.participant;
+      setParticipants((prev) =>
+        prev.map((p) => p.id === participantId
+          ? { ...p, scheduledMonth: updated.scheduledMonth, scheduledYear: updated.scheduledYear }
+          : p)
+      );
+      setEditingScheduleId(null);
+      setScheduleDraft({ month: '', year: '' });
+    } catch (err) { alert(err.response?.data?.message || 'Failed to update schedule'); }
+    finally { setScheduleSaving(false); }
+  };
+  const handleScheduleKeyDown = (e, id) => {
+    if (e.key === 'Enter')  saveSchedule(id);
+    if (e.key === 'Escape') cancelEditingSchedule();
+  };
+
+  // ── helpers ───────────────────────────────────────────────────
   const formatCurrency = (amt) =>
     new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
   const getMemberName = (id) => {
     const m = members.find((mem) => mem.id === Number(id));
     return m ? `${m.firstName} ${m.lastName}` : `Member #${id}`;
+  };
+
+  const formatSchedule = (month, year) => {
+    if (!month) return <span style={{ color: '#bbb', fontStyle: 'italic', fontSize: '12px' }}>Not set</span>;
+    return <span style={{ fontWeight: 600, color: '#1565c0' }}>{MONTH_NAMES[month - 1]} {year || ''}</span>;
   };
 
   return (
@@ -245,13 +292,20 @@ const Chamaa = () => {
                             </strong>
                             {!isStaff && (
                               <p style={{ fontSize: '13px', color: '#888', marginBottom: '10px' }}>
-                                💡 A member can appear more than once in the list. Click a position number to change the order.
+                                💡 Click a position number to reorder. Click a month cell to assign when that member receives the pot. Multiple members can share the same month.
                               </p>
                             )}
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
                                 <tr style={{ background: '#eee' }}>
-                                  <th style={thSub}>Position{!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to edit)</span>}</th>
+                                  <th style={thSub}>
+                                    Position
+                                    {!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to edit)</span>}
+                                  </th>
+                                  <th style={thSub}>
+                                    Scheduled Month
+                                    {!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to set)</span>}
+                                  </th>
                                   <th style={thSub}>Member</th>
                                   <th style={thSub}>Contributions Made</th>
                                   <th style={thSub}>Received Pot</th>
@@ -260,18 +314,19 @@ const Chamaa = () => {
                               </thead>
                               <tbody>
                                 {participants.map((p) => {
-                                  const memberName  = p.member
+                                  const memberName = p.member
                                     ? `${p.member.firstName} ${p.member.lastName}`
                                     : getMemberName(p.memberId);
-                                  // Count how many times this member appears so we can show "(2nd turn)" etc.
-                                  const sameSlots  = participants.filter((s) => s.memberId === p.memberId);
-                                  const turnIndex  = sameSlots.findIndex((s) => s.id === p.id) + 1;
-                                  const turnLabel  = sameSlots.length > 1
+                                  const sameSlots = participants.filter((s) => s.memberId === p.memberId);
+                                  const turnIndex = sameSlots.findIndex((s) => s.id === p.id) + 1;
+                                  const turnLabel = sameSlots.length > 1
                                     ? ` (turn ${turnIndex} of ${sameSlots.length})`
                                     : '';
 
                                   return (
                                     <tr key={p.id} style={{ borderBottom: '1px solid #ddd' }}>
+
+                                      {/* ── Position cell ── */}
                                       <td style={tdSub}>
                                         {!isStaff && editingPositionId === p.id ? (
                                           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -296,18 +351,67 @@ const Chamaa = () => {
                                           </span>
                                         )}
                                       </td>
+
+                                      {/* ── Scheduled Month cell ── */}
+                                      <td style={tdSub}>
+                                        {!isStaff && editingScheduleId === p.id ? (
+                                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                            <select
+                                              value={scheduleDraft.month}
+                                              onChange={(e) => setScheduleDraft((d) => ({ ...d, month: e.target.value }))}
+                                              onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
+                                              style={scheduleSelect}
+                                              disabled={scheduleSaving}
+                                              autoFocus
+                                            >
+                                              <option value="">— month —</option>
+                                              {MONTH_NAMES.map((name, i) => (
+                                                <option key={i + 1} value={i + 1}>{name}</option>
+                                              ))}
+                                            </select>
+                                            <input
+                                              type="number"
+                                              min="2000" max="2100"
+                                              value={scheduleDraft.year}
+                                              onChange={(e) => setScheduleDraft((d) => ({ ...d, year: e.target.value }))}
+                                              onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
+                                              style={{ ...positionInput, width: '72px' }}
+                                              placeholder="Year"
+                                              disabled={scheduleSaving}
+                                            />
+                                            <button style={iconBtn('#2e7d32')} onClick={() => saveSchedule(p.id)} disabled={scheduleSaving}>{scheduleSaving ? '…' : '✓'}</button>
+                                            <button style={iconBtn('#c62828')} onClick={cancelEditingSchedule} disabled={scheduleSaving}>✕</button>
+                                          </span>
+                                        ) : (
+                                          <span
+                                            style={!isStaff ? scheduleBadge(p.scheduledMonth) : {}}
+                                            title={!isStaff ? 'Click to set scheduled month' : ''}
+                                            onClick={() => !isStaff && startEditingSchedule(p)}
+                                          >
+                                            {formatSchedule(p.scheduledMonth, p.scheduledYear)}
+                                            {!isStaff && (
+                                              <span style={{ marginLeft: '4px', fontSize: '11px', color: '#1976d2' }}>✎</span>
+                                            )}
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* ── Member cell ── */}
                                       <td style={tdSub}>
                                         {memberName}
                                         {turnLabel && (
                                           <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>{turnLabel}</span>
                                         )}
                                       </td>
+
                                       <td style={tdSub}>{p.paidContributions} / {cycle.totalParticipants}</td>
+
                                       <td style={tdSub}>
                                         {p.hasReceived
                                           ? <span style={badges.active}>Yes — {new Date(p.receivedDate).toLocaleDateString()}</span>
                                           : <span style={badges.ended}>No</span>}
                                       </td>
+
                                       {!isStaff && (
                                         <td style={tdSub}>
                                           {cycle.isActive && (
@@ -363,7 +467,7 @@ const Chamaa = () => {
                   </label>
                   <p style={{ fontSize: '12px', color: '#888', marginTop: 0, marginBottom: '10px' }}>
                     Click a member on the left to add them to the next position on the right.
-                    The same member can be added multiple times.
+                    The same member can be added multiple times. You can assign months after creating the cycle.
                   </p>
 
                   <div style={styles.builderWrap}>
@@ -445,7 +549,7 @@ const Chamaa = () => {
                   <div className="form-group">
                     <label>Month *</label>
                     <select value={contribForm.month} onChange={(e) => setContribForm({ ...contribForm, month: e.target.value })} required>
-                      {[...Array(12)].map((_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                      {[...Array(12)].map((_, i) => <option key={i + 1} value={i + 1}>{MONTH_NAMES[i]}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
@@ -483,9 +587,19 @@ const positionBadge = {
   cursor: 'pointer', fontWeight: 700, padding: '3px 8px', borderRadius: '6px',
   background: '#e3f2fd', color: '#1565c0', border: '1px dashed #90caf9',
 };
+const scheduleBadge = (hasMonth) => ({
+  display: 'inline-flex', alignItems: 'center', gap: '4px',
+  cursor: 'pointer', padding: '3px 8px', borderRadius: '6px',
+  background: hasMonth ? '#fff3e0' : '#fafafa',
+  border: hasMonth ? '1px dashed #ffb74d' : '1px dashed #e0e0e0',
+});
 const positionInput = {
   width: '60px', padding: '4px 6px', fontSize: '14px',
   border: '2px solid #1976d2', borderRadius: '4px', textAlign: 'center',
+};
+const scheduleSelect = {
+  padding: '4px 6px', fontSize: '13px',
+  border: '2px solid #1976d2', borderRadius: '4px',
 };
 const iconBtn = (color) => ({
   background: color, color: '#fff', border: 'none',
@@ -493,7 +607,6 @@ const iconBtn = (color) => ({
 });
 
 const styles = {
-  // two-column builder
   builderWrap: {
     display: 'flex', gap: '12px', alignItems: 'flex-start',
   },
@@ -510,8 +623,6 @@ const styles = {
     fontSize: '12px', fontWeight: 600, color: '#555',
     borderBottom: '1px solid #ddd', position: 'sticky', top: 0,
   },
-
-  // member button (left panel)
   memberBtn: {
     display: 'flex', alignItems: 'center', width: '100%',
     padding: '8px 10px', background: '#fff', border: 'none',
@@ -527,12 +638,9 @@ const styles = {
   memberBtnPlus: {
     fontSize: '16px', fontWeight: 700, color: '#1976d2', lineHeight: 1,
   },
-
   emptyHint: {
     padding: '20px 12px', fontSize: '13px', color: '#aaa', textAlign: 'center', margin: 0,
   },
-
-  // slot rows (right panel)
   slotRow: {
     display: 'flex', alignItems: 'center', gap: '6px',
     padding: '6px 8px', borderBottom: '1px solid #f0f0f0',

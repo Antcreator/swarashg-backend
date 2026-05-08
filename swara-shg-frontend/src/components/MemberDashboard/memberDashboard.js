@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 const MemberDashboard = () => {
   const { id } = useParams();
@@ -128,7 +129,7 @@ const MemberDashboard = () => {
   }).format(amount || 0);
 
   const fd = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
-  const monthName = (m) => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
+  const monthName = (m) => MONTH_NAMES[(m - 1)] || '—';
 
   const calcBalance = (loan) => {
     if (loan.remainingBalance != null) return loan.remainingBalance;
@@ -181,6 +182,24 @@ const MemberDashboard = () => {
       {CURRENT_YEAR}
     </span>
   );
+
+  // ── Build a tidy scheduled-months list from chamaa slots ───────
+  // Groups the member's slots by cycle and shows the scheduled month
+  // for each of their positions (including multiple turns).
+  const buildChamaaSchedule = (chamaaSlots) => {
+    if (!chamaaSlots || chamaaSlots.length === 0) return [];
+    return chamaaSlots.map((p) => {
+      const scheduledLabel = p.scheduledMonth
+        ? `${monthName(p.scheduledMonth)}${p.scheduledYear ? ' ' + p.scheduledYear : ''}`
+        : null;
+      return {
+        ...p,
+        scheduledLabel,
+      };
+    });
+  };
+
+  const chamaaSchedule = buildChamaaSchedule(chamaa);
 
   return (
     <>
@@ -373,18 +392,47 @@ const MemberDashboard = () => {
             ) : <p className="no-data">Not guaranteeing any loans</p>}
           </section>
 
+          {/* ── Chamaa Participation — shows scheduled payout months ── */}
           <section className="section">
             <h2>Chamaa Participation</h2>
-            {chamaa?.length > 0 ? (
+            {chamaaSchedule.length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Cycle Name</th><th>Contribution</th><th>Position</th><th>Participants</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Cycle Name</th>
+                      <th>Contribution</th>
+                      <th>My Position</th>
+                      <th>My Payout Month</th>
+                      <th>Participants</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {chamaa.map(p => (
+                    {chamaaSchedule.map(p => (
                       <tr key={p.id}>
                         <td>{p.cycle?.name}</td>
                         <td>{fc(p.cycle?.contributionAmount)}</td>
                         <td>#{p.position}</td>
+                        <td>
+                          {p.scheduledLabel ? (
+                            // Highlight the upcoming month if it hasn't been received yet
+                            <span style={{
+                              display: 'inline-block',
+                              background: p.hasReceived ? '#e8f5e9' : '#fff3e0',
+                              color:      p.hasReceived ? '#2e7d32' : '#e65100',
+                              border:     `1px solid ${p.hasReceived ? '#a5d6a7' : '#ffcc80'}`,
+                              borderRadius: '12px',
+                              padding: '3px 10px',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                            }}>
+                              📅 {p.scheduledLabel}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#bbb', fontStyle: 'italic', fontSize: '13px' }}>Not scheduled yet</span>
+                          )}
+                        </td>
                         <td>{p.cycle?.participants?.length || '—'}</td>
                         <td>
                           <span className={`status ${p.hasReceived ? 'received' : 'pending'}`}>
