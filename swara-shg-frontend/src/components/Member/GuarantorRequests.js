@@ -15,12 +15,6 @@ const ONE_SHARE_DIVISOR  = 3;   // oneShare always divides principal by 3
 //    Step 4: liabilityEach  = ceil(reduced / requiredGuarantors)
 //
 //    requiredGuarantors = loanAmount < 80,000 → 3, else → 5
-//
-// Example (99k, 5 guarantors, 10% interest):
-//   totalRepayment = 99,000 + 9,900 + 108 = 109,008
-//   oneShare       = 99,000 / 3 = 33,000
-//   reduced        = 109,008 − 33,000 = 76,008
-//   liabilityEach  = ceil(76,008 / 5) = 15,202
 const computeLiability = (loanAmount, interestRate) => {
   const principal          = Number(loanAmount)    || 0;
   const rate               = Number(interestRate)  || 0;
@@ -38,8 +32,8 @@ const computeLiability = (loanAmount, interestRate) => {
 };
 
 const GuarantorRequests = () => {
-  const [requests, setRequests]       = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const [requests, setRequests]         = useState([]);
+  const [loading, setLoading]           = useState(true);
   const [respondingTo, setRespondingTo] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -53,8 +47,6 @@ const GuarantorRequests = () => {
       setLoading(true);
       const res = await loansAPI.getMyGuarantorRequests();
 
-      // Compute liability locally using the same formula as MemberLoanApplication
-      // No extra API call needed — all required fields come from the request itself
       const enrichedRequests = (res.data.requests || []).map((req) => {
         const { liability, totalRepayment, oneShare, requiredGuarantors } =
           computeLiability(req.loanAmount, req.interestRate);
@@ -125,7 +117,7 @@ const GuarantorRequests = () => {
         {/* Page Header */}
         <div className="gr-header">
           <div className="gr-header-icon">
-            <ClipboardList size={20} strokeWidth={1.8} />
+            <ClipboardList size={22} strokeWidth={1.8} />
           </div>
           <div>
             <h1 className="gr-title">Guarantor Requests</h1>
@@ -189,7 +181,7 @@ const GuarantorRequests = () => {
                   <span className="gr-repayment-value">{formatCurrency(request.totalRepayment)}</span>
                 </div>
 
-                {/* Liability — computed with the same formula as MemberLoanApplication */}
+                {/* Liability */}
                 <div className="gr-liability">
                   <div className="gr-liability-icon">
                     <AlertTriangle size={16} strokeWidth={2} />

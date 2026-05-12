@@ -117,7 +117,7 @@ const OfficeGuarantorRequests = () => {
         <div className="ogr-header">
           <div className="ogr-header-left">
             <div className="ogr-header-icon">
-              <Building2 size={20} strokeWidth={1.8} />
+              <Building2 size={22} strokeWidth={1.8} />
             </div>
             <div>
               <h1 className="ogr-title">Office Guarantor Requests</h1>
