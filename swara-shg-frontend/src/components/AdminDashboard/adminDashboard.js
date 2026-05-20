@@ -12,7 +12,10 @@ import {
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const EDIT_COLS    = [4, 5, 6, 7, 8, 9, 10];
+
+// Mirrors InvestmentPage column definitions exactly
+const AUTO_COLS = [1, 2, 3];
+const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -80,16 +83,17 @@ const AdminDashboard = () => {
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
 
-        // ── Investment: principal row total ────────────────────────────────
-        // Mirrors InvestmentPage exactly:
-        //   autoSum = all-time approved loan amounts + all savings fines + all chamaa fines
-        //   editSum = investment4-10 amounts saved on the Principal row (month === 0)
+        // ── Investment: show the exact "Total" column value of the Principal row ──
+        // This mirrors InvestmentPage's rowTotal(principalRow) calculation:
+        //   autoSum  = col1 (all-time approved loans) + col2 (all savings fines) + col3 (all chamaa fines)
+        //   editSum  = col4–10 amounts saved on the Principal row (month === 0)
+        //   rowTotal = autoSum + editSum  ← this is what the dashboard card displays
         Promise.all([
           investmentAPI.getAll(CURRENT_YEAR).catch(() => ({ data: { rows: [] } })),
           loansAPI.getAll().catch(() => ({ data: { loans: [] } })),
           finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
         ]).then(([invRes, loansAllRes, finesAllRes]) => {
-          // Auto cols (1-3)
+          // --- Auto cols: mirrors InvestmentPage autoData.principal ---
           const allLoans = (loansAllRes.data.loans || [])
             .filter(l => l.approvalStatus === 'approved');
           const principalLoans = allLoans
@@ -103,9 +107,10 @@ const AdminDashboard = () => {
             .filter(f => f.fineType === 'chamaa_late')
             .reduce((s, f) => s + Number(f.amount || 0), 0);
 
+          // col1 + col2 + col3 on the principal row
           const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
 
-          // Edit cols (4-10) from saved principal row
+          // --- Edit cols (col4–10): from saved principal row (month === 0) ---
           const rows = invRes.data.rows || [];
           const principalRow = rows.find(r => Number(r.month) === 0) || null;
           const editSum = EDIT_COLS.reduce((sum, i) => {
@@ -113,6 +118,7 @@ const AdminDashboard = () => {
             return sum + (isNaN(val) ? 0 : val);
           }, 0);
 
+          // This equals rowTotal(principalRow) as computed in InvestmentPage
           investmentTotal = autoSum + editSum;
         }),
       ]);
@@ -335,7 +341,11 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment card — shows principal row total */}
+          {/* Investment card — shows rowTotal(principalRow) from InvestmentPage:
+              = autoSum (col1 loans + col2 savings fines + col3 chamaa fines, all-time)
+              + editSum (col4–10 amounts saved on the Principal row, month === 0)
+              This is the exact figure shown in the "Total" column at the end of
+              the Principal row in InvestmentPage. */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -352,7 +362,7 @@ const AdminDashboard = () => {
                   verticalAlign: 'middle', marginLeft: '4px',
                   letterSpacing: '0.02em',
                 }}>
-                  All-time
+                  Principal Total
                 </span>
               </h3>
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
