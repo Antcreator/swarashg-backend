@@ -93,17 +93,23 @@ const AdminDashboard = () => {
       //      editSum = col4–10 amounts on the saved Principal row (month === 0)
       try {
         const [invRes, loansAllRes, finesAllRes] = await Promise.all([
-          investmentAPI.getAll(CURRENT_YEAR).catch(() => ({ data: { rows: [] } })),
-          loansAPI.getAll().catch(() => ({ data: { loans: [] } })),
-          finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
+          investmentAPI.getAll(CURRENT_YEAR).catch((e) => { console.error('[INV] getAll failed:', e?.response?.data || e.message); return { data: { rows: [] } }; }),
+          loansAPI.getAll().catch((e) => { console.error('[INV] loans failed:', e?.response?.data || e.message); return { data: { loans: [] } }; }),
+          finesAPI.getAll({}).catch((e) => { console.error('[INV] fines failed:', e?.response?.data || e.message); return { data: { fines: [] } }; }),
         ]);
+
+        console.log('[INV] raw invRes.data:', JSON.stringify(invRes.data).slice(0, 300));
+        console.log('[INV] raw loansRes keys:', Object.keys(loansAllRes.data || {}));
+        console.log('[INV] raw finesRes keys:', Object.keys(finesAllRes.data || {}));
 
         const allLoans = (loansAllRes.data.loans || [])
           .filter(l => l.approvalStatus === 'approved');
+        console.log('[INV] approved loans:', allLoans.length, '| sample amount:', allLoans[0]?.amount);
         const principalLoans = allLoans
           .reduce((sum, l) => sum + Number(l.amount || 0), 0);
 
         const allFines = finesAllRes.data.fines || [];
+        console.log('[INV] fines total:', allFines.length);
         const principalSavingsFines = allFines
           .filter(f => f.fineType === 'savings_late')
           .reduce((s, f) => s + Number(f.amount || 0), 0);
@@ -114,14 +120,18 @@ const AdminDashboard = () => {
         const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
 
         const invRows = invRes.data.rows || [];
+        console.log('[INV] invRows:', invRows.length, '| months:', invRows.map(r => r.month));
         const principalRow = invRows.find(r => Number(r.month) === 0) || null;
+        console.log('[INV] principalRow:', JSON.stringify(principalRow).slice(0, 300));
         const editSum = EDIT_COLS.reduce((sum, i) => {
           const val = Number(principalRow?.[`investment${i}Amount`] ?? 0);
           return sum + (isNaN(val) ? 0 : val);
         }, 0);
 
+        console.log('[INV] autoSum:', autoSum, 'editSum:', editSum, '=> total:', autoSum + editSum);
         investmentTotal = autoSum + editSum;
-      } catch {
+      } catch (e) {
+        console.error('[INV] investment block threw:', e);
         investmentTotal = 0;
       }
 
