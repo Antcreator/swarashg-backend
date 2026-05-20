@@ -86,55 +86,28 @@ const AdminDashboard = () => {
           .catch(() => {}),
       ]);
 
-      // ── Investment principal row total — awaited separately so the assignment
-      //    is guaranteed to complete before setStats() is called.
-      //    Mirrors InvestmentPage's rowTotal(principalRow):
-      //      autoSum = col1 (all-time approved loans)
-      //              + col2 (all-time savings fines)
-      //              + col3 (all-time chamaa fines)
-      //      editSum = col4–10 amounts on the saved Principal row (month === 0)
+      // Investment: single fetch, inspect raw shape
       try {
-        const [invRes, loansAllRes, finesAllRes] = await Promise.all([
-          investmentAPI.getAll(CURRENT_YEAR).catch((e) => { console.error('[INV] getAll failed:', e?.response?.data || e.message); return { data: { rows: [] } }; }),
-          loansAPI.getAll().catch((e) => { console.error('[INV] loans failed:', e?.response?.data || e.message); return { data: { loans: [] } }; }),
-          finesAPI.getAll({}).catch((e) => { console.error('[INV] fines failed:', e?.response?.data || e.message); return { data: { fines: [] } }; }),
-        ]);
-
-        console.log('[INV] raw invRes.data:', JSON.stringify(invRes.data).slice(0, 300));
-        console.log('[INV] raw loansRes keys:', Object.keys(loansAllRes.data || {}));
-        console.log('[INV] raw finesRes keys:', Object.keys(finesAllRes.data || {}));
-
-        const allLoans = (loansAllRes.data.loans || [])
-          .filter(l => l.approvalStatus === 'approved');
-        console.log('[INV] approved loans:', allLoans.length, '| sample amount:', allLoans[0]?.amount);
-        const principalLoans = allLoans
-          .reduce((sum, l) => sum + Number(l.amount || 0), 0);
-
-        const allFines = finesAllRes.data.fines || [];
-        console.log('[INV] fines total:', allFines.length);
-        const principalSavingsFines = allFines
-          .filter(f => f.fineType === 'savings_late')
-          .reduce((s, f) => s + Number(f.amount || 0), 0);
-        const principalChamaaFines = allFines
-          .filter(f => f.fineType === 'chamaa_late')
-          .reduce((s, f) => s + Number(f.amount || 0), 0);
-
-        const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
-
-        const invRows = invRes.data.rows || [];
-        console.log('[INV] invRows:', invRows.length, '| months:', invRows.map(r => r.month));
-        const principalRow = invRows.find(r => Number(r.month) === 0) || null;
-        console.log('[INV] principalRow:', JSON.stringify(principalRow).slice(0, 300));
-        const editSum = EDIT_COLS.reduce((sum, i) => {
-          const val = Number(principalRow?.[`investment${i}Amount`] ?? 0);
-          return sum + (isNaN(val) ? 0 : val);
-        }, 0);
-
-        console.log('[INV] autoSum:', autoSum, 'editSum:', editSum, '=> total:', autoSum + editSum);
-        investmentTotal = autoSum + editSum;
+        const invRes = await investmentAPI.getAll(CURRENT_YEAR);
+        console.log('[INV] full response:', JSON.stringify(invRes.data).slice(0, 500));
+        const invRows = invRes.data.rows || invRes.data || [];
+        const principalRow = Array.isArray(invRows)
+          ? invRows.find(r => Number(r.month) === 0)
+          : null;
+        console.log('[INV] principalRow:', JSON.stringify(principalRow));
+        if (principalRow) {
+          const editSum = [4,5,6,7,8,9,10].reduce((sum, i) => {
+            return sum + (Number(principalRow[`investment${i}Amount`]) || 0);
+          }, 0);
+          const autoSum = (Number(principalRow.investment1Amount) || 0)
+                        + (Number(principalRow.investment2Amount) || 0)
+                        + (Number(principalRow.investment3Amount) || 0);
+          console.log('[INV] autoSum:', autoSum, 'editSum:', editSum);
+          investmentTotal = autoSum + editSum;
+        }
+        console.log('[INV] investmentTotal:', investmentTotal);
       } catch (e) {
-        console.error('[INV] investment block threw:', e);
-        investmentTotal = 0;
+        console.error('[INV] failed:', e?.response?.status, e?.message);
       }
 
       // Withdrawals from localStorage
