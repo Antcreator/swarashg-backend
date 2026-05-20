@@ -12,11 +12,7 @@ import {
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
-
-// Mirror the same column sets used in InvestmentPage so the principal total matches exactly
-const AUTO_COLS = [1, 2, 3];
 const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
-
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -84,42 +80,70 @@ const AdminDashboard = () => {
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
 
-        // ── Investment: fetch all rows and compute the principal row total ──
-        // This mirrors InvestmentPage's rowTotal() so the card always matches
-        // the value displayed on the Investment page's Principal row.
+        // ── Investment debug block ──────────────────────────────────────────
         Promise.all([
           investmentAPI.getAll(CURRENT_YEAR),
           loansAPI.getAll({ _nocache: Date.now() }),
           finesAPI.getAll({ year: CURRENT_YEAR }),
         ])
           .then(([invRes, loansAllRes, finesAllRes]) => {
-            // ── Auto-column principal values (same logic as InvestmentPage) ──
-            const allLoans = (loansAllRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
-            const principalLoans = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
 
+            // 🔍 LOG EVERYTHING so we can see the real shapes
+            console.group('📊 Investment Debug');
+            console.log('invRes.data:', JSON.stringify(invRes.data, null, 2));
+            console.log('loansAllRes.data keys:', Object.keys(loansAllRes.data || {}));
+            console.log('finesAllRes.data keys:', Object.keys(finesAllRes.data || {}));
+
+            // ── Loans principal (all approved, all-time) ───────────────────
+            const allLoans = (loansAllRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
+            console.log('allLoans count:', allLoans.length);
+            const principalLoans = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+            console.log('principalLoans total:', principalLoans);
+
+            // ── Fines principal (all-time) ─────────────────────────────────
             const allFines = finesAllRes.data.fines || [];
+            console.log('allFines count:', allFines.length);
             const principalSavingsFines = allFines
               .filter(f => f.fineType === 'savings_late')
               .reduce((s, f) => s + Number(f.amount || 0), 0);
             const principalChamaaFines = allFines
               .filter(f => f.fineType === 'chamaa_late')
               .reduce((s, f) => s + Number(f.amount || 0), 0);
+            console.log('principalSavingsFines:', principalSavingsFines);
+            console.log('principalChamaaFines:', principalChamaaFines);
 
             const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
+            console.log('autoSum (col1+2+3):', autoSum);
 
-            // ── Editable-column principal values (month === 0) ──────────────
+            // ── Investment rows ────────────────────────────────────────────
             const rows = invRes.data.rows || [];
-            const principalRow = rows.find(r => r.month === 0);
-            const editSum = EDIT_COLS.reduce((sum, i) => {
-              return sum + (Number(principalRow?.[`investment${i}Amount`]) || 0);
-            }, 0);
+            console.log('investment rows count:', rows.length);
+            console.log('all row months:', rows.map(r => r.month));
+
+            const principalRow = rows.find(r => Number(r.month) === 0);
+            console.log('principalRow found:', principalRow);
+
+            let editSum = 0;
+            if (principalRow) {
+              EDIT_COLS.forEach(i => {
+                const key = `investment${i}Amount`;
+                const val = Number(principalRow[key]) || 0;
+                console.log(`  ${key}:`, principalRow[key], '→ parsed:', val);
+                editSum += val;
+              });
+            }
+            console.log('editSum (col4-10):', editSum);
 
             investmentTotal = autoSum + editSum;
+            console.log('✅ investmentTotal:', investmentTotal);
+            console.groupEnd();
           })
-          .catch(() => {}),
+          .catch(err => {
+            console.error('❌ Investment fetch failed:', err);
+          }),
       ]);
 
-      // Read withdrawals expense total from localStorage (client-side ledger)
+      // Withdrawals from localStorage
       let withdrawalsExpense = 0;
       try {
         const saved = localStorage.getItem('swara_withdrawals');
@@ -149,6 +173,9 @@ const AdminDashboard = () => {
         investmentTotal,
         withdrawalsExpense,
       });
+
+      console.log('📌 Final stats.investmentTotal set to:', investmentTotal);
+
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     } finally {
@@ -209,7 +236,6 @@ const AdminDashboard = () => {
         {/* Stats grid */}
         <div className="stats-grid">
 
-          {/* Members */}
           <div className="stat-card">
             <div className="stat-icon members" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Users size={28} />
@@ -223,7 +249,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Seed Capital */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#e8f5e9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sprout size={28} color="#2e7d32" />
@@ -235,7 +260,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Savings */}
           <div className="stat-card">
             <div className="stat-icon savings" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <PiggyBank size={28} />
@@ -247,7 +271,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Active Loans */}
           <div className="stat-card">
             <div className="stat-icon loans" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FileText size={28} />
@@ -259,7 +282,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Total Disbursed */}
           <div className="stat-card">
             <div className="stat-icon disbursed" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Banknote size={28} />
@@ -271,7 +293,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Pending Deposits */}
           <Link to="/admin/deposits" className="stat-card deposits-card clickable">
             <div className="stat-icon deposits" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CreditCard size={28} />
@@ -286,7 +307,6 @@ const AdminDashboard = () => {
             {stats.pendingDeposits > 0 && <div className="notification-badge">{stats.pendingDeposits}</div>}
           </Link>
 
-          {/* Savings Fines */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#fff3e0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <AlertTriangle size={28} color="#e65100" />
@@ -298,7 +318,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Chamaa Fines */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#fce4ec', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bell size={28} color="#c62828" />
@@ -310,7 +329,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* AGM Fees */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#ede7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ClipboardList size={28} color="#7b1fa2" />
@@ -322,7 +340,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Statutory */}
           <Link to="/admin/statutory" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#ede7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ScrollText size={28} color="#7b1fa2" />
@@ -336,7 +353,6 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Registration Fees */}
           <Link to="/admin/registration-fees" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FilePen size={28} color="#1976d2" />
@@ -348,7 +364,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment — shows the Principal row total (auto + editable columns) */}
+          {/* Investment card — value shown is stats.investmentTotal */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -368,16 +384,19 @@ const AdminDashboard = () => {
                   All-time
                 </span>
               </h3>
+              {/* 🔍 Show raw number alongside formatted for debugging */}
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
                 {fmt(stats.investmentTotal)}
               </p>
-              <span className="stat-link" style={{ color: '#7b1fa2' }}>
+              <span style={{ fontSize: '10px', color: '#aaa' }}>
+                raw: {stats.investmentTotal}
+              </span>
+              <span className="stat-link" style={{ color: '#7b1fa2', display: 'block' }}>
                 {isStaff ? 'View →' : 'View & Manage →'}
               </span>
             </div>
           </Link>
 
-          {/* Withdrawals */}
           <Link to="/admin/withdrawals" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#fff1f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingDown size={28} color="#be123c" />
@@ -393,7 +412,6 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Admin Management — hidden from staff */}
           {!isStaff && (
             <Link to="/admin/admins" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
               <div className="stat-icon" style={{ background: '#e8eaf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -413,100 +431,64 @@ const AdminDashboard = () => {
         <div className="quick-actions">
           <h2>Quick Actions</h2>
           <div className="actions-grid">
-
             <Link to="/admin/members" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <UserPlus size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><UserPlus size={28} /></span>
               <h3>{isStaff ? 'View Members' : 'Add New Member'}</h3>
               <p>{isStaff ? 'View all group members' : 'Register a new member to the group'}</p>
             </Link>
-
             <Link to="/admin/savings" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Wallet size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Wallet size={28} /></span>
               <h3>{isStaff ? 'View Savings' : 'Record Savings'}</h3>
               <p>{isStaff ? 'View savings contributions' : 'Record monthly savings contributions'}</p>
             </Link>
-
             <Link to="/admin/loans" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileText size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FileText size={28} /></span>
               <h3>{isStaff ? 'View Loans' : 'Process Loan'}</h3>
               <p>{isStaff ? 'View member loans' : 'Approve and disburse member loans'}</p>
             </Link>
-
             <Link to="/admin/chamaa" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <RefreshCw size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={28} /></span>
               <h3>{isStaff ? 'View Chamaa' : 'Manage Chamaa'}</h3>
               <p>{isStaff ? 'View merry-go-round cycles' : 'Handle merry-go-round cycles'}</p>
             </Link>
-
             <Link to="/admin/deposits" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CreditCard size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CreditCard size={28} /></span>
               <h3>{isStaff ? 'View Deposits' : 'Review Deposits'}</h3>
               <p>{isStaff ? 'View member deposit distributions' : 'Approve member deposit distributions'}</p>
               {stats.pendingDeposits > 0 && <span className="action-badge">{stats.pendingDeposits} pending</span>}
             </Link>
-
             <Link to="/admin/fines" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <AlertTriangle size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertTriangle size={28} /></span>
               <h3>{isStaff ? 'View Fines' : 'Manage Fines'}</h3>
               <p>{isStaff ? 'View member fines' : 'View and manage member fines'}</p>
             </Link>
-
             <Link to="/admin/agm-fees" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ClipboardList size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ClipboardList size={28} /></span>
               <h3>AGM Fees</h3>
               <p>{isStaff ? 'View AGM fee contributions' : 'View and manage AGM fee contributions'}</p>
             </Link>
-
             <Link to="/admin/statutory" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ScrollText size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ScrollText size={28} /></span>
               <h3>Statutory Fees</h3>
               <p>{isStaff ? 'View statutory fees' : 'Manage AGM, cautionary & statutory fees'}</p>
             </Link>
-
             <Link to="/admin/reports" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileBarChart size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FileBarChart size={28} /></span>
               <h3>View Reports</h3>
               <p>Generate and download analytics</p>
             </Link>
-
-            {/* Withdrawals quick action */}
             <Link to="/admin/withdrawals" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <TrendingDown size={28} />
-              </span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><TrendingDown size={28} /></span>
               <h3>Withdrawals</h3>
               <p>Record and track group withdrawals and expenses</p>
             </Link>
-
-            {/* Admin Management — hidden from staff */}
             {!isStaff && (
               <Link to="/admin/admins" className="action-card">
-                <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <KeyRound size={28} />
-                </span>
+                <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><KeyRound size={28} /></span>
                 <h3>Manage Admins</h3>
                 <p>Add or manage administrator accounts</p>
               </Link>
             )}
-
           </div>
         </div>
 
