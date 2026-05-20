@@ -42,14 +42,14 @@ const AdminDashboard = () => {
   const fetchDashboardStats = async () => {
     try {
       const [membersRes, loansRes, savingsRes] = await Promise.all([
-        membersAPI.getAll(),
-        loansAPI.getStatistics({ year: CURRENT_YEAR }),
-        savingsAPI.getStats({ year: CURRENT_YEAR }),
+        membersAPI.getAll().catch(() => ({ data: { members: [] } })),
+        loansAPI.getStatistics({ year: CURRENT_YEAR }).catch(() => ({ data: { statistics: {} } })),
+        savingsAPI.getStats({ year: CURRENT_YEAR }).catch(() => ({ data: { totalSavings: 0 } })),
       ]);
 
-      const members      = membersRes.data.members  || [];
-      const loanStats    = loansRes.data.statistics || {};
-      const totalSavings = savingsRes.data.totalSavings || 0;
+      const members      = membersRes.data?.members  || [];
+      const loanStats    = loansRes.data?.statistics || {};
+      const totalSavings = savingsRes.data?.totalSavings || 0;
 
       let pendingDepositsCount = 0;
       let totalSeedCapital     = 0;
@@ -84,9 +84,7 @@ const AdminDashboard = () => {
           .catch(() => {}),
       ]);
 
-      // Investment: sum all 10 investment columns on the Principal row (month === 0)
-      // The backend stores auto cols (1-3) as 0 in the DB; only edit cols (4-10) have saved values.
-      // The InvestmentPage principal row "Total" = sum of all 10 investment amounts on that row.
+      // Investment: sum all 10 cells of the Principal row (month === 0)
       try {
         const invRes = await investmentAPI.getAll(CURRENT_YEAR);
         const invRows = invRes.data.rows || [];
@@ -339,7 +337,7 @@ const AdminDashboard = () => {
                   verticalAlign: 'middle', marginLeft: '4px',
                   letterSpacing: '0.02em',
                 }}>
-                  Principal Total
+                  All-time
                 </span>
               </h3>
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
