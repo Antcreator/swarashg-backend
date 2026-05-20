@@ -41,11 +41,13 @@ const AdminDashboard = () => {
 
   const fetchDashboardStats = async () => {
     try {
+      console.log('[DASH] fetchDashboardStats started');
       const [membersRes, loansRes, savingsRes] = await Promise.all([
-        membersAPI.getAll(),
-        loansAPI.getStatistics({ year: CURRENT_YEAR }),
-        savingsAPI.getStats({ year: CURRENT_YEAR }),
+        membersAPI.getAll().catch(e => { console.error('[DASH] membersAPI failed:', e?.response?.status, e?.message); return { data: { members: [] } }; }),
+        loansAPI.getStatistics({ year: CURRENT_YEAR }).catch(e => { console.error('[DASH] loansAPI.getStatistics failed:', e?.response?.status, e?.message); return { data: { statistics: {} } }; }),
+        savingsAPI.getStats({ year: CURRENT_YEAR }).catch(e => { console.error('[DASH] savingsAPI.getStats failed:', e?.response?.status, e?.message); return { data: { totalSavings: 0 } }; }),
       ]);
+      console.log('[DASH] first Promise.all done');
 
       const members      = membersRes.data.members  || [];
       const loanStats    = loansRes.data.statistics || {};
@@ -166,7 +168,7 @@ const AdminDashboard = () => {
         withdrawalsExpense,
       });
     } catch (error) {
-      console.error('Failed to fetch dashboard stats:', error);
+      console.error('[DASH] OUTER CATCH — fetch failed:', error?.message, error?.response?.status, error);
     } finally {
       setLoading(false);
     }
