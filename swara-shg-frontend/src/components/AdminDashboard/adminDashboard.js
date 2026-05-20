@@ -41,13 +41,11 @@ const AdminDashboard = () => {
 
   const fetchDashboardStats = async () => {
     try {
-      console.log('[DASH] fetchDashboardStats started');
       const [membersRes, loansRes, savingsRes] = await Promise.all([
-        membersAPI.getAll().catch(e => { console.error('[DASH] membersAPI failed:', e?.response?.status, e?.message); return { data: { members: [] } }; }),
-        loansAPI.getStatistics({ year: CURRENT_YEAR }).catch(e => { console.error('[DASH] loansAPI.getStatistics failed:', e?.response?.status, e?.message); return { data: { statistics: {} } }; }),
-        savingsAPI.getStats({ year: CURRENT_YEAR }).catch(e => { console.error('[DASH] savingsAPI.getStats failed:', e?.response?.status, e?.message); return { data: { totalSavings: 0 } }; }),
+        membersAPI.getAll(),
+        loansAPI.getStatistics({ year: CURRENT_YEAR }),
+        savingsAPI.getStats({ year: CURRENT_YEAR }),
       ]);
-      console.log('[DASH] first Promise.all done');
 
       const members      = membersRes.data.members  || [];
       const loanStats    = loansRes.data.statistics || {};
@@ -86,28 +84,20 @@ const AdminDashboard = () => {
           .catch(() => {}),
       ]);
 
-      // Investment: single fetch, inspect raw shape
+      // Investment: sum all 10 investment columns on the Principal row (month === 0)
+      // The backend stores auto cols (1-3) as 0 in the DB; only edit cols (4-10) have saved values.
+      // The InvestmentPage principal row "Total" = sum of all 10 investment amounts on that row.
       try {
         const invRes = await investmentAPI.getAll(CURRENT_YEAR);
-        console.log('[INV] full response:', JSON.stringify(invRes.data).slice(0, 500));
-        const invRows = invRes.data.rows || invRes.data || [];
-        const principalRow = Array.isArray(invRows)
-          ? invRows.find(r => Number(r.month) === 0)
-          : null;
-        console.log('[INV] principalRow:', JSON.stringify(principalRow));
+        const invRows = invRes.data.rows || [];
+        const principalRow = invRows.find(r => Number(r.month) === 0);
         if (principalRow) {
-          const editSum = [4,5,6,7,8,9,10].reduce((sum, i) => {
+          investmentTotal = [1,2,3,4,5,6,7,8,9,10].reduce((sum, i) => {
             return sum + (Number(principalRow[`investment${i}Amount`]) || 0);
           }, 0);
-          const autoSum = (Number(principalRow.investment1Amount) || 0)
-                        + (Number(principalRow.investment2Amount) || 0)
-                        + (Number(principalRow.investment3Amount) || 0);
-          console.log('[INV] autoSum:', autoSum, 'editSum:', editSum);
-          investmentTotal = autoSum + editSum;
         }
-        console.log('[INV] investmentTotal:', investmentTotal);
       } catch (e) {
-        console.error('[INV] failed:', e?.response?.status, e?.message);
+        investmentTotal = 0;
       }
 
       // Withdrawals from localStorage
@@ -141,7 +131,7 @@ const AdminDashboard = () => {
         withdrawalsExpense,
       });
     } catch (error) {
-      console.error('[DASH] OUTER CATCH — fetch failed:', error?.message, error?.response?.status, error);
+      console.error('Failed to fetch dashboard stats:', error);
     } finally {
       setLoading(false);
     }
