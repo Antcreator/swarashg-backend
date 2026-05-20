@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { membersAPI, loansAPI, depositsAPI, finesAPI, seedCapitalAPI, agmFeeAPI, registrationFeeAPI, savingsAPI } from '../../Service/Api';
+import { membersAPI, loansAPI, depositsAPI, finesAPI, seedCapitalAPI, agmFeeAPI, registrationFeeAPI, savingsAPI, investmentAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import './adminDashboard.css';
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
+
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -53,6 +54,7 @@ const AdminDashboard = () => {
       let chamaaFineTotal      = 0;
       let agmFeeTotal          = 0;
       let registrationTotal    = 0;
+      let investmentTotal      = 0;
 
       await Promise.allSettled([
         depositsAPI.getPending({ year: CURRENT_YEAR })
@@ -76,6 +78,23 @@ const AdminDashboard = () => {
 
         registrationFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
+          .catch(() => {}),
+
+        // ── Investment: use the dedicated stats endpoint for the principal total
+        investmentAPI.getStats(CURRENT_YEAR)
+          .then(r => {
+            // The stats endpoint returns the principal (all-time) grand total.
+            // Fall back through common field names the backend might use.
+            const s = r.data || {};
+            investmentTotal =
+              s.principalTotal ??
+              s.principal_total ??
+              s.grandTotal ??
+              s.grand_total ??
+              s.totalInvestment ??
+              s.total ??
+              0;
+          })
           .catch(() => {}),
       ]);
 
@@ -106,7 +125,7 @@ const AdminDashboard = () => {
         chamaaFineTotal,
         agmFeeTotal,
         registrationTotal,
-        investmentTotal:   0,
+        investmentTotal,
         withdrawalsExpense,
       });
     } catch (error) {
@@ -308,21 +327,36 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment */}
+          {/* Investment — now shows principal total (all-time grand total) */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
             </div>
             <div className="stat-content">
-              <h3>Investment <YearBadge /></h3>
-              <p className="stat-value">{fmt(stats.investmentTotal)}</p>
+              <h3>
+                Investment
+                <span style={{
+                  display: 'inline-block',
+                  fontSize: '10px', fontWeight: 700,
+                  background: '#f3e5f5', color: '#7b1fa2',
+                  border: '1px solid #ce93d8',
+                  borderRadius: '10px', padding: '1px 7px',
+                  verticalAlign: 'middle', marginLeft: '4px',
+                  letterSpacing: '0.02em',
+                }}>
+                  All-time
+                </span>
+              </h3>
+              <p className="stat-value" style={{ color: '#7b1fa2' }}>
+                {stats.investmentTotal > 0 ? fmt(stats.investmentTotal) : fmt(0)}
+              </p>
               <span className="stat-link" style={{ color: '#7b1fa2' }}>
                 {isStaff ? 'View →' : 'View & Manage →'}
               </span>
             </div>
           </Link>
 
-          {/* ── Withdrawals — NEW ── */}
+          {/* Withdrawals */}
           <Link to="/admin/withdrawals" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#fff1f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingDown size={28} color="#be123c" />
