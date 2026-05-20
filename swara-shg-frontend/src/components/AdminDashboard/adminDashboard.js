@@ -341,8 +341,9 @@ const AdminDashboard = () => {
                 </span>
               </h3>
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
-                {fmt(stats.investmentTotal)}
+                {stats.investmentTotal > 0 ? fmt(stats.investmentTotal) : 'KES 0'}
               </p>
+              <p style={{ fontSize: '10px', color: '#aaa', margin: 0 }}>raw: {stats.investmentTotal}</p>
               <span className="stat-link" style={{ color: '#7b1fa2' }}>
                 {isStaff ? 'View →' : 'View & Manage →'}
               </span>
