@@ -13,6 +13,10 @@ import {
 
 const CURRENT_YEAR = new Date().getFullYear();
 
+// Mirror the same column sets used in InvestmentPage so the principal total matches exactly
+const AUTO_COLS = [1, 2, 3];
+const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
+
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -80,20 +84,37 @@ const AdminDashboard = () => {
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
 
-        // ── Investment: use the dedicated stats endpoint for the principal total
-        investmentAPI.getStats(CURRENT_YEAR)
-          .then(r => {
-            // The stats endpoint returns the principal (all-time) grand total.
-            // Fall back through common field names the backend might use.
-            const s = r.data || {};
-            investmentTotal =
-              s.principalTotal ??
-              s.principal_total ??
-              s.grandTotal ??
-              s.grand_total ??
-              s.totalInvestment ??
-              s.total ??
-              0;
+        // ── Investment: fetch all rows and compute the principal row total ──
+        // This mirrors InvestmentPage's rowTotal() so the card always matches
+        // the value displayed on the Investment page's Principal row.
+        Promise.all([
+          investmentAPI.getAll(CURRENT_YEAR),
+          loansAPI.getAll({ _nocache: Date.now() }),
+          finesAPI.getAll({ year: CURRENT_YEAR }),
+        ])
+          .then(([invRes, loansAllRes, finesAllRes]) => {
+            // ── Auto-column principal values (same logic as InvestmentPage) ──
+            const allLoans = (loansAllRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
+            const principalLoans = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+            const allFines = finesAllRes.data.fines || [];
+            const principalSavingsFines = allFines
+              .filter(f => f.fineType === 'savings_late')
+              .reduce((s, f) => s + Number(f.amount || 0), 0);
+            const principalChamaaFines = allFines
+              .filter(f => f.fineType === 'chamaa_late')
+              .reduce((s, f) => s + Number(f.amount || 0), 0);
+
+            const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
+
+            // ── Editable-column principal values (month === 0) ──────────────
+            const rows = invRes.data.rows || [];
+            const principalRow = rows.find(r => r.month === 0);
+            const editSum = EDIT_COLS.reduce((sum, i) => {
+              return sum + (Number(principalRow?.[`investment${i}Amount`]) || 0);
+            }, 0);
+
+            investmentTotal = autoSum + editSum;
           })
           .catch(() => {}),
       ]);
@@ -327,7 +348,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment — now shows principal total (all-time grand total) */}
+          {/* Investment — shows the Principal row total (auto + editable columns) */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -348,7 +369,7 @@ const AdminDashboard = () => {
                 </span>
               </h3>
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
-                {stats.investmentTotal > 0 ? fmt(stats.investmentTotal) : fmt(0)}
+                {fmt(stats.investmentTotal)}
               </p>
               <span className="stat-link" style={{ color: '#7b1fa2' }}>
                 {isStaff ? 'View →' : 'View & Manage →'}
