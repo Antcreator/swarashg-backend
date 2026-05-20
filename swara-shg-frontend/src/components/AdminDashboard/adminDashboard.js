@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
+const EDIT_COLS    = [4, 5, 6, 7, 8, 9, 10];
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -80,67 +80,41 @@ const AdminDashboard = () => {
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
 
-        // ── Investment debug block ──────────────────────────────────────────
+        // ── Investment: principal row total ────────────────────────────────
+        // Mirrors InvestmentPage exactly:
+        //   autoSum = all-time approved loan amounts + all savings fines + all chamaa fines
+        //   editSum = investment4-10 amounts saved on the Principal row (month === 0)
         Promise.all([
-          investmentAPI.getAll(CURRENT_YEAR),
-          loansAPI.getAll({ _nocache: Date.now() }),
-          finesAPI.getAll({ year: CURRENT_YEAR }),
-        ])
-          .then(([invRes, loansAllRes, finesAllRes]) => {
+          investmentAPI.getAll(CURRENT_YEAR).catch(() => ({ data: { rows: [] } })),
+          loansAPI.getAll().catch(() => ({ data: { loans: [] } })),
+          finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
+        ]).then(([invRes, loansAllRes, finesAllRes]) => {
+          // Auto cols (1-3)
+          const allLoans = (loansAllRes.data.loans || [])
+            .filter(l => l.approvalStatus === 'approved');
+          const principalLoans = allLoans
+            .reduce((sum, l) => sum + Number(l.amount || 0), 0);
 
-            // 🔍 LOG EVERYTHING so we can see the real shapes
-            console.group('📊 Investment Debug');
-            console.log('invRes.data:', JSON.stringify(invRes.data, null, 2));
-            console.log('loansAllRes.data keys:', Object.keys(loansAllRes.data || {}));
-            console.log('finesAllRes.data keys:', Object.keys(finesAllRes.data || {}));
+          const allFines = finesAllRes.data.fines || [];
+          const principalSavingsFines = allFines
+            .filter(f => f.fineType === 'savings_late')
+            .reduce((s, f) => s + Number(f.amount || 0), 0);
+          const principalChamaaFines = allFines
+            .filter(f => f.fineType === 'chamaa_late')
+            .reduce((s, f) => s + Number(f.amount || 0), 0);
 
-            // ── Loans principal (all approved, all-time) ───────────────────
-            const allLoans = (loansAllRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
-            console.log('allLoans count:', allLoans.length);
-            const principalLoans = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
-            console.log('principalLoans total:', principalLoans);
+          const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
 
-            // ── Fines principal (all-time) ─────────────────────────────────
-            const allFines = finesAllRes.data.fines || [];
-            console.log('allFines count:', allFines.length);
-            const principalSavingsFines = allFines
-              .filter(f => f.fineType === 'savings_late')
-              .reduce((s, f) => s + Number(f.amount || 0), 0);
-            const principalChamaaFines = allFines
-              .filter(f => f.fineType === 'chamaa_late')
-              .reduce((s, f) => s + Number(f.amount || 0), 0);
-            console.log('principalSavingsFines:', principalSavingsFines);
-            console.log('principalChamaaFines:', principalChamaaFines);
+          // Edit cols (4-10) from saved principal row
+          const rows = invRes.data.rows || [];
+          const principalRow = rows.find(r => Number(r.month) === 0) || null;
+          const editSum = EDIT_COLS.reduce((sum, i) => {
+            const val = Number(principalRow?.[`investment${i}Amount`] ?? 0);
+            return sum + (isNaN(val) ? 0 : val);
+          }, 0);
 
-            const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
-            console.log('autoSum (col1+2+3):', autoSum);
-
-            // ── Investment rows ────────────────────────────────────────────
-            const rows = invRes.data.rows || [];
-            console.log('investment rows count:', rows.length);
-            console.log('all row months:', rows.map(r => r.month));
-
-            const principalRow = rows.find(r => Number(r.month) === 0);
-            console.log('principalRow found:', principalRow);
-
-            let editSum = 0;
-            if (principalRow) {
-              EDIT_COLS.forEach(i => {
-                const key = `investment${i}Amount`;
-                const val = Number(principalRow[key]) || 0;
-                console.log(`  ${key}:`, principalRow[key], '→ parsed:', val);
-                editSum += val;
-              });
-            }
-            console.log('editSum (col4-10):', editSum);
-
-            investmentTotal = autoSum + editSum;
-            console.log('✅ investmentTotal:', investmentTotal);
-            console.groupEnd();
-          })
-          .catch(err => {
-            console.error('❌ Investment fetch failed:', err);
-          }),
+          investmentTotal = autoSum + editSum;
+        }),
       ]);
 
       // Withdrawals from localStorage
@@ -173,11 +147,8 @@ const AdminDashboard = () => {
         investmentTotal,
         withdrawalsExpense,
       });
-
-      console.log('📌 Final stats.investmentTotal set to:', investmentTotal);
-
     } catch (error) {
-      console.error('Failed to fetch stats:', error);
+      console.error('Failed to fetch dashboard stats:', error);
     } finally {
       setLoading(false);
     }
@@ -364,7 +335,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment card — value shown is stats.investmentTotal */}
+          {/* Investment card — shows principal row total */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -384,14 +355,10 @@ const AdminDashboard = () => {
                   All-time
                 </span>
               </h3>
-              {/* 🔍 Show raw number alongside formatted for debugging */}
               <p className="stat-value" style={{ color: '#7b1fa2' }}>
                 {fmt(stats.investmentTotal)}
               </p>
-              <span style={{ fontSize: '10px', color: '#aaa' }}>
-                raw: {stats.investmentTotal}
-              </span>
-              <span className="stat-link" style={{ color: '#7b1fa2', display: 'block' }}>
+              <span className="stat-link" style={{ color: '#7b1fa2' }}>
                 {isStaff ? 'View →' : 'View & Manage →'}
               </span>
             </div>
@@ -431,64 +398,98 @@ const AdminDashboard = () => {
         <div className="quick-actions">
           <h2>Quick Actions</h2>
           <div className="actions-grid">
+
             <Link to="/admin/members" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><UserPlus size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <UserPlus size={28} />
+              </span>
               <h3>{isStaff ? 'View Members' : 'Add New Member'}</h3>
               <p>{isStaff ? 'View all group members' : 'Register a new member to the group'}</p>
             </Link>
+
             <Link to="/admin/savings" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Wallet size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Wallet size={28} />
+              </span>
               <h3>{isStaff ? 'View Savings' : 'Record Savings'}</h3>
               <p>{isStaff ? 'View savings contributions' : 'Record monthly savings contributions'}</p>
             </Link>
+
             <Link to="/admin/loans" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FileText size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <FileText size={28} />
+              </span>
               <h3>{isStaff ? 'View Loans' : 'Process Loan'}</h3>
               <p>{isStaff ? 'View member loans' : 'Approve and disburse member loans'}</p>
             </Link>
+
             <Link to="/admin/chamaa" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <RefreshCw size={28} />
+              </span>
               <h3>{isStaff ? 'View Chamaa' : 'Manage Chamaa'}</h3>
               <p>{isStaff ? 'View merry-go-round cycles' : 'Handle merry-go-round cycles'}</p>
             </Link>
+
             <Link to="/admin/deposits" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CreditCard size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CreditCard size={28} />
+              </span>
               <h3>{isStaff ? 'View Deposits' : 'Review Deposits'}</h3>
               <p>{isStaff ? 'View member deposit distributions' : 'Approve member deposit distributions'}</p>
               {stats.pendingDeposits > 0 && <span className="action-badge">{stats.pendingDeposits} pending</span>}
             </Link>
+
             <Link to="/admin/fines" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertTriangle size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <AlertTriangle size={28} />
+              </span>
               <h3>{isStaff ? 'View Fines' : 'Manage Fines'}</h3>
               <p>{isStaff ? 'View member fines' : 'View and manage member fines'}</p>
             </Link>
+
             <Link to="/admin/agm-fees" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ClipboardList size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ClipboardList size={28} />
+              </span>
               <h3>AGM Fees</h3>
               <p>{isStaff ? 'View AGM fee contributions' : 'View and manage AGM fee contributions'}</p>
             </Link>
+
             <Link to="/admin/statutory" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ScrollText size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ScrollText size={28} />
+              </span>
               <h3>Statutory Fees</h3>
               <p>{isStaff ? 'View statutory fees' : 'Manage AGM, cautionary & statutory fees'}</p>
             </Link>
+
             <Link to="/admin/reports" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FileBarChart size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <FileBarChart size={28} />
+              </span>
               <h3>View Reports</h3>
               <p>Generate and download analytics</p>
             </Link>
+
             <Link to="/admin/withdrawals" className="action-card">
-              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><TrendingDown size={28} /></span>
+              <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TrendingDown size={28} />
+              </span>
               <h3>Withdrawals</h3>
               <p>Record and track group withdrawals and expenses</p>
             </Link>
+
             {!isStaff && (
               <Link to="/admin/admins" className="action-card">
-                <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><KeyRound size={28} /></span>
+                <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <KeyRound size={28} />
+                </span>
                 <h3>Manage Admins</h3>
                 <p>Add or manage administrator accounts</p>
               </Link>
             )}
+
           </div>
         </div>
 

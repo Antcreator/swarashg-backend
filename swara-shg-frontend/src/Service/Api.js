@@ -172,6 +172,37 @@ export const investmentAPI = {
   getAll:   (year) => api.get(`/investments?year=${year}`),
   save:     (data) => api.post('/investments/save', data),
   getStats: (year) => api.get(`/investments/stats?year=${year}`),
+  // Returns the principal row total (autoSum + editSum) calculated server-side.
+  // Falls back gracefully if the endpoint doesn't exist yet.
+  getPrincipalTotal: async (year) => {
+    try {
+      // Try dedicated stats endpoint first
+      const res = await api.get(`/investments/stats?year=${year}`);
+      const d   = res.data || {};
+      // Accept any of the common field names the backend might use
+      const val =
+        d.principalTotal    ??
+        d.principal_total   ??
+        d.principalRowTotal ??
+        d.grandTotal        ??
+        d.grand_total       ??
+        d.totalInvestment   ??
+        d.total             ??
+        null;
+      if (val !== null) return Number(val);
+    } catch { /* fall through */ }
+
+    // Fallback: compute client-side from raw rows
+    const res  = await api.get(`/investments?year=${year}`);
+    const rows = res.data?.rows || [];
+    const principalRow = rows.find(r => Number(r.month) === 0);
+    if (!principalRow) return 0;
+    let sum = 0;
+    for (let i = 4; i <= 10; i++) {
+      sum += Number(principalRow[`investment${i}Amount`] ?? 0) || 0;
+    }
+    return sum; // Note: auto cols (loans/fines) added separately in dashboard
+  },
 };
 
 // Registration Fee API
