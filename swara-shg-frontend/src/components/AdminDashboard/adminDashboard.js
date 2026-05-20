@@ -82,46 +82,48 @@ const AdminDashboard = () => {
         registrationFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
+      ]);
 
-        // ── Investment: show the exact "Total" column value of the Principal row ──
-        // This mirrors InvestmentPage's rowTotal(principalRow) calculation:
-        //   autoSum  = col1 (all-time approved loans) + col2 (all savings fines) + col3 (all chamaa fines)
-        //   editSum  = col4–10 amounts saved on the Principal row (month === 0)
-        //   rowTotal = autoSum + editSum  ← this is what the dashboard card displays
-        Promise.all([
+      // ── Investment principal row total — awaited separately so the assignment
+      //    is guaranteed to complete before setStats() is called.
+      //    Mirrors InvestmentPage's rowTotal(principalRow):
+      //      autoSum = col1 (all-time approved loans)
+      //              + col2 (all-time savings fines)
+      //              + col3 (all-time chamaa fines)
+      //      editSum = col4–10 amounts on the saved Principal row (month === 0)
+      try {
+        const [invRes, loansAllRes, finesAllRes] = await Promise.all([
           investmentAPI.getAll(CURRENT_YEAR).catch(() => ({ data: { rows: [] } })),
           loansAPI.getAll().catch(() => ({ data: { loans: [] } })),
           finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
-        ]).then(([invRes, loansAllRes, finesAllRes]) => {
-          // --- Auto cols: mirrors InvestmentPage autoData.principal ---
-          const allLoans = (loansAllRes.data.loans || [])
-            .filter(l => l.approvalStatus === 'approved');
-          const principalLoans = allLoans
-            .reduce((sum, l) => sum + Number(l.amount || 0), 0);
+        ]);
 
-          const allFines = finesAllRes.data.fines || [];
-          const principalSavingsFines = allFines
-            .filter(f => f.fineType === 'savings_late')
-            .reduce((s, f) => s + Number(f.amount || 0), 0);
-          const principalChamaaFines = allFines
-            .filter(f => f.fineType === 'chamaa_late')
-            .reduce((s, f) => s + Number(f.amount || 0), 0);
+        const allLoans = (loansAllRes.data.loans || [])
+          .filter(l => l.approvalStatus === 'approved');
+        const principalLoans = allLoans
+          .reduce((sum, l) => sum + Number(l.amount || 0), 0);
 
-          // col1 + col2 + col3 on the principal row
-          const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
+        const allFines = finesAllRes.data.fines || [];
+        const principalSavingsFines = allFines
+          .filter(f => f.fineType === 'savings_late')
+          .reduce((s, f) => s + Number(f.amount || 0), 0);
+        const principalChamaaFines = allFines
+          .filter(f => f.fineType === 'chamaa_late')
+          .reduce((s, f) => s + Number(f.amount || 0), 0);
 
-          // --- Edit cols (col4–10): from saved principal row (month === 0) ---
-          const rows = invRes.data.rows || [];
-          const principalRow = rows.find(r => Number(r.month) === 0) || null;
-          const editSum = EDIT_COLS.reduce((sum, i) => {
-            const val = Number(principalRow?.[`investment${i}Amount`] ?? 0);
-            return sum + (isNaN(val) ? 0 : val);
-          }, 0);
+        const autoSum = principalLoans + principalSavingsFines + principalChamaaFines;
 
-          // This equals rowTotal(principalRow) as computed in InvestmentPage
-          investmentTotal = autoSum + editSum;
-        }),
-      ]);
+        const invRows = invRes.data.rows || [];
+        const principalRow = invRows.find(r => Number(r.month) === 0) || null;
+        const editSum = EDIT_COLS.reduce((sum, i) => {
+          const val = Number(principalRow?.[`investment${i}Amount`] ?? 0);
+          return sum + (isNaN(val) ? 0 : val);
+        }, 0);
+
+        investmentTotal = autoSum + editSum;
+      } catch {
+        investmentTotal = 0;
+      }
 
       // Withdrawals from localStorage
       let withdrawalsExpense = 0;
