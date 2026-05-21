@@ -15,23 +15,41 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 const TRANSACTION_FEE = 108;
 const ONE_SHARE_DIVISOR = 3;
 
+// ── Eye toggle button — defined OUTSIDE MemberDashboard to prevent remounting ──
+const EyeToggleButton = ({ valuesHidden, onToggle }) => (
+  <button
+    onClick={onToggle}
+    title={valuesHidden ? 'Show values' : 'Hide values'}
+    aria-label={valuesHidden ? 'Show values' : 'Hide values'}
+    className="eye-toggle-btn"
+  >
+    {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+    <span className="eye-toggle-label">{valuesHidden ? 'Show' : 'Hide'}</span>
+  </button>
+);
+
+// ── Year badge — defined OUTSIDE to prevent remounting ──
+const YearBadge = () => (
+  <span className="year-badge">{CURRENT_YEAR}</span>
+);
+
 const MemberDashboard = () => {
   const { id } = useParams();
   const [dashboardData, setDashboardData]             = useState(null);
   const [guaranteedLoansData, setGuaranteedLoansData] = useState([]);
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
-  const [memberSeedCapital, setMemberSeedCapital]       = useState(0);
+  const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
   // ── Eye toggle — hides hero card values ───────────────────────
   const [valuesHidden, setValuesHidden] = useState(false);
 
   // ── Year-scoped values (reset each January) ───────────────────
-  const [yearlySavings, setYearlySavings]   = useState(0);
-  const [yearlyFines, setYearlyFines]       = useState([]);
+  const [yearlySavings, setYearlySavings] = useState(0);
+  const [yearlyFines, setYearlyFines]     = useState([]);
 
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -45,7 +63,7 @@ const MemberDashboard = () => {
   }, [id]);
 
   // ── Fallback: if yearly savings API returned 0 but dashboard has
-  //    savings data, derive the yearly total from dashboard savings ─
+  //    savings data, derive the yearly total from dashboard savings ──
   useEffect(() => {
     if (yearlySavings === 0 && dashboardData?.savings?.length > 0) {
       const derived = dashboardData.savings
@@ -53,7 +71,7 @@ const MemberDashboard = () => {
         .reduce((sum, s) => sum + Number(s.amount || 0), 0);
       if (derived > 0) setYearlySavings(derived);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardData]);
 
   const fetchDashboardData = async () => {
@@ -157,9 +175,9 @@ const MemberDashboard = () => {
     const principal          = Number(loan.amount) || 0;
     const interestRate       = Number(loan.interestRate) || 0;
     const requiredGuarantors = principal < 80000 ? 3 : 5;
-    const totalRepayment = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
-    const oneShare       = principal / ONE_SHARE_DIVISOR;
-    const reduced        = totalRepayment - oneShare;
+    const totalRepayment     = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
+    const oneShare           = principal / ONE_SHARE_DIVISOR;
+    const reduced            = totalRepayment - oneShare;
     return Math.ceil(reduced / requiredGuarantors);
   };
 
@@ -193,59 +211,19 @@ const MemberDashboard = () => {
     }
   };
 
-  if (loading) return <><Navbar /><div className="dashboard-container"><div className="loading">Loading dashboard...</div></div></>;
+  if (loading) return (
+    <><Navbar /><div className="dashboard-container"><div className="loading">Loading dashboard...</div></div></>
+  );
   if (!id || id === 'null' || id === 'undefined') return (
     <><Navbar /><div className="dashboard-container"><div className="error"><h2>No Member Profile Found</h2><p>Contact an administrator.</p></div></div></>
   );
-  if (error) return <><Navbar /><div className="dashboard-container"><div className="error">{error}</div></div></>;
+  if (error) return (
+    <><Navbar /><div className="dashboard-container"><div className="error">{error}</div></div></>
+  );
 
   const { member, savings, loans, chamaa } = dashboardData;
 
   const pendingFinesTotal = yearlyFines.reduce((sum, f) => sum + parseFloat(f.amount || 0), 0);
-
-  const YearBadge = () => (
-    <span style={{
-      fontSize: '10px', fontWeight: 700,
-      background: 'rgba(255,255,255,0.25)', color: 'inherit',
-      border: '1px solid rgba(255,255,255,0.4)',
-      borderRadius: '10px', padding: '1px 7px',
-      verticalAlign: 'middle', marginLeft: '6px',
-      letterSpacing: '0.02em',
-    }}>
-      {CURRENT_YEAR}
-    </span>
-  );
-
-  // ── Single shared eye toggle button — fully inline to survive any CSS reset ──
-  const EyeToggleButton = () => (
-    <button
-      onClick={() => setValuesHidden(v => !v)}
-      title={valuesHidden ? 'Show values' : 'Hide values'}
-      aria-label={valuesHidden ? 'Show values' : 'Hide values'}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '8px 16px',
-        background: '#f1f8e9',
-        border: '1.5px solid #aed581',
-        borderRadius: '20px',
-        color: '#33691e',
-        fontSize: '13px',
-        fontWeight: 600,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        outline: 'none',
-        fontFamily: 'inherit',
-        lineHeight: 1,
-        marginTop: '4px',
-      }}
-    >
-      {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-      <span style={{ fontSize: '12px' }}>{valuesHidden ? 'Show' : 'Hide'}</span>
-    </button>
-  );
 
   const buildChamaaSchedule = (chamaaSlots) => {
     if (!chamaaSlots || chamaaSlots.length === 0) return [];
@@ -263,13 +241,17 @@ const MemberDashboard = () => {
     <>
       <Navbar />
       <div className="dashboard-container">
+
         <div className="dashboard-header">
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div className="dashboard-header-row">
             <div>
               <h1>Welcome, {member?.firstName} {member?.lastName}</h1>
               <p className="member-since">Member since {fd(member?.dateJoined)}</p>
             </div>
-            <EyeToggleButton />
+            <EyeToggleButton
+              valuesHidden={valuesHidden}
+              onToggle={() => setValuesHidden(v => !v)}
+            />
           </div>
         </div>
 
@@ -298,7 +280,7 @@ const MemberDashboard = () => {
                 {mv(maxLoanAmount)}
               </span>
               {!valuesHidden && totalStatutoryDeductions > 0 && (
-                <span className="hero-sub" style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px', display: 'block' }}>
+                <span className="hero-sub">
                   {fc(grossLoanAmount)} − {fc(totalStatutoryDeductions)} statutory
                 </span>
               )}
@@ -387,11 +369,18 @@ const MemberDashboard = () => {
         <div className="dashboard-sections">
 
           <section className="section">
-            <h2>Recent Savings <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span></h2>
+            <h2>
+              Recent Savings{' '}
+              <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span>
+            </h2>
             {savings?.filter(s => s.year === CURRENT_YEAR).length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Month</th><th>Year</th><th>Amount</th><th>Payment Date</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Month</th><th>Year</th><th>Amount</th><th>Payment Date</th><th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {savings.filter(s => s.year === CURRENT_YEAR).map(s => (
                       <tr key={s.id}>
@@ -399,7 +388,11 @@ const MemberDashboard = () => {
                         <td>{s.year}</td>
                         <td>{fc(s.amount)}</td>
                         <td>{fd(s.paymentDate)}</td>
-                        <td><span className={`status ${s.isLate ? 'late' : 'ontime'}`}>{s.isLate ? 'Late' : 'On Time'}</span></td>
+                        <td>
+                          <span className={`status ${s.isLate ? 'late' : 'ontime'}`}>
+                            {s.isLate ? 'Late' : 'On Time'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -413,7 +406,11 @@ const MemberDashboard = () => {
             {loans?.length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {loans.map(loan => (
                       <tr key={loan.id}>
@@ -422,7 +419,11 @@ const MemberDashboard = () => {
                         <td>{resolveDueDate(loan)}</td>
                         <td>{fc(loan.total_paid)}</td>
                         <td>{fc(loan.remainingBalance)}</td>
-                        <td><span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>{loan.isOverdue ? 'Overdue' : 'Active'}</span></td>
+                        <td>
+                          <span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>
+                            {loan.isOverdue ? 'Overdue' : 'Active'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -462,16 +463,7 @@ const MemberDashboard = () => {
                           <td>{fd(loan.disbursementDate)}</td>
                           <td>{dueDate}</td>
                           <td>
-                            <span style={{
-                              display: 'inline-block',
-                              background: '#fff3e0',
-                              color: '#e65100',
-                              border: '1px solid #ffcc80',
-                              borderRadius: '10px',
-                              padding: '2px 8px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                            }}>
+                            <span className="liability-badge">
                               {fc(liability)}
                             </span>
                           </td>
@@ -511,20 +503,11 @@ const MemberDashboard = () => {
                         <td>#{p.position}</td>
                         <td>
                           {p.scheduledLabel ? (
-                            <span style={{
-                              display: 'inline-block',
-                              background: p.hasReceived ? '#e8f5e9' : '#fff3e0',
-                              color:      p.hasReceived ? '#2e7d32' : '#e65100',
-                              border:     `1px solid ${p.hasReceived ? '#a5d6a7' : '#ffcc80'}`,
-                              borderRadius: '12px',
-                              padding: '3px 10px',
-                              fontWeight: 700,
-                              fontSize: '13px',
-                            }}>
+                            <span className={`payout-badge ${p.hasReceived ? 'payout-received' : 'payout-pending'}`}>
                               📅 {p.scheduledLabel}
                             </span>
                           ) : (
-                            <span style={{ color: '#bbb', fontStyle: 'italic', fontSize: '13px' }}>Not scheduled yet</span>
+                            <span className="payout-unscheduled">Not scheduled yet</span>
                           )}
                         </td>
                         <td>
@@ -542,10 +525,15 @@ const MemberDashboard = () => {
 
           {yearlyFines.length > 0 && (
             <section className="section">
-              <h2>Pending Fines <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span></h2>
+              <h2>
+                Pending Fines{' '}
+                <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span>
+              </h2>
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Type</th><th>Month/Year</th><th>Amount</th><th>Notes</th></tr></thead>
+                  <thead>
+                    <tr><th>Type</th><th>Month/Year</th><th>Amount</th><th>Notes</th></tr>
+                  </thead>
                   <tbody>
                     {yearlyFines.map(f => (
                       <tr key={f.id}>

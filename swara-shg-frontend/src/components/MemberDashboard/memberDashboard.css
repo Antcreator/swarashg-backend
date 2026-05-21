@@ -10,9 +10,10 @@
 }
 
 /* ── Header row: title on left, eye toggle on right ─────────── */
+/* NOTE: Only one definition — duplicate removed */
 .dashboard-header-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
@@ -46,7 +47,9 @@
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   white-space: nowrap;
   flex-shrink: 0;
-  margin-top: 4px;
+  font-family: inherit;
+  line-height: 1;
+  outline: none;
 }
 
 .eye-toggle-btn:hover {
@@ -63,6 +66,28 @@
   font-size: 12px;
 }
 
+/* ── Year badge ──────────────────────────────────────────────── */
+.year-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.25);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  padding: 1px 7px;
+  vertical-align: middle;
+  margin-left: 6px;
+  letter-spacing: 0.02em;
+}
+
+/* For year badge inside small-label (non-hero context) */
+.small-label .year-badge {
+  background: rgba(0, 0, 0, 0.07);
+  color: #888;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
 /* ── Card rows ───────────────────────────────────────────────── */
 .cards-row {
   display: flex;
@@ -75,13 +100,14 @@
 .stat-card {
   background: white;
   border-radius: 14px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
   transition: transform 0.2s, box-shadow 0.2s;
   overflow: visible;
 }
+
 .stat-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.11);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.11);
 }
 
 /* ── HERO cards (Row 1) ──────────────────────────────────────── */
@@ -112,7 +138,7 @@
   padding: 28px 24px 28px 28px;
   opacity: 0.85;
   flex-shrink: 0;
-  color: rgba(255,255,255,0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .hero-body {
@@ -127,7 +153,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255,255,255,0.75);
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .hero-value {
@@ -147,8 +173,9 @@
 
 .hero-sub {
   font-size: 13px;
-  color: rgba(255,255,255,0.65);
+  color: rgba(255, 255, 255, 0.65);
   margin-top: 2px;
+  display: block;
 }
 
 /* ── SMALL cards (Row 2) ─────────────────────────────────────── */
@@ -210,17 +237,11 @@
   margin-top: 8px;
 }
 
-.dashboard-header-row {
-  display: flex !important;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .section {
   background: white;
   border-radius: 14px;
   padding: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
 
 .section h2 {
@@ -236,14 +257,43 @@
   overflow-x: auto;
 }
 
-table { width: 100%; border-collapse: collapse; }
-table thead tr { background: #f5f5f5; }
-table th { padding: 12px; text-align: left; font-weight: 600; color: #666; font-size: 13px; text-transform: uppercase; }
-table td { padding: 12px; border-bottom: 1px solid #e0e0e0; color: #333; }
-table tbody tr:hover { background: #f9f9f9; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table thead tr {
+  background: #f5f5f5;
+}
+
+table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #666;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+table td {
+  padding: 12px;
+  border-bottom: 1px solid #e0e0e0;
+  color: #333;
+}
+
+table tbody tr:hover {
+  background: #f9f9f9;
+}
 
 /* ── Status badges ───────────────────────────────────────────── */
-.status { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.status {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .status.ontime   { background: #e8f5e9; color: #2e7d32; }
 .status.late     { background: #fff3e0; color: #f57c00; }
 .status.active   { background: #e3f2fd; color: #1976d2; }
@@ -251,8 +301,60 @@ table tbody tr:hover { background: #f9f9f9; }
 .status.received { background: #e8f5e9; color: #2e7d32; }
 .status.pending  { background: #f5f5f5; color: #666; }
 
-.no-data { text-align: center; color: #999; padding: 40px 20px; font-style: italic; }
-.loading, .error { text-align: center; padding: 60px 20px; font-size: 18px; }
+/* ── Liability badge ─────────────────────────────────────────── */
+.liability-badge {
+  display: inline-block;
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── Payout badges ───────────────────────────────────────────── */
+.payout-badge {
+  display: inline-block;
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.payout-badge.payout-received {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.payout-badge.payout-pending {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+}
+
+.payout-unscheduled {
+  color: #bbb;
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* ── Misc ────────────────────────────────────────────────────── */
+.no-data {
+  text-align: center;
+  color: #999;
+  padding: 40px 20px;
+  font-style: italic;
+}
+
+.loading,
+.error {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 18px;
+}
+
 .error { color: #c62828; }
 
 /* ── Responsive ──────────────────────────────────────────────── */
@@ -260,44 +362,49 @@ table tbody tr:hover { background: #f9f9f9; }
   .dashboard-container { padding: 16px 12px; }
   .dashboard-header h1 { font-size: 24px; }
 
-  .dashboard-header-row { flex-direction: row; align-items: center; }
+  /* Keep row layout on mobile — icon-only button is small enough */
+  .dashboard-header-row {
+    flex-direction: row;
+    align-items: center;
+  }
 
   .eye-toggle-btn { padding: 6px 12px; font-size: 12px; }
   .eye-toggle-label { display: none; } /* icon-only on mobile */
 
-  .hero-row, .small-row { flex-direction: column; gap: 12px; }
+  .hero-row,
+  .small-row { flex-direction: column; gap: 12px; }
 
   .hero-card  { min-height: 110px; flex: none; width: 100%; }
   .hero-icon  { font-size: 48px; padding: 20px 16px 20px 20px; }
   .hero-value { font-size: 26px; }
   .hero-value--masked { font-size: 22px; }
 
-  .small-card  { flex: none; width: 100%; }
+  .small-card { flex: none; width: 100%; }
 
   .section { padding: 16px; }
   .section h2 { font-size: 17px; }
   table { font-size: 13px; min-width: 600px; }
-  table th, table td { padding: 8px 6px; }
+  table th,
+  table td { padding: 8px 6px; }
 }
 
 @media (max-width: 480px) {
-  .hero-value  { font-size: 22px; }
+  .hero-value         { font-size: 22px; }
   .hero-value--masked { font-size: 18px; }
-  .hero-icon   { font-size: 40px; padding: 16px 12px 16px 16px; }
-  .medium-value { font-size: 20px; }
-  .small-value  { font-size: 16px; }
-  .section h2  { font-size: 15px; }
-  table { min-width: 520px; font-size: 12px; }
+  .hero-icon          { font-size: 40px; padding: 16px 12px 16px 16px; }
+  .small-value        { font-size: 16px; }
+  .section h2         { font-size: 15px; }
+  table               { min-width: 520px; font-size: 12px; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
-  .hero-card   { flex: 1 1 280px; }
-  .small-card  { flex: 1 1 150px; }
+  .hero-card  { flex: 1 1 280px; }
+  .small-card { flex: 1 1 150px; }
 }
 
 @media (min-width: 1440px) {
   .dashboard-container { padding: 40px 30px; }
-  .hero-value  { font-size: 38px; }
+  .hero-value         { font-size: 38px; }
   .hero-value--masked { font-size: 32px; }
-  .hero-icon   { font-size: 72px; }
+  .hero-icon          { font-size: 72px; }
 }
