@@ -103,14 +103,11 @@ const MemberDashboard = () => {
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getAll();
-      const members = res.data.members || [];
-      const record = members.find(m =>
-        String(m.id)        === String(id) ||
-        String(m.memberId)  === String(id) ||
-        String(m.member_id) === String(id)
-      );
-      setMemberSeedCapital(Number(record?.totalSeedCapital || 0));
-    } catch { /* silent */ }
+      // Log raw response so we can see exact field names
+      alert('SEED API response:\n' + JSON.stringify(res.data).slice(0, 500));
+    } catch (e) {
+      alert('SEED API failed: ' + e.message);
+    }
   };
 
   // ── Fetch savings for the CURRENT YEAR only ───────────────────
