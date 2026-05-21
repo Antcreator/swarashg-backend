@@ -102,18 +102,13 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-  // ── Fetch seed capital via getDashboard (member-accessible) ────
-  // seedCapitalAPI.getAll() is admin-only; instead we try to get
-  // the member's seed capital from the dashboard response which
-  // Uses the new member-accessible /seed-capital/member/:id endpoint
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getByMember(id);
       setMemberSeedCapital(Number(res.data?.totalSeedCapital || 0));
-    } catch { /* silent — card falls back to depositSummary.seedCapitalTotal */ }
+    } catch { /* silent */ }
   };
 
-  // ── Fetch savings for the CURRENT YEAR only ───────────────────
   const fetchYearlySavings = async () => {
     try {
       const res     = await savingsAPI.getAll({ memberId: id, year: CURRENT_YEAR });
@@ -128,7 +123,6 @@ const MemberDashboard = () => {
     }
   };
 
-  // ── Fetch unpaid fines for the CURRENT YEAR only ──────────────
   const fetchYearlyFines = async () => {
     try {
       const res = await finesAPI.getAll({ memberId: id, isPaid: 'false', year: CURRENT_YEAR });
@@ -148,13 +142,11 @@ const MemberDashboard = () => {
     style: 'currency', currency: 'KES', minimumFractionDigits: 0,
   }).format(amount || 0);
 
-  // ── Masked display helper ─────────────────────────────────────
   const mv = (amount) => valuesHidden ? '••••••' : fc(amount);
 
   const fd = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
   const monthName = (m) => MONTH_NAMES[(m - 1)] || '—';
 
-  // ── Guaranteed loan balance calculation ───────────────────────
   const calcBalance = (loan) => {
     if (loan.remainingBalance != null) return loan.remainingBalance;
     const p = Number(loan.amount) || 0;
@@ -165,7 +157,6 @@ const MemberDashboard = () => {
     const principal          = Number(loan.amount) || 0;
     const interestRate       = Number(loan.interestRate) || 0;
     const requiredGuarantors = principal < 80000 ? 3 : 5;
-
     const totalRepayment = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
     const oneShare       = principal / ONE_SHARE_DIVISOR;
     const reduced        = totalRepayment - oneShare;
@@ -210,10 +201,8 @@ const MemberDashboard = () => {
 
   const { member, savings, loans, chamaa } = dashboardData;
 
-  // Year-scoped fines summary
   const pendingFinesTotal = yearlyFines.reduce((sum, f) => sum + parseFloat(f.amount || 0), 0);
 
-  // Small year badge shown on cards that reset annually
   const YearBadge = () => (
     <span style={{
       fontSize: '10px', fontWeight: 700,
@@ -227,32 +216,19 @@ const MemberDashboard = () => {
     </span>
   );
 
-  // ── Eye toggle button (shared, placed on savings card) ────────
-  const EyeToggle = () => (
+  // ── Single shared eye toggle button rendered OUTSIDE the hero cards ──
+  const EyeToggleButton = () => (
     <button
       onClick={() => setValuesHidden(v => !v)}
       title={valuesHidden ? 'Show values' : 'Hide values'}
       aria-label={valuesHidden ? 'Show values' : 'Hide values'}
-      style={{
-        position: 'absolute', top: 14, right: 14,
-        background: 'rgba(255,255,255,0.18)',
-        border: '1px solid rgba(255,255,255,0.35)',
-        borderRadius: '50%',
-        width: 34, height: 34,
-        cursor: 'pointer',
-        color: 'white',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-        transition: 'background 0.15s',
-      }}
-      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.18)'}
+      className="eye-toggle-btn"
     >
       {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+      <span className="eye-toggle-label">{valuesHidden ? 'Show' : 'Hide'}</span>
     </button>
   );
 
-  // ── Build a tidy scheduled-months list from chamaa slots ───────
   const buildChamaaSchedule = (chamaaSlots) => {
     if (!chamaaSlots || chamaaSlots.length === 0) return [];
     return chamaaSlots.map((p) => {
@@ -270,14 +246,19 @@ const MemberDashboard = () => {
       <Navbar />
       <div className="dashboard-container">
         <div className="dashboard-header">
-          <h1>Welcome, {member?.firstName} {member?.lastName}</h1>
-          <p className="member-since">Member since {fd(member?.dateJoined)}</p>
+          <div className="dashboard-header-row">
+            <div>
+              <h1>Welcome, {member?.firstName} {member?.lastName}</h1>
+              <p className="member-since">Member since {fd(member?.dateJoined)}</p>
+            </div>
+            {/* ── Eye toggle: floated to top-right of header ── */}
+            <EyeToggleButton />
+          </div>
         </div>
 
-        {/* ── ROW 1: Hero cards — Savings & Max Loan ──────────── */}
+        {/* ── ROW 1: Hero cards ── */}
         <div className="cards-row hero-row">
 
-          {/* Total Savings — resets Jan 1 each year */}
           <div className="stat-card hero-card savings-hero">
             <div className="hero-icon"><Coins size={28} /></div>
             <div className="hero-body">
@@ -288,10 +269,8 @@ const MemberDashboard = () => {
                 {mv(yearlySavings)}
               </span>
             </div>
-            <EyeToggle />
           </div>
 
-          {/* Max Loan Amount — 3× yearly savings minus all statutory deductions */}
           <div className="stat-card hero-card loan-hero">
             <div className="hero-icon"><ClipboardList size={28} /></div>
             <div className="hero-body">
@@ -307,17 +286,15 @@ const MemberDashboard = () => {
                 </span>
               )}
             </div>
-            <EyeToggle />
           </div>
 
         </div>
 
-        {/* ── ROW 2: Small cards — all secondary info ───────────── */}
+        {/* ── ROW 2: Small cards ── */}
         <div className="cards-row small-row">
 
           <MyLoans memberId={id} year={CURRENT_YEAR} />
 
-          {/* Pending Fines — resets Jan 1 each year */}
           <div
             className="stat-card small-card"
             style={{ borderTopColor: pendingFinesTotal > 0 ? '#ef9a9a' : '#e0e0e0' }}
@@ -338,7 +315,6 @@ const MemberDashboard = () => {
 
           <DepositCard memberId={id} small />
 
-          {/* Seed Capital — from seedCapitalAPI, not deposits */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#e8f5e9', color: '#2e7d32' }}>
               <Sprout size={18} />
@@ -390,7 +366,7 @@ const MemberDashboard = () => {
 
         </div>
 
-        {/* ── Sections ──────────────────────────────────────────── */}
+        {/* ── Sections ── */}
         <div className="dashboard-sections">
 
           <section className="section">
@@ -438,7 +414,6 @@ const MemberDashboard = () => {
             ) : <p className="no-data">No active loans</p>}
           </section>
 
-          {/* ── Loans I Guaranteed ── */}
           <section className="section">
             <h2>Loans I Guaranteed</h2>
             {guaranteedLoansData?.length > 0 ? (
@@ -460,7 +435,6 @@ const MemberDashboard = () => {
                       const balance   = calcBalance(loan);
                       const dueDate   = resolveDueDate(loan);
                       const liability = calcGuarantorLiability(loan);
-
                       return (
                         <tr key={loan.loanId}>
                           <td>{loan.borrowerName}</td>
@@ -498,7 +472,6 @@ const MemberDashboard = () => {
             ) : <p className="no-data">Not guaranteeing any loans</p>}
           </section>
 
-          {/* ── Chamaa Participation ── */}
           <section className="section">
             <h2>Chamaa Participation</h2>
             {chamaaSchedule.length > 0 ? (

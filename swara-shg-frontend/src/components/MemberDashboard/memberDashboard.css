@@ -9,6 +9,15 @@
   margin-bottom: 28px;
 }
 
+/* ── Header row: title on left, eye toggle on right ─────────── */
+.dashboard-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .dashboard-header h1 {
   color: #2c5f2d;
   font-size: 32px;
@@ -19,6 +28,39 @@
   color: #666;
   font-size: 14px;
   margin: 0;
+}
+
+/* ── Eye toggle button ───────────────────────────────────────── */
+.eye-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #f1f8e9;
+  border: 1.5px solid #aed581;
+  border-radius: 20px;
+  color: #33691e;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.eye-toggle-btn:hover {
+  background: #dcedc8;
+  border-color: #8bc34a;
+  box-shadow: 0 2px 8px rgba(51, 105, 30, 0.15);
+}
+
+.eye-toggle-btn:active {
+  background: #c5e1a5;
+}
+
+.eye-toggle-label {
+  font-size: 12px;
 }
 
 /* ── Card rows ───────────────────────────────────────────────── */
@@ -54,8 +96,7 @@
   align-items: center;
   gap: 0;
   padding: 0;
-  position: relative;
-  overflow: visible;
+  /* overflow: hidden is inherited from .stat-card — no absolute children here */
 }
 
 .savings-hero {
@@ -97,7 +138,7 @@
   transition: opacity 0.2s, letter-spacing 0.2s;
 }
 
-/* Masked state: slightly larger tracking so bullets feel balanced */
+/* Masked state */
 .hero-value--masked {
   letter-spacing: 0.15em;
   opacity: 0.7;
@@ -212,6 +253,11 @@ table tbody tr:hover { background: #f9f9f9; }
 @media (max-width: 768px) {
   .dashboard-container { padding: 16px 12px; }
   .dashboard-header h1 { font-size: 24px; }
+
+  .dashboard-header-row { flex-direction: row; align-items: center; }
+
+  .eye-toggle-btn { padding: 6px 12px; font-size: 12px; }
+  .eye-toggle-label { display: none; } /* icon-only on mobile */
 
   .hero-row, .small-row { flex-direction: column; gap: 12px; }
 
