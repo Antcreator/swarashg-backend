@@ -75,10 +75,12 @@ const MemberDashboard = () => {
   const fetchDepositTotals = async () => {
     try {
       const res = await depositsAPI.getSummary(id);
-      const distributed = (res.data.deposits || []).filter(d => d.depositStatus === 'distributed');
+      const deposits = res.data.deposits || [];
+      const distributed = deposits.filter(d => d.depositStatus === 'distributed');
+      const fromDeposits = distributed.reduce((sum, d) => sum + Number(d.seedCapitalAmount || 0), 0);
       setDepositSummary({
-        othersTotal:      distributed.reduce((sum, d) => sum + Number(d.othersAmount      || 0), 0),
-        seedCapitalTotal: distributed.reduce((sum, d) => sum + Number(d.seedCapitalAmount || 0), 0),
+        othersTotal:      distributed.reduce((sum, d) => sum + Number(d.othersAmount || 0), 0),
+        seedCapitalTotal: fromDeposits,
       });
     } catch { /* silent */ }
   };
@@ -97,24 +99,18 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-  // ── Fetch seed capital: seedCapitalAPI is source of truth;
-  //    falls back to depositSummary.seedCapitalTotal if zero ──────
+  // ── Fetch seed capital recorded by admin via SeedCapitalPage ───
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getAll();
       const members = res.data.members || [];
-      // Match by any common id field the backend might use
       const record = members.find(m =>
-        String(m.id)       === String(id) ||
-        String(m.memberId) === String(id) ||
-        String(m.userId)   === String(id)
+        String(m.id)        === String(id) ||
+        String(m.memberId)  === String(id) ||
+        String(m.member_id) === String(id)
       );
-      console.log('[SEED] all members:', members.map(m => ({ id: m.id, memberId: m.memberId, name: m.firstName, total: m.totalSeedCapital })));
-      console.log('[SEED] looking for id:', id, '| matched record:', record);
       setMemberSeedCapital(Number(record?.totalSeedCapital || 0));
-    } catch (e) {
-      console.error('[SEED] fetchMemberSeedCapital failed:', e?.message);
-    }
+    } catch { /* silent */ }
   };
 
   // ── Fetch savings for the CURRENT YEAR only ───────────────────
