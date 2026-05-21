@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { membersAPI, loansAPI, depositsAPI, statutoryAPI, savingsAPI, finesAPI, seedCapitalAPI } from '../../Service/Api';
+import { membersAPI, loansAPI, depositsAPI, statutoryAPI, savingsAPI, finesAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import MyLoans from '../Member/MyLoans';
 import DepositCard from './DepositCard';
@@ -21,7 +21,6 @@ const MemberDashboard = () => {
   const [guaranteedLoansData, setGuaranteedLoansData] = useState([]);
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
-  const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
 
   // ── Year-scoped values (reset each January) ───────────────────
   const [yearlySavings, setYearlySavings]   = useState(0);
@@ -37,7 +36,6 @@ const MemberDashboard = () => {
     fetchStatutory();
     fetchYearlySavings();
     fetchYearlyFines();
-    fetchMemberSeedCapital();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -97,18 +95,6 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-  // ── Fetch seed capital: seedCapitalAPI is source of truth;
-  //    falls back to depositSummary.seedCapitalTotal if zero ──────
-  const fetchMemberSeedCapital = async () => {
-    try {
-      const res = await seedCapitalAPI.getAll();
-      const members = res.data.members || [];
-      const record = members.find(m => String(m.id) === String(id));
-      const fromSeedAPI = Number(record?.totalSeedCapital || 0);
-      setMemberSeedCapital(fromSeedAPI);
-    } catch { /* silent — card will fall back to depositSummary.seedCapitalTotal */ }
-  };
-
   // ── Fetch savings for the CURRENT YEAR only ───────────────────
   const fetchYearlySavings = async () => {
     try {
@@ -154,6 +140,13 @@ const MemberDashboard = () => {
     return p + (p * (Number(loan.interestRate) || 0) / 100) + Number(loan.penaltyInterest || 0) - Number(loan.amountPaid || 0);
   };
 
+  // ── Guaranteed loan liability — mirrors MemberLoanApplication formula exactly:
+  //    Step 1: totalRepayment = principal + (principal × interestRate/100) + TRANSACTION_FEE
+  //    Step 2: oneShare       = principal / ONE_SHARE_DIVISOR  (always ÷ 3)
+  //    Step 3: reduced        = totalRepayment − oneShare
+  //    Step 4: liabilityEach  = ceil(reduced / requiredGuarantors)
+  //
+  //    requiredGuarantors = amount < 80,000 → 3, else → 5
   const calcGuarantorLiability = (loan) => {
     const principal          = Number(loan.amount) || 0;
     const interestRate       = Number(loan.interestRate) || 0;
@@ -165,6 +158,13 @@ const MemberDashboard = () => {
     return Math.ceil(reduced / requiredGuarantors);
   };
 
+  // ── FIX: Resolve the correct due date for ANY loan ────────────
+  // dueDate from the server on freshly approved loans is often the
+  // approval date, not the actual repayment due date.
+  // We compute the real due date as: disbursementDate + durationMonths.
+  // Priority: computed date (if disbursementDate + durationMonths available)
+  //           → server dueDate
+  //           → 'N/A'
   const resolveDueDate = (loan) => {
     if (loan.disbursementDate && loan.durationMonths) {
       const d = new Date(loan.disbursementDate);
@@ -175,6 +175,7 @@ const MemberDashboard = () => {
     return 'N/A';
   };
 
+  // ── Map a guaranteed loan status → CSS class and display label ──
   const guaranteedLoanStatusClass = (status) => {
     switch (status) {
       case 'paid':    return 'ontime';
@@ -300,16 +301,13 @@ const MemberDashboard = () => {
 
           <DepositCard memberId={id} small />
 
-          {/* Seed Capital — from seedCapitalAPI, not deposits */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#e8f5e9', color: '#2e7d32' }}>
               <Sprout size={18} />
             </span>
             <div className="small-body">
               <span className="small-label">Seed Capital</span>
-              <span className="small-value" style={{ color: '#2e7d32' }}>
-                {fc(memberSeedCapital + depositSummary.seedCapitalTotal)}
-              </span>
+              <span className="small-value" style={{ color: '#2e7d32' }}>{fc(depositSummary.seedCapitalTotal)}</span>
             </div>
           </div>
 
@@ -397,7 +395,7 @@ const MemberDashboard = () => {
             ) : <p className="no-data">No active loans</p>}
           </section>
 
-          {/* ── Loans I Guaranteed ── */}
+          {/* ── Loans I Guaranteed — with corrected due date and liability ── */}
           <section className="section">
             <h2>Loans I Guaranteed</h2>
             {guaranteedLoansData?.length > 0 ? (
@@ -457,7 +455,7 @@ const MemberDashboard = () => {
             ) : <p className="no-data">Not guaranteeing any loans</p>}
           </section>
 
-          {/* ── Chamaa Participation ── */}
+          {/* ── Chamaa Participation — shows scheduled payout months ── */}
           <section className="section">
             <h2>Chamaa Participation</h2>
             {chamaaSchedule.length > 0 ? (
