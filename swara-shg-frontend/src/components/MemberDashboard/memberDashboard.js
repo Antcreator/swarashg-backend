@@ -312,7 +312,7 @@ const MemberDashboard = () => {
             <div className="small-body">
               <span className="small-label">Seed Capital</span>
               <span className="small-value" style={{ color: '#2e7d32' }}>
-                {fc(memberSeedCapital > 0 ? memberSeedCapital : depositSummary.seedCapitalTotal)}
+                {fc(memberSeedCapital)}
               </span>
             </div>
           </div>
