@@ -103,10 +103,18 @@ const MemberDashboard = () => {
     try {
       const res = await seedCapitalAPI.getAll();
       const members = res.data.members || [];
-      const record = members.find(m => String(m.id) === String(id));
-      const fromSeedAPI = Number(record?.totalSeedCapital || 0);
-      setMemberSeedCapital(fromSeedAPI);
-    } catch { /* silent — card will fall back to depositSummary.seedCapitalTotal */ }
+      // Match by any common id field the backend might use
+      const record = members.find(m =>
+        String(m.id)       === String(id) ||
+        String(m.memberId) === String(id) ||
+        String(m.userId)   === String(id)
+      );
+      console.log('[SEED] all members:', members.map(m => ({ id: m.id, memberId: m.memberId, name: m.firstName, total: m.totalSeedCapital })));
+      console.log('[SEED] looking for id:', id, '| matched record:', record);
+      setMemberSeedCapital(Number(record?.totalSeedCapital || 0));
+    } catch (e) {
+      console.error('[SEED] fetchMemberSeedCapital failed:', e?.message);
+    }
   };
 
   // ── Fetch savings for the CURRENT YEAR only ───────────────────
