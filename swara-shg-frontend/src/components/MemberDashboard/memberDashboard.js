@@ -41,9 +41,24 @@ const MemberDashboard = () => {
   const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
-  const [valuesHidden, setValuesHidden] = useState(false);
+  // ── Eye toggle — persisted per member in localStorage ────────
+  const STORAGE_KEY = `valuesHidden_${id}`;
+  const [valuesHidden, setValuesHidden] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === 'true'
+  );
+
+  const toggleValuesHidden = () => {
+    setValuesHidden(prev => {
+      const next = !prev;
+      localStorage.setItem(STORAGE_KEY, String(next));
+      return next;
+    });
+  };
+
+  // ── Year-scoped values (reset each January) ───────────────────
   const [yearlySavings, setYearlySavings] = useState(0);
   const [yearlyFines, setYearlyFines]     = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
@@ -58,6 +73,8 @@ const MemberDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // ── Fallback: if yearly savings API returned 0 but dashboard has
+  //    savings data, derive the yearly total from dashboard savings ──
   useEffect(() => {
     if (yearlySavings === 0 && dashboardData?.savings?.length > 0) {
       const derived = dashboardData.savings
@@ -145,6 +162,7 @@ const MemberDashboard = () => {
     }
   };
 
+  // ── Max loan: 3× yearly savings minus all statutory deductions ──
   const grossLoanAmount          = yearlySavings > 0 ? yearlySavings * 3 : 0;
   const totalStatutoryDeductions = statutory.statutoryFee + statutory.guarantorDeduction + statutory.other;
   const maxLoanAmount            = Math.max(0, grossLoanAmount - totalStatutoryDeductions);
@@ -154,6 +172,7 @@ const MemberDashboard = () => {
   }).format(amount || 0);
 
   const mv = (amount) => valuesHidden ? '••••••' : fc(amount);
+
   const fd = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
   const monthName = (m) => MONTH_NAMES[(m - 1)] || '—';
 
@@ -214,6 +233,7 @@ const MemberDashboard = () => {
   );
 
   const { member, savings, loans, chamaa } = dashboardData;
+
   const pendingFinesTotal = yearlyFines.reduce((sum, f) => sum + parseFloat(f.amount || 0), 0);
 
   const buildChamaaSchedule = (chamaaSlots) => {
@@ -241,16 +261,20 @@ const MemberDashboard = () => {
             </div>
             <EyeToggleButton
               valuesHidden={valuesHidden}
-              onToggle={() => setValuesHidden(v => !v)}
+              onToggle={toggleValuesHidden}
             />
           </div>
         </div>
 
+        {/* ── ROW 1: Hero cards ── */}
         <div className="cards-row hero-row">
+
           <div className="stat-card hero-card savings-hero">
             <div className="hero-icon"><Coins size={28} /></div>
             <div className="hero-body">
-              <span className="hero-label">Total Savings <YearBadge /></span>
+              <span className="hero-label">
+                Total Savings <YearBadge />
+              </span>
               <span className={`hero-value${valuesHidden ? ' hero-value--masked' : ''}`}>
                 {mv(yearlySavings)}
               </span>
@@ -260,7 +284,9 @@ const MemberDashboard = () => {
           <div className="stat-card hero-card loan-hero">
             <div className="hero-icon"><ClipboardList size={28} /></div>
             <div className="hero-body">
-              <span className="hero-label">Max Loan Amount <YearBadge /></span>
+              <span className="hero-label">
+                Max Loan Amount <YearBadge />
+              </span>
               <span className={`hero-value${valuesHidden ? ' hero-value--masked' : ''}`}>
                 {mv(maxLoanAmount)}
               </span>
@@ -271,17 +297,25 @@ const MemberDashboard = () => {
               )}
             </div>
           </div>
+
         </div>
 
+        {/* ── ROW 2: Small cards ── */}
         <div className="cards-row small-row">
+
           <MyLoans memberId={id} year={CURRENT_YEAR} />
 
-          <div className="stat-card small-card" style={{ borderTopColor: pendingFinesTotal > 0 ? '#ef9a9a' : '#e0e0e0' }}>
+          <div
+            className="stat-card small-card"
+            style={{ borderTopColor: pendingFinesTotal > 0 ? '#ef9a9a' : '#e0e0e0' }}
+          >
             <span className="small-icon" style={{ background: '#ffebee', color: '#c62828' }}>
               <AlertTriangle size={18} />
             </span>
             <div className="small-body">
-              <span className="small-label">Pending Fines <YearBadge /></span>
+              <span className="small-label">
+                Pending Fines <YearBadge />
+              </span>
               <span className="small-value" style={{ color: pendingFinesTotal > 0 ? '#c62828' : '#2e7d32' }}>
                 {fc(pendingFinesTotal)}
               </span>
@@ -297,7 +331,9 @@ const MemberDashboard = () => {
             </span>
             <div className="small-body">
               <span className="small-label">Seed Capital</span>
-              <span className="small-value" style={{ color: '#2e7d32' }}>{fc(memberSeedCapital)}</span>
+              <span className="small-value" style={{ color: '#2e7d32' }}>
+                {fc(memberSeedCapital)}
+              </span>
               <span style={{ fontSize: '10px', color: '#999', display: 'block' }}>
                 api: {memberSeedCapital} | dep: {depositSummary.seedCapitalTotal}
               </span>
@@ -337,16 +373,25 @@ const MemberDashboard = () => {
               </div>
             </div>
           )}
+
         </div>
 
+        {/* ── Sections ── */}
         <div className="dashboard-sections">
 
           <section className="section">
-            <h2>Recent Savings <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span></h2>
+            <h2>
+              Recent Savings{' '}
+              <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span>
+            </h2>
             {savings?.filter(s => s.year === CURRENT_YEAR).length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Month</th><th>Year</th><th>Amount</th><th>Payment Date</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Month</th><th>Year</th><th>Amount</th><th>Payment Date</th><th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {savings.filter(s => s.year === CURRENT_YEAR).map(s => (
                       <tr key={s.id}>
@@ -354,7 +399,11 @@ const MemberDashboard = () => {
                         <td>{s.year}</td>
                         <td>{fc(s.amount)}</td>
                         <td>{fd(s.paymentDate)}</td>
-                        <td><span className={`status ${s.isLate ? 'late' : 'ontime'}`}>{s.isLate ? 'Late' : 'On Time'}</span></td>
+                        <td>
+                          <span className={`status ${s.isLate ? 'late' : 'ontime'}`}>
+                            {s.isLate ? 'Late' : 'On Time'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -368,7 +417,11 @@ const MemberDashboard = () => {
             {loans?.length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {loans.map(loan => (
                       <tr key={loan.id}>
@@ -377,7 +430,11 @@ const MemberDashboard = () => {
                         <td>{resolveDueDate(loan)}</td>
                         <td>{fc(loan.total_paid)}</td>
                         <td>{fc(loan.remainingBalance)}</td>
-                        <td><span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>{loan.isOverdue ? 'Overdue' : 'Active'}</span></td>
+                        <td>
+                          <span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>
+                            {loan.isOverdue ? 'Overdue' : 'Active'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -392,7 +449,15 @@ const MemberDashboard = () => {
               <div className="table-container">
                 <table>
                   <thead>
-                    <tr><th>Borrower</th><th>Loan Amount</th><th>Balance</th><th>Disbursed</th><th>Due Date</th><th>My Liability</th><th>Status</th></tr>
+                    <tr>
+                      <th>Borrower</th>
+                      <th>Loan Amount</th>
+                      <th>Balance</th>
+                      <th>Disbursed</th>
+                      <th>Due Date</th>
+                      <th>My Liability</th>
+                      <th>Status</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {guaranteedLoansData.map(loan => {
@@ -403,11 +468,21 @@ const MemberDashboard = () => {
                         <tr key={loan.loanId}>
                           <td>{loan.borrowerName}</td>
                           <td>{fc(loan.amount)}</td>
-                          <td style={{ fontWeight: 'bold', color: balance > 0 ? '#c62828' : '#2e7d32' }}>{fc(balance)}</td>
+                          <td style={{ fontWeight: 'bold', color: balance > 0 ? '#c62828' : '#2e7d32' }}>
+                            {fc(balance)}
+                          </td>
                           <td>{fd(loan.disbursementDate)}</td>
                           <td>{dueDate}</td>
-                          <td><span className="liability-badge">{fc(liability)}</span></td>
-                          <td><span className={`status ${guaranteedLoanStatusClass(loan.status)}`}>{guaranteedLoanStatusLabel(loan.status)}</span></td>
+                          <td>
+                            <span className="liability-badge">
+                              {fc(liability)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`status ${guaranteedLoanStatusClass(loan.status)}`}>
+                              {guaranteedLoanStatusLabel(loan.status)}
+                            </span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -423,7 +498,13 @@ const MemberDashboard = () => {
               <div className="table-container">
                 <table>
                   <thead>
-                    <tr><th>Cycle Name</th><th>Contribution</th><th>My Position</th><th>My Payout Month</th><th>Status</th></tr>
+                    <tr>
+                      <th>Cycle Name</th>
+                      <th>Contribution</th>
+                      <th>My Position</th>
+                      <th>My Payout Month</th>
+                      <th>Status</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {chamaaSchedule.map(p => (
@@ -455,10 +536,15 @@ const MemberDashboard = () => {
 
           {yearlyFines.length > 0 && (
             <section className="section">
-              <h2>Pending Fines <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span></h2>
+              <h2>
+                Pending Fines{' '}
+                <span style={{ fontSize: '13px', fontWeight: 400, color: '#888' }}>({CURRENT_YEAR})</span>
+              </h2>
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Type</th><th>Month/Year</th><th>Amount</th><th>Notes</th></tr></thead>
+                  <thead>
+                    <tr><th>Type</th><th>Month/Year</th><th>Amount</th><th>Notes</th></tr>
+                  </thead>
                   <tbody>
                     {yearlyFines.map(f => (
                       <tr key={f.id}>
