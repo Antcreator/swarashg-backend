@@ -216,16 +216,34 @@ const MemberDashboard = () => {
     </span>
   );
 
-  // ── Single shared eye toggle button rendered OUTSIDE the hero cards ──
+  // ── Single shared eye toggle button — fully inline to survive any CSS reset ──
   const EyeToggleButton = () => (
     <button
       onClick={() => setValuesHidden(v => !v)}
       title={valuesHidden ? 'Show values' : 'Hide values'}
       aria-label={valuesHidden ? 'Show values' : 'Hide values'}
-      className="eye-toggle-btn"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 16px',
+        background: '#f1f8e9',
+        border: '1.5px solid #aed581',
+        borderRadius: '20px',
+        color: '#33691e',
+        fontSize: '13px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        outline: 'none',
+        fontFamily: 'inherit',
+        lineHeight: 1,
+        marginTop: '4px',
+      }}
     >
       {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-      <span className="eye-toggle-label">{valuesHidden ? 'Show' : 'Hide'}</span>
+      <span style={{ fontSize: '12px' }}>{valuesHidden ? 'Show' : 'Hide'}</span>
     </button>
   );
 
@@ -246,12 +264,11 @@ const MemberDashboard = () => {
       <Navbar />
       <div className="dashboard-container">
         <div className="dashboard-header">
-          <div className="dashboard-header-row">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
             <div>
               <h1>Welcome, {member?.firstName} {member?.lastName}</h1>
               <p className="member-since">Member since {fd(member?.dateJoined)}</p>
             </div>
-            {/* ── Eye toggle: floated to top-right of header ── */}
             <EyeToggleButton />
           </div>
         </div>
