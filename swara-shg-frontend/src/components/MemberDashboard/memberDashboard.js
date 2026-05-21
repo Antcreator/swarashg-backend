@@ -314,6 +314,9 @@ const MemberDashboard = () => {
               <span className="small-value" style={{ color: '#2e7d32' }}>
                 {fc(memberSeedCapital)}
               </span>
+              <span style={{ fontSize: '10px', color: '#999', display: 'block' }}>
+                api: {memberSeedCapital} | dep: {depositSummary.seedCapitalTotal}
+              </span>
             </div>
           </div>
 
