@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI } from '../../Service/Api';
+import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
 import { Download, Printer, PiggyBank, FileText } from 'lucide-react';
@@ -35,13 +35,14 @@ const MemberTransactions = () => {
 
       const year = new Date().getFullYear();
 
-      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes] = await Promise.allSettled([
+      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes, seedRes] = await Promise.allSettled([
         membersAPI.getAll(),
         savingsAPI.getAll({ memberId }),
         loansAPI.getAll({ memberId }),
         depositsAPI.getSummary(memberId),
         agmFeeAPI.getAll(year),
         statutoryAPI.getAll(year),
+        seedCapitalAPI.getByMember(memberId),   // ← live seed capital for this member
       ]);
 
       const member = memberRes.status === 'fulfilled'
@@ -85,8 +86,14 @@ const MemberTransactions = () => {
       const distributed = depositRes.status === 'fulfilled'
         ? (depositRes.value.data.deposits || []).filter(d => d.depositStatus === 'distributed')
         : [];
-      const seedCapital  = distributed.reduce((s, d) => s + Number(d.seedCapitalAmount || 0), 0);
-      const depositOther = distributed.reduce((s, d) => s + Number(d.othersAmount      || 0), 0);
+      const depositOther = distributed.reduce((s, d) => s + Number(d.othersAmount || 0), 0);
+
+      // ── Seed capital: prefer the live member API value; fall back to deposit-derived total ──
+      const liveSeedCapital = seedRes.status === 'fulfilled'
+        ? Number(seedRes.value.data?.totalSeedCapital || 0)
+        : 0;
+      const depositSeedCapital = distributed.reduce((s, d) => s + Number(d.seedCapitalAmount || 0), 0);
+      const seedCapital = liveSeedCapital > 0 ? liveSeedCapital : depositSeedCapital;
 
       const agmMembers = agmRes.status === 'fulfilled' ? agmRes.value.data.members || [] : [];
       const agmRecord  = agmMembers.find(m => String(m.id) === String(memberId));
@@ -185,7 +192,7 @@ const MemberTransactions = () => {
         <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
         <tbody>${tbodyRows}</tbody>
       </table>
-      <script>window.onload=()=>{window.print();}<script>
+      <script>window.onload=()=>{window.print();}<\/script>
     </body></html>`);
     win.document.close();
   };
@@ -231,7 +238,7 @@ const MemberTransactions = () => {
             {memberStats && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', margin: '20px 0' }}>
 
-                {/* Card 1 — Financial Summary */}
+                {/* Card 1 — Financial Summary (now includes Seed Capital) */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #1976d2' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1976d2', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <PiggyBank size={15} /> Financial Summary

@@ -7,7 +7,7 @@ import DepositCard from './DepositCard';
 import './memberDashboard.css';
 import {
   Coins, ClipboardList, AlertTriangle, Sprout, Package,
-  Handshake, FileText,
+  Handshake, FileText, Eye, EyeOff,
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -20,9 +20,12 @@ const MemberDashboard = () => {
   const [dashboardData, setDashboardData]             = useState(null);
   const [guaranteedLoansData, setGuaranteedLoansData] = useState([]);
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
-  const [memberSeedCapital, setMemberSeedCapital]       = useState(0);
+  const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
+  // ── Visibility toggles for sensitive hero cards ───────────────
+  const [savingsVisible, setSavingsVisible] = useState(true);
+  const [loanVisible,    setLoanVisible]    = useState(true);
 
   // ── Year-scoped values (reset each January) ───────────────────
   const [yearlySavings, setYearlySavings]   = useState(0);
@@ -42,8 +45,7 @@ const MemberDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // ── Fallback: if yearly savings API returned 0 but dashboard has
-  //    savings data, derive the yearly total from dashboard savings ─
+  // ── Fallback: derive yearly total from dashboard savings if API returned 0 ─
   useEffect(() => {
     if (yearlySavings === 0 && dashboardData?.savings?.length > 0) {
       const derived = dashboardData.savings
@@ -100,12 +102,8 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-
-
-  // ── Fetch seed capital via getDashboard (member-accessible) ────
-  // seedCapitalAPI.getAll() is admin-only; instead we try to get
-  // the member's seed capital from the dashboard response which
-  // Uses the new member-accessible /seed-capital/member/:id endpoint
+  // ── Fetch seed capital via member-accessible endpoint ─────────
+  // Always re-fetches so admin edits are reflected immediately.
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getByMember(id);
@@ -151,7 +149,7 @@ const MemberDashboard = () => {
   const fd = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
   const monthName = (m) => MONTH_NAMES[(m - 1)] || '—';
 
-  // ── Guaranteed loan balance calculation ───────────────────────
+  // ── Guaranteed loan helpers ────────────────────────────────────
   const calcBalance = (loan) => {
     if (loan.remainingBalance != null) return loan.remainingBalance;
     const p = Number(loan.amount) || 0;
@@ -162,10 +160,9 @@ const MemberDashboard = () => {
     const principal          = Number(loan.amount) || 0;
     const interestRate       = Number(loan.interestRate) || 0;
     const requiredGuarantors = principal < 80000 ? 3 : 5;
-
-    const totalRepayment = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
-    const oneShare       = principal / ONE_SHARE_DIVISOR;
-    const reduced        = totalRepayment - oneShare;
+    const totalRepayment     = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
+    const oneShare           = principal / ONE_SHARE_DIVISOR;
+    const reduced            = totalRepayment - oneShare;
     return Math.ceil(reduced / requiredGuarantors);
   };
 
@@ -224,7 +221,39 @@ const MemberDashboard = () => {
     </span>
   );
 
-  // ── Build a tidy scheduled-months list from chamaa slots ───────
+  // ── Eye toggle button rendered inside hero cards ───────────────
+  const EyeToggle = ({ visible, onToggle }) => (
+    <button
+      onClick={onToggle}
+      title={visible ? 'Hide amount' : 'Show amount'}
+      style={{
+        background: 'rgba(255,255,255,0.15)',
+        border: '1px solid rgba(255,255,255,0.3)',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        color: 'rgba(255,255,255,0.85)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '32px',
+        height: '32px',
+        padding: 0,
+        transition: 'background 0.15s',
+        flexShrink: 0,
+        alignSelf: 'flex-start',
+        marginTop: '2px',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+    >
+      {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+    </button>
+  );
+
+  // Masked value shown when hidden
+  const MASKED = '••••••';
+
+  // ── Build chamaa schedule ──────────────────────────────────────
   const buildChamaaSchedule = (chamaaSlots) => {
     if (!chamaaSlots || chamaaSlots.length === 0) return [];
     return chamaaSlots.map((p) => {
@@ -236,6 +265,11 @@ const MemberDashboard = () => {
   };
 
   const chamaaSchedule = buildChamaaSchedule(chamaa);
+
+  // Seed capital: prefer the live API value; fall back to deposit-derived total
+  const seedCapitalDisplay = memberSeedCapital > 0
+    ? memberSeedCapital
+    : depositSummary.seedCapitalTotal;
 
   return (
     <>
@@ -252,27 +286,37 @@ const MemberDashboard = () => {
           {/* Total Savings — resets Jan 1 each year */}
           <div className="stat-card hero-card savings-hero">
             <div className="hero-icon"><Coins size={28} /></div>
-            <div className="hero-body">
+            <div className="hero-body" style={{ flex: 1 }}>
               <span className="hero-label">
                 Total Savings <YearBadge />
               </span>
-              <span className="hero-value">{fc(yearlySavings)}</span>
+              <span className="hero-value">
+                {savingsVisible ? fc(yearlySavings) : MASKED}
+              </span>
+            </div>
+            <div style={{ padding: '20px 20px 20px 0', display: 'flex', alignItems: 'flex-start' }}>
+              <EyeToggle visible={savingsVisible} onToggle={() => setSavingsVisible(v => !v)} />
             </div>
           </div>
 
           {/* Max Loan Amount — 3× yearly savings minus all statutory deductions */}
           <div className="stat-card hero-card loan-hero">
             <div className="hero-icon"><ClipboardList size={28} /></div>
-            <div className="hero-body">
+            <div className="hero-body" style={{ flex: 1 }}>
               <span className="hero-label">
                 Max Loan Amount <YearBadge />
               </span>
-              <span className="hero-value">{fc(maxLoanAmount)}</span>
-              {totalStatutoryDeductions > 0 && (
+              <span className="hero-value">
+                {loanVisible ? fc(maxLoanAmount) : MASKED}
+              </span>
+              {loanVisible && totalStatutoryDeductions > 0 && (
                 <span className="hero-sub" style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px', display: 'block' }}>
                   {fc(grossLoanAmount)} − {fc(totalStatutoryDeductions)} statutory
                 </span>
               )}
+            </div>
+            <div style={{ padding: '20px 20px 20px 0', display: 'flex', alignItems: 'flex-start' }}>
+              <EyeToggle visible={loanVisible} onToggle={() => setLoanVisible(v => !v)} />
             </div>
           </div>
 
@@ -304,7 +348,7 @@ const MemberDashboard = () => {
 
           <DepositCard memberId={id} small />
 
-          {/* Seed Capital — from seedCapitalAPI, not deposits */}
+          {/* Seed Capital — always reflects the latest admin-edited value */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#e8f5e9', color: '#2e7d32' }}>
               <Sprout size={18} />
@@ -312,10 +356,7 @@ const MemberDashboard = () => {
             <div className="small-body">
               <span className="small-label">Seed Capital</span>
               <span className="small-value" style={{ color: '#2e7d32' }}>
-                {fc(memberSeedCapital)}
-              </span>
-              <span style={{ fontSize: '10px', color: '#999', display: 'block' }}>
-                api: {memberSeedCapital} | dep: {depositSummary.seedCapitalTotal}
+                {fc(seedCapitalDisplay)}
               </span>
             </div>
           </div>
