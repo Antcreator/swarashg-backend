@@ -1,9 +1,5 @@
 const { SeedCapital, Member } = require('../models');
 
-// ── Helper: resolve admin display name from req.user ─────────────────────────
-// authenticateToken decodes the JWT and sets req.user = { userId, role, ... }
-// The JWT is signed with { userId, role } — so we need to look up the user's
-// name from the Member/User record, or fall back to whatever is on req.user.
 const getAdminName = (reqUser) => {
   if (!reqUser) return 'Admin';
   return (
@@ -34,9 +30,35 @@ const getSeedCapitalStats = async (req, res) => {
   }
 };
 
+// ─── GET /seed-capital/member/:memberId ──────────────────────────────────────
+// Member-accessible: returns only that member's own seed capital total
+const getMemberSeedCapital = async (req, res) => {
+  const { memberId } = req.params;
+
+  // Members can only view their own seed capital
+  const requestingUserId = req.user?.userId || req.user?.id;
+  const isAdmin = req.user?.role === 'admin' || req.user?.role === 'staff';
+
+  if (!isAdmin && String(requestingUserId) !== String(memberId)) {
+    return res.status(403).json({ message: 'Access denied' });
+  }
+
+  try {
+    const contributions = await SeedCapital.findAll({
+      where: { memberId },
+      order: [['paymentDate', 'DESC']],
+    });
+
+    const totalSeedCapital = contributions.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+
+    return res.json({ memberId, totalSeedCapital, contributions });
+  } catch (error) {
+    console.error('Get member seed capital error:', error);
+    return res.status(500).json({ message: 'Failed to fetch seed capital' });
+  }
+};
+
 // ─── GET /seed-capital ────────────────────────────────────────────────────────
-// Returns all members with aggregated totals + each member's individual
-// contribution rows (including editedBy / editedAt for the audit trail)
 const getAllSeedCapital = async (req, res) => {
   try {
     const members = await Member.findAll({
@@ -68,7 +90,7 @@ const getAllSeedCapital = async (req, res) => {
           id:          c.id,
           amount:      Number(c.amount),
           paymentDate: c.paymentDate,
-          notes:       c.notes   || '',
+          notes:       c.notes    || '',
           editedBy:    c.editedBy || '',
           editedAt:    c.editedAt || null,
           depositId:   c.depositId || null,
@@ -108,7 +130,7 @@ const createSeedCapital = async (req, res) => {
       memberId:    Number(memberId),
       amount:      Number(amount),
       paymentDate,
-      notes:       notes    || null,
+      notes:       notes     || null,
       depositId:   depositId || null,
       editedBy:    adminName,
       editedAt:    new Date(),
@@ -196,6 +218,7 @@ const deleteSeedCapital = async (req, res) => {
 
 module.exports = {
   getSeedCapitalStats,
+  getMemberSeedCapital,
   getAllSeedCapital,
   createSeedCapital,
   updateSeedCapital,
