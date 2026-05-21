@@ -20,8 +20,9 @@ const MemberDashboard = () => {
   const [dashboardData, setDashboardData]             = useState(null);
   const [guaranteedLoansData, setGuaranteedLoansData] = useState([]);
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
+  const [memberSeedCapital, setMemberSeedCapital]       = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
-  const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
+
 
   // ── Year-scoped values (reset each January) ───────────────────
   const [yearlySavings, setYearlySavings]   = useState(0);
@@ -99,15 +100,17 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-  // ── Fetch seed capital recorded by admin via SeedCapitalPage ───
+
+
+  // ── Fetch seed capital via getDashboard (member-accessible) ────
+  // seedCapitalAPI.getAll() is admin-only; instead we try to get
+  // the member's seed capital from the dashboard response which
+  // Uses the new member-accessible /seed-capital/member/:id endpoint
   const fetchMemberSeedCapital = async () => {
     try {
-      const res = await seedCapitalAPI.getAll();
-      // Log raw response so we can see exact field names
-      alert('SEED API response:\n' + JSON.stringify(res.data).slice(0, 500));
-    } catch (e) {
-      alert('SEED API failed: ' + e.message);
-    }
+      const res = await seedCapitalAPI.getByMember(id);
+      setMemberSeedCapital(Number(res.data?.totalSeedCapital || 0));
+    } catch { /* silent — card falls back to depositSummary.seedCapitalTotal */ }
   };
 
   // ── Fetch savings for the CURRENT YEAR only ───────────────────
