@@ -71,6 +71,7 @@
   padding: 28px 24px 28px 28px;
   opacity: 0.85;
   flex-shrink: 0;
+  color: rgba(255,255,255,0.9);
 }
 
 .hero-body {
@@ -93,6 +94,14 @@
   font-weight: 800;
   color: white;
   line-height: 1.1;
+  transition: opacity 0.2s, letter-spacing 0.2s;
+}
+
+/* Masked state: slightly larger tracking so bullets feel balanced */
+.hero-value--masked {
+  letter-spacing: 0.15em;
+  opacity: 0.7;
+  font-size: 28px;
 }
 
 .hero-sub {
@@ -209,6 +218,7 @@ table tbody tr:hover { background: #f9f9f9; }
   .hero-card  { min-height: 110px; flex: none; width: 100%; }
   .hero-icon  { font-size: 48px; padding: 20px 16px 20px 20px; }
   .hero-value { font-size: 26px; }
+  .hero-value--masked { font-size: 22px; }
 
   .small-card  { flex: none; width: 100%; }
 
@@ -220,6 +230,7 @@ table tbody tr:hover { background: #f9f9f9; }
 
 @media (max-width: 480px) {
   .hero-value  { font-size: 22px; }
+  .hero-value--masked { font-size: 18px; }
   .hero-icon   { font-size: 40px; padding: 16px 12px 16px 16px; }
   .medium-value { font-size: 20px; }
   .small-value  { font-size: 16px; }
@@ -235,5 +246,6 @@ table tbody tr:hover { background: #f9f9f9; }
 @media (min-width: 1440px) {
   .dashboard-container { padding: 40px 30px; }
   .hero-value  { font-size: 38px; }
+  .hero-value--masked { font-size: 32px; }
   .hero-icon   { font-size: 72px; }
 }

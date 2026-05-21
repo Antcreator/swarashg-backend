@@ -103,7 +103,6 @@ const MemberDashboard = () => {
   };
 
   // ── Fetch seed capital via member-accessible endpoint ─────────
-  // Always re-fetches so admin edits are reflected immediately.
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getByMember(id);
@@ -290,7 +289,7 @@ const MemberDashboard = () => {
               <span className="hero-label">
                 Total Savings <YearBadge />
               </span>
-              <span className="hero-value">
+              <span className={`hero-value${!savingsVisible ? ' hero-value--masked' : ''}`}>
                 {savingsVisible ? fc(yearlySavings) : MASKED}
               </span>
             </div>
@@ -306,7 +305,7 @@ const MemberDashboard = () => {
               <span className="hero-label">
                 Max Loan Amount <YearBadge />
               </span>
-              <span className="hero-value">
+              <span className={`hero-value${!loanVisible ? ' hero-value--masked' : ''}`}>
                 {loanVisible ? fc(maxLoanAmount) : MASKED}
               </span>
               {loanVisible && totalStatutoryDeductions > 0 && (
