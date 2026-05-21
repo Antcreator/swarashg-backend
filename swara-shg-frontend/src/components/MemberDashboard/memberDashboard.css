@@ -37,7 +37,6 @@
   transition: transform 0.2s, box-shadow 0.2s;
   overflow: hidden;
 }
-
 .stat-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 6px 20px rgba(0,0,0,0.11);
@@ -82,23 +81,6 @@
   padding: 24px 24px 24px 0;
 }
 
-/* ── FIXED: label row with eye toggle ────────────────────────── */
-.hero-label-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.hero-label-row button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  visibility: visible;
-  opacity: 1;
-  flex-shrink: 0;
-}
-
 .hero-label {
   font-size: 12px;
   font-weight: 700;
@@ -115,7 +97,7 @@
   transition: opacity 0.2s, letter-spacing 0.2s;
 }
 
-/* Masked state */
+/* Masked state: slightly larger tracking so bullets feel balanced */
 .hero-value--masked {
   letter-spacing: 0.15em;
   opacity: 0.7;
@@ -207,206 +189,63 @@
   overflow-x: auto;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-table thead tr {
-  background: #f5f5f5;
-}
-
-table th {
-  padding: 12px;
-  text-align: left;
-  font-weight: 600;
-  color: #666;
-  font-size: 13px;
-  text-transform: uppercase;
-}
-
-table td {
-  padding: 12px;
-  border-bottom: 1px solid #e0e0e0;
-  color: #333;
-}
-
-table tbody tr:hover {
-  background: #f9f9f9;
-}
+table { width: 100%; border-collapse: collapse; }
+table thead tr { background: #f5f5f5; }
+table th { padding: 12px; text-align: left; font-weight: 600; color: #666; font-size: 13px; text-transform: uppercase; }
+table td { padding: 12px; border-bottom: 1px solid #e0e0e0; color: #333; }
+table tbody tr:hover { background: #f9f9f9; }
 
 /* ── Status badges ───────────────────────────────────────────── */
-.status {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-}
+.status { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.status.ontime   { background: #e8f5e9; color: #2e7d32; }
+.status.late     { background: #fff3e0; color: #f57c00; }
+.status.active   { background: #e3f2fd; color: #1976d2; }
+.status.overdue  { background: #ffebee; color: #c62828; }
+.status.received { background: #e8f5e9; color: #2e7d32; }
+.status.pending  { background: #f5f5f5; color: #666; }
 
-.status.ontime {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.status.late {
-  background: #fff3e0;
-  color: #f57c00;
-}
-
-.status.active {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.status.overdue {
-  background: #ffebee;
-  color: #c62828;
-}
-
-.status.received {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.status.pending {
-  background: #f5f5f5;
-  color: #666;
-}
-
-.no-data {
-  text-align: center;
-  color: #999;
-  padding: 40px 20px;
-  font-style: italic;
-}
-
-.loading,
-.error {
-  text-align: center;
-  padding: 60px 20px;
-  font-size: 18px;
-}
-
-.error {
-  color: #c62828;
-}
+.no-data { text-align: center; color: #999; padding: 40px 20px; font-style: italic; }
+.loading, .error { text-align: center; padding: 60px 20px; font-size: 18px; }
+.error { color: #c62828; }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .dashboard-container {
-    padding: 16px 12px;
-  }
+  .dashboard-container { padding: 16px 12px; }
+  .dashboard-header h1 { font-size: 24px; }
 
-  .dashboard-header h1 {
-    font-size: 24px;
-  }
+  .hero-row, .small-row { flex-direction: column; gap: 12px; }
 
-  .hero-row,
-  .small-row {
-    flex-direction: column;
-    gap: 12px;
-  }
+  .hero-card  { min-height: 110px; flex: none; width: 100%; }
+  .hero-icon  { font-size: 48px; padding: 20px 16px 20px 20px; }
+  .hero-value { font-size: 26px; }
+  .hero-value--masked { font-size: 22px; }
 
-  .hero-card {
-    min-height: 110px;
-    flex: none;
-    width: 100%;
-  }
+  .small-card  { flex: none; width: 100%; }
 
-  .hero-icon {
-    font-size: 48px;
-    padding: 20px 16px 20px 20px;
-  }
-
-  .hero-value {
-    font-size: 26px;
-  }
-
-  .hero-value--masked {
-    font-size: 22px;
-  }
-
-  .small-card {
-    flex: none;
-    width: 100%;
-  }
-
-  .section {
-    padding: 16px;
-  }
-
-  .section h2 {
-    font-size: 17px;
-  }
-
-  table {
-    font-size: 13px;
-    min-width: 600px;
-  }
-
-  table th,
-  table td {
-    padding: 8px 6px;
-  }
+  .section { padding: 16px; }
+  .section h2 { font-size: 17px; }
+  table { font-size: 13px; min-width: 600px; }
+  table th, table td { padding: 8px 6px; }
 }
 
 @media (max-width: 480px) {
-  .hero-value {
-    font-size: 22px;
-  }
-
-  .hero-value--masked {
-    font-size: 18px;
-  }
-
-  .hero-icon {
-    font-size: 40px;
-    padding: 16px 12px 16px 16px;
-  }
-
-  .medium-value {
-    font-size: 20px;
-  }
-
-  .small-value {
-    font-size: 16px;
-  }
-
-  .section h2 {
-    font-size: 15px;
-  }
-
-  table {
-    min-width: 520px;
-    font-size: 12px;
-  }
+  .hero-value  { font-size: 22px; }
+  .hero-value--masked { font-size: 18px; }
+  .hero-icon   { font-size: 40px; padding: 16px 12px 16px 16px; }
+  .medium-value { font-size: 20px; }
+  .small-value  { font-size: 16px; }
+  .section h2  { font-size: 15px; }
+  table { min-width: 520px; font-size: 12px; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
-  .hero-card {
-    flex: 1 1 280px;
-  }
-
-  .small-card {
-    flex: 1 1 150px;
-  }
+  .hero-card   { flex: 1 1 280px; }
+  .small-card  { flex: 1 1 150px; }
 }
 
 @media (min-width: 1440px) {
-  .dashboard-container {
-    padding: 40px 30px;
-  }
-
-  .hero-value {
-    font-size: 38px;
-  }
-
-  .hero-value--masked {
-    font-size: 32px;
-  }
-
-  .hero-icon {
-    font-size: 72px;
-  }
+  .dashboard-container { padding: 40px 30px; }
+  .hero-value  { font-size: 38px; }
+  .hero-value--masked { font-size: 32px; }
+  .hero-icon   { font-size: 72px; }
 }
