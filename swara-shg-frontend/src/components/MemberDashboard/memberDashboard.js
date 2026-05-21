@@ -220,7 +220,7 @@ const MemberDashboard = () => {
     </span>
   );
 
-  // ── Eye toggle button rendered inside hero cards ───────────────
+  // ── Eye toggle button rendered inline next to the label ───────
   const EyeToggle = ({ visible, onToggle }) => (
     <button
       onClick={onToggle}
@@ -231,21 +231,22 @@ const MemberDashboard = () => {
         borderRadius: '8px',
         cursor: 'pointer',
         color: 'rgba(255,255,255,0.85)',
-        display: 'flex',
+        display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '32px',
-        height: '32px',
+        width: '26px',
+        height: '26px',
         padding: 0,
         transition: 'background 0.15s',
         flexShrink: 0,
-        alignSelf: 'flex-start',
-        marginTop: '2px',
+        verticalAlign: 'middle',
+        marginLeft: '6px',
+        lineHeight: 1,
       }}
-      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.28)'}
       onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
     >
-      {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+      {visible ? <EyeOff size={13} /> : <Eye size={13} />}
     </button>
   );
 
@@ -285,37 +286,37 @@ const MemberDashboard = () => {
           {/* Total Savings — resets Jan 1 each year */}
           <div className="stat-card hero-card savings-hero">
             <div className="hero-icon"><Coins size={28} /></div>
-            <div className="hero-body" style={{ flex: 1 }}>
-              <span className="hero-label">
-                Total Savings <YearBadge />
-              </span>
+            <div className="hero-body">
+              {/* Label row: label + year badge + eye toggle all inline */}
+              <div className="hero-label-row">
+                <span className="hero-label">Total Savings</span>
+                <YearBadge />
+                <EyeToggle visible={savingsVisible} onToggle={() => setSavingsVisible(v => !v)} />
+              </div>
               <span className={`hero-value${!savingsVisible ? ' hero-value--masked' : ''}`}>
                 {savingsVisible ? fc(yearlySavings) : MASKED}
               </span>
-            </div>
-            <div style={{ padding: '20px 20px 20px 0', display: 'flex', alignItems: 'flex-start' }}>
-              <EyeToggle visible={savingsVisible} onToggle={() => setSavingsVisible(v => !v)} />
             </div>
           </div>
 
           {/* Max Loan Amount — 3× yearly savings minus all statutory deductions */}
           <div className="stat-card hero-card loan-hero">
             <div className="hero-icon"><ClipboardList size={28} /></div>
-            <div className="hero-body" style={{ flex: 1 }}>
-              <span className="hero-label">
-                Max Loan Amount <YearBadge />
-              </span>
+            <div className="hero-body">
+              {/* Label row: label + year badge + eye toggle all inline */}
+              <div className="hero-label-row">
+                <span className="hero-label">Max Loan Amount</span>
+                <YearBadge />
+                <EyeToggle visible={loanVisible} onToggle={() => setLoanVisible(v => !v)} />
+              </div>
               <span className={`hero-value${!loanVisible ? ' hero-value--masked' : ''}`}>
                 {loanVisible ? fc(maxLoanAmount) : MASKED}
               </span>
               {loanVisible && totalStatutoryDeductions > 0 && (
-                <span className="hero-sub" style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px', display: 'block' }}>
+                <span className="hero-sub">
                   {fc(grossLoanAmount)} − {fc(totalStatutoryDeductions)} statutory
                 </span>
               )}
-            </div>
-            <div style={{ padding: '20px 20px 20px 0', display: 'flex', alignItems: 'flex-start' }}>
-              <EyeToggle visible={loanVisible} onToggle={() => setLoanVisible(v => !v)} />
             </div>
           </div>
 
