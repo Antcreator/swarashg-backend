@@ -210,6 +210,12 @@
   margin-top: 8px;
 }
 
+.dashboard-header-row {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .section {
   background: white;
   border-radius: 14px;
