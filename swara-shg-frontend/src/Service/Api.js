@@ -69,27 +69,27 @@ export const savingsAPI = {
 
 // Loans API
 export const loansAPI = {
-  getAll:                    (params)                    => api.get('/loans', { params }),
-  getById:                   (id)                        => api.get(`/loans/${id}`),
-  getGuaranteedLoans:        (memberId)                  => api.get(`/loans/guaranteed/${memberId}`),
-  getDurationOptions:        (amount)                    => api.get('/loans/duration-options', { params: { amount } }),
-  getOfficeGuarantor:        ()                          => api.get('/loans/office-guarantor'),
-  getStatistics:             (params = {})               => api.get('/loans/stats/summary', { params }),
-  apply:                     (loanData)                  => api.post('/loans/apply', loanData),
-  updateLoan:                (loanId, loanData)          => api.put(`/loans/${loanId}`, loanData),
-  approveLoan:               (loanId)                    => api.post(`/loans/${loanId}/approve`),
-  rejectLoan:                (loanId, reason)            => api.post(`/loans/${loanId}/reject`, { reason }),
-  deleteLoan:                (loanId)                    => api.delete(`/loans/${loanId}`),
-  recordPayment:             (paymentData)               => api.post('/loans/payment', paymentData),
-  updateStatuses:            ()                          => api.post('/loans/update-statuses'),
-  getMyGuarantorRequests:    ()                          => api.get('/loans/my-guarantor-requests'),
+  getAll:                    (params)                        => api.get('/loans', { params }),
+  getById:                   (id)                            => api.get(`/loans/${id}`),
+  getGuaranteedLoans:        (memberId)                      => api.get(`/loans/guaranteed/${memberId}`),
+  getDurationOptions:        (amount)                        => api.get('/loans/duration-options', { params: { amount } }),
+  getOfficeGuarantor:        ()                              => api.get('/loans/office-guarantor'),
+  getStatistics:             (params = {})                   => api.get('/loans/stats/summary', { params }),
+  apply:                     (loanData)                      => api.post('/loans/apply', loanData),
+  updateLoan:                (loanId, loanData)              => api.put(`/loans/${loanId}`, loanData),
+  approveLoan:               (loanId)                        => api.post(`/loans/${loanId}/approve`),
+  rejectLoan:                (loanId, reason)                => api.post(`/loans/${loanId}/reject`, { reason }),
+  deleteLoan:                (loanId)                        => api.delete(`/loans/${loanId}`),
+  recordPayment:             (paymentData)                   => api.post('/loans/payment', paymentData),
+  updateStatuses:            ()                              => api.post('/loans/update-statuses'),
+  getMyGuarantorRequests:    ()                              => api.get('/loans/my-guarantor-requests'),
   respondToGuarantorRequest: (guarantorId, response, reason) =>
     api.post(`/loans/guarantor-requests/${guarantorId}/respond`, { response, reason }),
-  getLoanGuarantorStatus:    (loanId)                    => api.get(`/loans/${loanId}/guarantor-status`),
-  replaceGuarantor:          (loanId, data)              => api.post(`/loans/${loanId}/replace-guarantor`, data),
-  checkEligibility:          (memberId)                  => api.get(`/loans/eligibility/${memberId}`),
-  requestTopUp:              (topUpData)                 => api.post('/loans/top-up', topUpData),
-  getMaxLoan:                (memberId)                  => api.get(`/loans/max-loan/${memberId}`),
+  getLoanGuarantorStatus:    (loanId)                        => api.get(`/loans/${loanId}/guarantor-status`),
+  replaceGuarantor:          (loanId, data)                  => api.post(`/loans/${loanId}/replace-guarantor`, data),
+  checkEligibility:          (memberId)                      => api.get(`/loans/eligibility/${memberId}`),
+  requestTopUp:              (topUpData)                     => api.post('/loans/top-up', topUpData),
+  getMaxLoan:                (memberId)                      => api.get(`/loans/max-loan/${memberId}`),
 };
 
 // Notifications API
@@ -138,12 +138,25 @@ export const finesAPI = {
 };
 
 // ── Seed Capital API ─────────────────────────────────────────────────────────
+// getByMember: fetches all seed capital records and filters client-side for
+// the given member. This avoids needing a dedicated backend route while still
+// returning the same shape ({ totalSeedCapital, contributions }) that both
+// MemberDashboard and MemberTransactions expect.
 export const seedCapitalAPI = {
-  getStats: ()         => api.get('/seed-capital/stats'),
-  getAll:   ()         => api.get('/seed-capital'),
-  create:   (data)     => api.post('/seed-capital', data),
-  update:   (id, data) => api.put(`/seed-capital/${id}`, data),
-  delete:   (id)       => api.delete(`/seed-capital/${id}`),
+  getStats:    ()         => api.get('/seed-capital/stats'),
+  getAll:      ()         => api.get('/seed-capital'),
+  getByMember: (memberId) => api.get('/seed-capital').then(res => {
+    const match = (res.data.members || []).find(m => String(m.id) === String(memberId));
+    return {
+      data: {
+        totalSeedCapital: match?.totalSeedCapital || 0,
+        contributions:    match?.contributions    || [],
+      },
+    };
+  }),
+  create:      (data)     => api.post('/seed-capital', data),
+  update:      (id, data) => api.put(`/seed-capital/${id}`, data),
+  delete:      (id)       => api.delete(`/seed-capital/${id}`),
 };
 
 // Guarantor Eligibility API

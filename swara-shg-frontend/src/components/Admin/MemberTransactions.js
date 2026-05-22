@@ -42,7 +42,9 @@ const MemberTransactions = () => {
         depositsAPI.getSummary(memberId),
         agmFeeAPI.getAll(year),
         statutoryAPI.getAll(year),
-        seedCapitalAPI.getByMember(memberId),   // ← live seed capital for this member
+        // getByMember now filters the full seed capital list client-side,
+        // so it correctly reflects direct admin entries from the Seed Capital page.
+        seedCapitalAPI.getByMember(memberId),
       ]);
 
       const member = memberRes.status === 'fulfilled'
@@ -88,7 +90,9 @@ const MemberTransactions = () => {
         : [];
       const depositOther = distributed.reduce((s, d) => s + Number(d.othersAmount || 0), 0);
 
-      // ── Seed capital: prefer the live member API value; fall back to deposit-derived total ──
+      // ── Seed capital: use the value from getByMember (which reads direct
+      //    admin entries from the Seed Capital page). Falls back to the
+      //    deposit-derived total only if the API call failed entirely.
       const liveSeedCapital = seedRes.status === 'fulfilled'
         ? Number(seedRes.value.data?.totalSeedCapital || 0)
         : 0;
@@ -238,7 +242,7 @@ const MemberTransactions = () => {
             {memberStats && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', margin: '20px 0' }}>
 
-                {/* Card 1 — Financial Summary (now includes Seed Capital) */}
+                {/* Card 1 — Financial Summary (includes Seed Capital from direct admin entries) */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #1976d2' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1976d2', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <PiggyBank size={15} /> Financial Summary

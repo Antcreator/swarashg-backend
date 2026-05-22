@@ -109,10 +109,9 @@ const MemberDashboard = () => {
       const res = await depositsAPI.getSummary(id);
       const deposits = res.data.deposits || [];
       const distributed = deposits.filter(d => d.depositStatus === 'distributed');
-      const fromDeposits = distributed.reduce((sum, d) => sum + Number(d.seedCapitalAmount || 0), 0);
       setDepositSummary({
-        othersTotal:      distributed.reduce((sum, d) => sum + Number(d.othersAmount || 0), 0),
-        seedCapitalTotal: fromDeposits,
+        othersTotal:      distributed.reduce((sum, d) => sum + Number(d.othersAmount    || 0), 0),
+        seedCapitalTotal: distributed.reduce((sum, d) => sum + Number(d.seedCapitalAmount || 0), 0),
       });
     } catch { /* silent */ }
   };
@@ -131,6 +130,9 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
+  // ── Fetch seed capital added directly via the admin Seed Capital page ──
+  // getByMember filters the getAll response client-side, so it always reflects
+  // whatever the admin has added / edited, with no extra backend route needed.
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getByMember(id);
@@ -325,6 +327,7 @@ const MemberDashboard = () => {
 
           <DepositCard memberId={id} small />
 
+          {/* ── Seed Capital card: shows total from direct admin entries ── */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#e8f5e9', color: '#2e7d32' }}>
               <Sprout size={18} />
@@ -333,9 +336,6 @@ const MemberDashboard = () => {
               <span className="small-label">Seed Capital</span>
               <span className="small-value" style={{ color: '#2e7d32' }}>
                 {fc(memberSeedCapital)}
-              </span>
-              <span style={{ fontSize: '10px', color: '#999', display: 'block' }}>
-                api: {memberSeedCapital} | dep: {depositSummary.seedCapitalTotal}
               </span>
             </div>
           </div>
