@@ -145,15 +145,7 @@ export const finesAPI = {
 export const seedCapitalAPI = {
   getStats:    ()         => api.get('/seed-capital/stats'),
   getAll:      ()         => api.get('/seed-capital'),
-  getByMember: (memberId) => api.get('/seed-capital').then(res => {
-    const match = (res.data.members || []).find(m => String(m.id) === String(memberId));
-    return {
-      data: {
-        totalSeedCapital: match?.totalSeedCapital || 0,
-        contributions:    match?.contributions    || [],
-      },
-    };
-  }),
+  getByMember: (memberId) => api.get(`/seed-capital/member/${memberId}`),
   create:      (data)     => api.post('/seed-capital', data),
   update:      (id, data) => api.put(`/seed-capital/${id}`, data),
   delete:      (id)       => api.delete(`/seed-capital/${id}`),
