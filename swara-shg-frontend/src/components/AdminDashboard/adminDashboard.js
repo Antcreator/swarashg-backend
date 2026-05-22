@@ -13,9 +13,7 @@ import {
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-// Mirrors InvestmentPage column definitions exactly
-const AUTO_COLS = [1, 2, 3];
-const EDIT_COLS = [4, 5, 6, 7, 8, 9, 10];
+
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');

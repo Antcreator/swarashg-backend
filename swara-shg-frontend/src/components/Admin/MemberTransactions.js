@@ -196,7 +196,7 @@ const MemberTransactions = () => {
         <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
         <tbody>${tbodyRows}</tbody>
       </table>
-      <script>window.onload=()=>{window.print();}<\/script>
+      <script>window.onload=()=>{window.print();}<script>
     </body></html>`);
     win.document.close();
   };
