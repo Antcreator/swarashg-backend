@@ -35,11 +35,10 @@ const getSeedCapitalStats = async (req, res) => {
 const getMemberSeedCapital = async (req, res) => {
   const { memberId } = req.params;
 
-  // Members can only view their own seed capital
-  const requestingUserId = req.user?.userId || req.user?.id;
   const isAdmin = req.user?.role === 'admin' || req.user?.role === 'staff';
 
-  if (!isAdmin && String(requestingUserId) !== String(memberId)) {
+  // req.user.member_id is the Member table ID, set by authenticateToken
+  if (!isAdmin && String(req.user?.member_id) !== String(memberId)) {
     return res.status(403).json({ message: 'Access denied' });
   }
 
