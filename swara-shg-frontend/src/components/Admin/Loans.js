@@ -61,68 +61,20 @@ const Loans = () => {
     return nonOffice.length > 0 && nonOffice.every(g => g.approvalStatus === 'rejected');
   };
 
-  // Returns guarantors who have accepted (non-office, status === 'accepted')
-  const getAcceptedGuarantors = (loan) => {
-    return (loan.guarantors || []).filter(
-      g => g.guarantorId !== -1 && g.approvalStatus === 'accepted'
-    );
-  };
-
-  // Returns guarantors who are still pending (non-office)
-  const getPendingGuarantors = (loan) => {
-    return (loan.guarantors || []).filter(
-      g => g.guarantorId !== -1 && g.approvalStatus === 'pending'
-    );
-  };
-
-  // Returns guarantors who have rejected (non-office)
-  const getRejectedGuarantors = (loan) => {
-    return (loan.guarantors || []).filter(
-      g => g.guarantorId !== -1 && g.approvalStatus === 'rejected'
-    );
-  };
-
-  const guarantorName = (g) =>
-    g.guarantor ? `${g.guarantor.firstName} ${g.guarantor.lastName}` : `Guarantor #${g.guarantorId}`;
-
   const handleApproveLoan = async (loanId) => {
-    const loan        = loans.find(l => l.id === loanId);
+    const loan      = loans.find(l => l.id === loanId);
     const allRejected = loan && allGuarantorsRejected(loan);
     const isTopUp     = loan?.loanType === 'top_up';
 
-    const accepted = getAcceptedGuarantors(loan);
-    const pending  = getPendingGuarantors(loan);
-    const rejected = getRejectedGuarantors(loan);
-
-    // Build guarantor summary lines for the confirm message
-    const guarantorSection = (() => {
-      const lines = [];
-
-      if (accepted.length > 0) {
-        lines.push(`✅ Accepted (${accepted.length}):`);
-        accepted.forEach(g => lines.push(`   • ${guarantorName(g)}`));
-      }
-      if (pending.length > 0) {
-        lines.push(`⏳ Pending (${pending.length}):`);
-        pending.forEach(g => lines.push(`   • ${guarantorName(g)}`));
-      }
-      if (rejected.length > 0) {
-        lines.push(`❌ Rejected (${rejected.length}):`);
-        rejected.forEach(g => lines.push(`   • ${guarantorName(g)}`));
-      }
-
-      return lines.length > 0 ? `\n\nGuarantor Status:\n${lines.join('\n')}` : '';
-    })();
-
-    let message = `Are you sure you want to approve this loan?${guarantorSection}`;
+    let message = 'Are you sure you want to approve this loan?';
     let variant = 'default';
 
     if (allRejected) {
-      message = `All guarantors have rejected this loan.\n\nApproving will assign full liability to The Office (Admin).${guarantorSection}\n\nDo you want to proceed?`;
+      message = 'All guarantors have rejected this loan.\n\nApproving will assign full liability to The Office (Admin).\n\nDo you want to proceed?';
       variant = 'warning';
     } else if (isTopUp) {
       const disbursed = Number(loan.amount) - Number(loan.previousBalance || 0);
-      message = `This is a TOP-UP loan.\n\nApproving will:\n• Clear the old loan balance of KES ${Number(loan.previousBalance || 0).toLocaleString()}\n• Disburse KES ${disbursed.toLocaleString()} to the member\n• New loan balance: KES ${Number(loan.totalRepayment).toLocaleString()} (full repayment)${guarantorSection}\n\nDo you want to proceed?`;
+      message = `This is a TOP-UP loan.\n\nApproving will:\n• Clear the old loan balance of KES ${Number(loan.previousBalance || 0).toLocaleString()}\n• Disburse KES ${disbursed.toLocaleString()} to the member\n• New loan balance: KES ${Number(loan.totalRepayment).toLocaleString()} (full repayment)\n\nDo you want to proceed?`;
       variant = 'warning';
     }
 
@@ -243,46 +195,6 @@ const Loans = () => {
     return <span className="status" style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}` }}>{s.label}</span>;
   };
 
-  // Inline guarantor summary shown in the table row (pending loans only)
-  const GuarantorSummaryInline = ({ loan }) => {
-    const accepted = getAcceptedGuarantors(loan);
-    const pending  = getPendingGuarantors(loan);
-    const rejected = getRejectedGuarantors(loan);
-    const total    = accepted.length + pending.length + rejected.length;
-    if (total === 0) return null;
-
-    return (
-      <div style={{ marginTop: '8px', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '11px' }}>
-        <div style={{ fontWeight: 700, color: '#374151', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Users size={11} /> Guarantors ({total})
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          {accepted.map((g, i) => (
-            <div key={`a-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#2e7d32' }}>
-              <Check size={10} style={{ flexShrink: 0 }} />
-              <span style={{ fontWeight: 600 }}>{guarantorName(g)}</span>
-              <span style={{ fontSize: '10px', background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>Accepted</span>
-            </div>
-          ))}
-          {pending.map((g, i) => (
-            <div key={`p-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#e65100' }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff9800', display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontWeight: 600 }}>{guarantorName(g)}</span>
-              <span style={{ fontSize: '10px', background: '#fff8e1', color: '#e65100', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>Pending</span>
-            </div>
-          ))}
-          {rejected.map((g, i) => (
-            <div key={`r-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#c62828' }}>
-              <X size={10} style={{ flexShrink: 0 }} />
-              <span style={{ fontWeight: 600 }}>{guarantorName(g)}</span>
-              <span style={{ fontSize: '10px', background: '#ffebee', color: '#c62828', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>Rejected</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   const filteredLoans = loans.filter(loan => {
     const s = loan.approvalStatus || 'pending';
     if (activeTab === 'pending')  return s === 'pending';
@@ -306,6 +218,8 @@ const Loans = () => {
             <button className={`btn-${activeTab === 'all'      ? 'primary' : 'secondary'}`} onClick={() => setActiveTab('all')}>All ({loans.length})</button>
           </div>
         </div>
+
+        
 
         {loading ? <div className="loading">Loading loans...</div> : (
           <>
@@ -331,7 +245,6 @@ const Loans = () => {
                   ) : filteredLoans.map(loan => {
                     const danger  = allGuarantorsRejected(loan);
                     const isTopUp = loan.loanType === 'top_up';
-                    const isPending = (loan.approvalStatus === 'pending' || loan.status === 'pending');
                     return (
                       <tr key={loan.id} style={danger ? { outline: '2px solid #f44336', outlineOffset: '-2px', background: '#fff5f5' } : {}}>
                         <td>
@@ -353,8 +266,6 @@ const Loans = () => {
                               </span>
                             </div>
                           )}
-                          {/* Show guarantor summary inline for pending loans */}
-                          {isPending && !isStaff && <GuarantorSummaryInline loan={loan} />}
                         </td>
                         <td>
                           {fmt(loan.amount)}
@@ -404,7 +315,7 @@ const Loans = () => {
                               </button>
                             ) : (
                               <>
-                                {isPending && (
+                                {(loan.approvalStatus === 'pending' || loan.status === 'pending') && (
                                   <>
                                     <button className="btn-primary" onClick={() => handleEditLoan(loan)} style={{ fontSize: '11px', padding: '4px 8px', background: '#1976d2', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                       <Pencil size={11} /> Edit
