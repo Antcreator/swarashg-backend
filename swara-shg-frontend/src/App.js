@@ -56,7 +56,7 @@ function App() {
         <Route path="/admin/investments"               element={<ProtectedRoute requireAdmin={true}><InvestmentPage /></ProtectedRoute>} />
         <Route path="/admin/registration-fees"         element={<ProtectedRoute requireAdmin={true}><RegistrationFeePage /></ProtectedRoute>} />
         <Route path="/admin/admins"                    element={<ProtectedRoute requireAdmin={true}><AdminManagement /></ProtectedRoute>} />
-        <Route path="/admin/withdrawals"           element={<ProtectedRoute requireAdmin={true}><WithdrawalsPage /></ProtectedRoute>} />
+        <Route path="/admin/withdrawals"               element={<ProtectedRoute requireAdmin={true}><WithdrawalsPage /></ProtectedRoute>} />
 
         {/* Member Routes */}
         <Route path="/member/dashboard/:id"      element={<ProtectedRoute><MemberDashboard /></ProtectedRoute>} />
@@ -64,9 +64,8 @@ function App() {
         <Route path="/member/my-loans"           element={<ProtectedRoute><MyLoanApplications /></ProtectedRoute>} />
         <Route path="/member/guarantor-requests" element={<ProtectedRoute><GuarantorRequests /></ProtectedRoute>} />
 
-        {/* Default Route */}
-        <Route path="/"  element={<Navigate to="/login" replace />} />
-        <Route path="*"  element={<Navigate to="/login" replace />} />
+        {/* Catch-all — redirect any unknown path to login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );
