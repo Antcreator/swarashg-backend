@@ -67,6 +67,18 @@ Deposit.init({
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
+
+  savingsMonth: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Month the member is saving FOR (1-12)'
+  },
+  savingsYear: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Year the member is saving FOR'
+  },
+  
   loanPaymentAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0

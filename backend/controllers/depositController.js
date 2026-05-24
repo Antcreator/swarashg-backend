@@ -25,6 +25,34 @@ const getAdminEmails = async () => {
   } catch { return []; }
 };
 
+// ─── Helper: evaluate if a savings payment is late ──────────────
+// Mirrors the window logic in Savings.jsx / DepositModal.jsx:
+// Window to pay for month M of year Y = 11th of (M-1) → 10th of M.
+const evaluateSavingsPayment = (targetMonth, targetYear, paymentDate) => {
+  let prevMonth = targetMonth - 1;
+  let prevYear  = targetYear;
+  if (prevMonth === 0) { prevMonth = 12; prevYear -= 1; }
+
+  const windowStart = new Date(prevYear,  prevMonth - 1, 11);
+  const windowEnd   = new Date(targetYear, targetMonth - 1, 10);
+
+  const payDay   = paymentDate.getDate();
+  const payMonth = paymentDate.getMonth() + 1;
+  const payYear  = paymentDate.getFullYear();
+  const payOnly  = new Date(payYear, payMonth - 1, payDay);
+
+  const isWithinWindow = payOnly >= windowStart && payOnly <= windowEnd;
+
+  if (isWithinWindow) {
+    return { isLate: false, finalMonth: targetMonth, finalYear: targetYear, fineAmount: 0 };
+  }
+
+  // Payment is late — push to the next month and add KES 500 fine
+  const finalMonth = targetMonth === 12 ? 1  : targetMonth + 1;
+  const finalYear  = targetMonth === 12 ? targetYear + 1 : targetYear;
+  return { isLate: true, finalMonth, finalYear, fineAmount: 500 };
+};
+
 // ─── MEMBER: Submit deposit + distribution in one step ──────────
 const createDeposit = async (req, res) => {
   // Accept either mpesaMessage (new) or mpesaCode (legacy fallback)
@@ -65,6 +93,13 @@ const createDeposit = async (req, res) => {
     if (distributedTotal === 0)
       return res.status(400).json({ message: 'Please allocate funds to at least one category' });
 
+    // ── Validate savingsMonth/savingsYear when savings > 0 ───────
+    if (Number(distribution.savings || 0) > 0) {
+      if (!distribution.savingsMonth || !distribution.savingsYear) {
+        return res.status(400).json({ message: 'savingsMonth and savingsYear are required when savings amount is provided' });
+      }
+    }
+
     const depositPayload = {
       memberId, totalAmount,
       mpesaCode:    derivedCode,
@@ -74,6 +109,9 @@ const createDeposit = async (req, res) => {
       distributionStatus:      'pending',
       availableBalance:        totalAmount,
       savingsAmount:           distribution.savings       || 0,
+      // ── Store the member-specified savings month/year ──────────
+      savingsMonth:            distribution.savingsMonth  || null,
+      savingsYear:             distribution.savingsYear   || null,
       loanPaymentAmount:       distribution.loanPayment   || 0,
       loanId:                  distribution.loanId        || null,
       chamaaPaymentAmount:     distribution.chamaaPayment || 0,
@@ -159,31 +197,66 @@ const approveDeposit = async (req, res) => {
       return res.status(400).json({ message: `Deposit already ${deposit.depositStatus}` });
     }
 
-    const currentDate  = new Date();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear  = currentDate.getFullYear();
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
 
     // ── Savings ──────────────────────────────────────────────────
+    // Use the month/year the MEMBER specified (savingsMonth / savingsYear),
+    // NOT today's date. This is the fix for savings appearing in the wrong month.
     if (deposit.savingsAmount > 0) {
+      // Resolve target month/year — fall back to current month if somehow missing
+      const targetMonth = Number(deposit.savingsMonth) || (currentDate.getMonth() + 1);
+      const targetYear  = Number(deposit.savingsYear)  || currentYear;
+
+      // Evaluate whether the payment is on-time or late using the same
+      // window logic as the frontend (11th of prev month → 10th of target month)
+      const { isLate, finalMonth, finalYear, fineAmount } =
+        evaluateSavingsPayment(targetMonth, targetYear, currentDate);
+
+      // If late, the saving is recorded for finalMonth/finalYear (pushed forward)
+      const recordMonth = finalMonth;
+      const recordYear  = finalYear;
+
       const existingSavings = await Savings.findOne({
-        where: { memberId: deposit.memberId, month: currentMonth, year: currentYear },
+        where: { memberId: deposit.memberId, month: recordMonth, year: recordYear },
         transaction,
       });
+
       if (existingSavings) {
         existingSavings.amount      = Number(existingSavings.amount) + Number(deposit.savingsAmount);
         existingSavings.isPaid      = true;
+        existingSavings.isLate      = existingSavings.isLate || isLate;
         existingSavings.paymentDate = currentDate;
+        existingSavings.fineAmount  = Number(existingSavings.fineAmount || 0) + fineAmount;
         existingSavings.notes       = existingSavings.notes
           ? `${existingSavings.notes}; From deposit ${deposit.mpesaCode}`
           : `From deposit ${deposit.mpesaCode}`;
         await existingSavings.save({ transaction });
       } else {
         await Savings.create({
-          memberId: deposit.memberId, amount: deposit.savingsAmount,
-          month: currentMonth, year: currentYear,
-          paymentDate: currentDate, savingDate: currentDate,
-          isPaid: true, isLate: false,
-          notes: `From deposit ${deposit.mpesaCode}`, fineAmount: 0,
+          memberId:    deposit.memberId,
+          amount:      deposit.savingsAmount,
+          month:       recordMonth,
+          year:        recordYear,
+          paymentDate: currentDate,
+          savingDate:  currentDate,
+          isPaid:      true,
+          isLate,
+          fineAmount,
+          notes: `From deposit ${deposit.mpesaCode}`,
+        }, { transaction });
+      }
+
+      // If the payment was late, also create a Fine record for the KES 500 penalty
+      if (isLate && fineAmount > 0) {
+        await Fine.create({
+          memberId:  deposit.memberId,
+          fineType:  'savings_late',
+          amount:    fineAmount,
+          month:     recordMonth,
+          year:      recordYear,
+          isPaid:    false,
+          notes:     `Auto-generated: late savings payment via deposit ${deposit.mpesaCode}`,
         }, { transaction });
       }
     }
@@ -217,8 +290,6 @@ const approveDeposit = async (req, res) => {
     }
 
     // ── Savings Fines ─────────────────────────────────────────────
-    // Mark unpaid savings_late fine records as paid, oldest first,
-    // until the deposited savingsFineAmount is exhausted.
     if (deposit.savingsFineAmount > 0) {
       const unpaidSavingsFines = await Fine.findAll({
         where: { memberId: deposit.memberId, fineType: 'savings_late', isPaid: false },
@@ -231,7 +302,6 @@ const approveDeposit = async (req, res) => {
         if (remaining <= 0) break;
         const fineAmt = Number(fine.amount);
         if (remaining >= fineAmt) {
-          // Fully covers this fine — mark it paid
           fine.isPaid = true;
           fine.paidAt = currentDate;
           fine.notes  = fine.notes
@@ -240,7 +310,6 @@ const approveDeposit = async (req, res) => {
           await fine.save({ transaction });
           remaining -= fineAmt;
         } else {
-          // Partial payment — record the partial amount in notes but don't mark paid
           fine.notes = fine.notes
             ? `${fine.notes}; Partial KES ${remaining} paid via deposit ${deposit.mpesaCode}`
             : `Partial KES ${remaining} paid via deposit ${deposit.mpesaCode}`;
@@ -251,8 +320,6 @@ const approveDeposit = async (req, res) => {
     }
 
     // ── Chamaa Fines ──────────────────────────────────────────────
-    // Mark unpaid chamaa_late fine records as paid, oldest first,
-    // until the deposited chamaaFineAmount is exhausted.
     if (deposit.chamaaFineAmount > 0) {
       const unpaidChamaaFines = await Fine.findAll({
         where: { memberId: deposit.memberId, fineType: 'chamaa_late', isPaid: false },
@@ -417,6 +484,9 @@ const updateDeposit = async (req, res) => {
         return res.status(400).json({ message: 'Distribution exceeds deposit amount' });
 
       deposit.savingsAmount       = distribution.savings       || 0;
+      // ── Preserve updated savings month/year if admin edits them ─
+      if (distribution.savingsMonth) deposit.savingsMonth = distribution.savingsMonth;
+      if (distribution.savingsYear)  deposit.savingsYear  = distribution.savingsYear;
       deposit.loanPaymentAmount   = distribution.loanPayment   || 0;
       deposit.loanId              = distribution.loanId        || null;
       deposit.chamaaPaymentAmount = distribution.chamaaPayment || 0;
@@ -521,6 +591,8 @@ const getDepositSummary = async (req, res) => {
       depositStatus: d.depositStatus, distributionStatus: d.distributionStatus,
       availableBalance: d.availableBalance,
       savingsAmount:       d.savingsAmount,
+      savingsMonth:        d.savingsMonth,
+      savingsYear:         d.savingsYear,
       loanPaymentAmount:   d.loanPaymentAmount,
       chamaaPaymentAmount: d.chamaaPaymentAmount,
       seedCapitalAmount:   d.seedCapitalAmount,
