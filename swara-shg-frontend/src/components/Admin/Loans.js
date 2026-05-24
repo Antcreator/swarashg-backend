@@ -61,20 +61,39 @@ const Loans = () => {
     return nonOffice.length > 0 && nonOffice.every(g => g.approvalStatus === 'rejected');
   };
 
+  // Returns list of guarantors who have accepted
+  const getAcceptedGuarantors = (loan) => {
+    const guarantors = loan.guarantors || [];
+    return guarantors.filter(g => g.approvalStatus === 'accepted' || g.approvalStatus === 'admin_override');
+  };
+
+  // Builds a human-readable guarantor name
+  const guarantorName = (g) => {
+    if (g.guarantorId === -1) return 'The Office (Admin)';
+    if (g.guarantor) return `${g.guarantor.firstName} ${g.guarantor.lastName}`;
+    return `Guarantor #${g.guarantorId}`;
+  };
+
   const handleApproveLoan = async (loanId) => {
-    const loan      = loans.find(l => l.id === loanId);
+    const loan        = loans.find(l => l.id === loanId);
     const allRejected = loan && allGuarantorsRejected(loan);
     const isTopUp     = loan?.loanType === 'top_up';
 
-    let message = 'Are you sure you want to approve this loan?';
-    let variant = 'default';
+    // Build the accepted-guarantors section
+    const acceptedGuarantors = loan ? getAcceptedGuarantors(loan) : [];
+    const guarantorSection = acceptedGuarantors.length > 0
+      ? `\n\nAccepted Guarantors (${acceptedGuarantors.length}):\n${acceptedGuarantors.map(g => `  • ${guarantorName(g)}`).join('\n')}`
+      : '\n\nNo guarantors have accepted this loan yet.';
+
+    let message = `Are you sure you want to approve this loan?${guarantorSection}`;
+    let variant = acceptedGuarantors.length > 0 ? 'default' : 'warning';
 
     if (allRejected) {
-      message = 'All guarantors have rejected this loan.\n\nApproving will assign full liability to The Office (Admin).\n\nDo you want to proceed?';
+      message = `All guarantors have rejected this loan.\n\nApproving will assign full liability to The Office (Admin).\n\nDo you want to proceed?`;
       variant = 'warning';
     } else if (isTopUp) {
       const disbursed = Number(loan.amount) - Number(loan.previousBalance || 0);
-      message = `This is a TOP-UP loan.\n\nApproving will:\n• Clear the old loan balance of KES ${Number(loan.previousBalance || 0).toLocaleString()}\n• Disburse KES ${disbursed.toLocaleString()} to the member\n• New loan balance: KES ${Number(loan.totalRepayment).toLocaleString()} (full repayment)\n\nDo you want to proceed?`;
+      message = `This is a TOP-UP loan.\n\nApproving will:\n• Clear the old loan balance of KES ${Number(loan.previousBalance || 0).toLocaleString()}\n• Disburse KES ${disbursed.toLocaleString()} to the member\n• New loan balance: KES ${Number(loan.totalRepayment).toLocaleString()} (full repayment)${guarantorSection}\n\nDo you want to proceed?`;
       variant = 'warning';
     }
 
@@ -193,6 +212,31 @@ const Loans = () => {
   const getStatusBadge = (loan) => {
     const s = statusCfg(loan);
     return <span className="status" style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}` }}>{s.label}</span>;
+  };
+
+  // Inline accepted-guarantors pill list shown under the Approve button
+  const AcceptedGuarantorPills = ({ loan }) => {
+    const accepted = getAcceptedGuarantors(loan);
+    if (accepted.length === 0) return null;
+    return (
+      <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        {accepted.map((g, i) => (
+          <span
+            key={i}
+            title={`${guarantorName(g)} has accepted to guarantee this loan`}
+            style={{
+              fontSize: '10px', fontWeight: 600,
+              padding: '2px 7px', borderRadius: '10px',
+              background: '#e8f5e9', color: '#2e7d32',
+              border: '1px solid #a5d6a7',
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+            }}
+          >
+            <CheckCircle size={9} /> {guarantorName(g)}
+          </span>
+        ))}
+      </div>
+    );
   };
 
   const filteredLoans = loans.filter(loan => {
@@ -320,17 +364,20 @@ const Loans = () => {
                                     <button className="btn-primary" onClick={() => handleEditLoan(loan)} style={{ fontSize: '11px', padding: '4px 8px', background: '#1976d2', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                       <Pencil size={11} /> Edit
                                     </button>
-                                    <button
-                                      className="btn-primary"
-                                      onClick={() => handleApproveLoan(loan.id)}
-                                      style={{ fontSize: '11px', padding: '4px 8px', background: danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                    >
-                                      {danger
-                                        ? <><AlertTriangle size={11} /> Approve</>
-                                        : isTopUp
-                                          ? <><RefreshCw size={11} /> Approve Top-Up</>
-                                          : <><Check size={11} /> Approve</>}
-                                    </button>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                      <button
+                                        className="btn-primary"
+                                        onClick={() => handleApproveLoan(loan.id)}
+                                        style={{ fontSize: '11px', padding: '4px 8px', background: danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                      >
+                                        {danger
+                                          ? <><AlertTriangle size={11} /> Approve</>
+                                          : isTopUp
+                                            ? <><RefreshCw size={11} /> Approve Top-Up</>
+                                            : <><Check size={11} /> Approve</>}
+                                      </button>
+                                      <AcceptedGuarantorPills loan={loan} />
+                                    </div>
                                     <button className="btn-danger" onClick={() => openRejectModal(loan)} style={{ fontSize: '11px', padding: '4px 8px', background: '#f44336', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                       <X size={11} /> Reject
                                     </button>
