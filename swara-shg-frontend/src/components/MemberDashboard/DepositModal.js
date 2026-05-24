@@ -2,11 +2,46 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, CreditCard, Clock, CheckCircle, AlertTriangle, Wallet,
   Sprout, Users, AlertCircle, FileText, Package, ChevronRight,
-  ChevronLeft, Send, XCircle, Info, Landmark,
+  ChevronLeft, Send, XCircle, Info, Landmark, CalendarDays,
 } from 'lucide-react';
 import { depositsAPI, loansAPI } from '../../Service/Api';
 import { useToast, ToastContainer } from '../../useToast';
 import './DepositModal.css';
+
+// ─── Savings window helpers (mirrors Savings.jsx) ─────────────────
+const MONTHS = [
+  '', 'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const getMonthName = (n) => MONTHS[n] || '';
+
+const getSavingWindow = (targetMonth, targetYear) => {
+  let prevMonth = targetMonth - 1;
+  let prevYear  = targetYear;
+  if (prevMonth === 0) { prevMonth = 12; prevYear -= 1; }
+  const windowStart = new Date(prevYear, prevMonth - 1, 11);
+  const windowEnd   = new Date(targetYear, targetMonth - 1, 10);
+  return { windowStart, windowEnd, prevMonth, prevYear };
+};
+
+const evaluatePayment = (targetMonth, targetYear) => {
+  const today    = new Date();
+  const payDay   = today.getDate();
+  const payMonth = today.getMonth() + 1;
+  const payYear  = today.getFullYear();
+  const payOnly  = new Date(payYear, payMonth - 1, payDay);
+
+  const { windowStart, windowEnd } = getSavingWindow(targetMonth, targetYear);
+  const isWithinWindow = payOnly >= windowStart && payOnly <= windowEnd;
+
+  if (isWithinWindow) {
+    return { isLate: false, finalMonth: targetMonth, finalYear: targetYear, windowStart, windowEnd };
+  }
+
+  const finalMonth = targetMonth === 12 ? 1 : targetMonth + 1;
+  const finalYear  = targetMonth === 12 ? targetYear + 1 : targetYear;
+  return { isLate: true, finalMonth, finalYear, windowStart, windowEnd };
+};
 
 // ─── Icon map for distribution categories ────────────────────────
 const CategoryIcon = ({ name, size = 15 }) => {
@@ -23,17 +58,67 @@ const CategoryIcon = ({ name, size = 15 }) => {
   return icons[name] || null;
 };
 
+// ─── Savings Payment Status Banner ───────────────────────────────
+const SavingsStatusBanner = ({ month, year }) => {
+  if (!month || !year) return null;
+
+  const fmtDate = (d) =>
+    d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const { isLate, finalMonth, finalYear, windowStart, windowEnd } = evaluatePayment(
+    Number(month),
+    Number(year)
+  );
+
+  if (!isLate) {
+    return (
+      <div style={{
+        background: '#e8f5e9', padding: '12px 14px', borderRadius: '8px',
+        marginTop: '10px', border: '1.5px solid #43a047',
+      }}>
+        <p style={{ margin: 0, color: '#2e7d32', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CheckCircle size={14} />
+          ON TIME — Saving for <strong style={{ marginLeft: 4 }}>{getMonthName(Number(month))} {year}</strong>
+        </p>
+        <p style={{ margin: '5px 0 0', color: '#388e3c', fontSize: '12px' }}>
+          Window: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
+          &nbsp;|&nbsp; Multiple payments allowed within this window.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: '#ffebee', padding: '12px 14px', borderRadius: '8px',
+      marginTop: '10px', border: '1.5px solid #e53935',
+    }}>
+      <p style={{ margin: 0, color: '#c62828', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <AlertTriangle size={14} />
+        LATE — Window for {getMonthName(Number(month))} {year} has closed.
+      </p>
+      <p style={{ margin: '4px 0 0', color: '#b71c1c', fontSize: '12px' }}>
+        Window was: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
+      </p>
+      <p style={{ margin: '4px 0 0', color: '#c62828', fontSize: '12px', fontWeight: 600 }}>
+        Will be pushed to <strong>{getMonthName(finalMonth)} {finalYear}</strong> + KES 500 fine.
+      </p>
+    </div>
+  );
+};
+
 const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rejectedDeposits = [] }) => {
   const isViewMode    = pendingDeposit !== null;
   const hasRejections = rejectedDeposits.length > 0;
 
   const { toasts, toast, dismiss } = useToast();
 
+  const today = new Date();
+
   const [step, setStep]               = useState(1);
   const [activeLoans, setActiveLoans] = useState([]);
   const [errors, setErrors]           = useState({});
   const [submitting, setSubmitting]   = useState(false);
-
   const [memberCodes, setMemberCodes] = useState(new Set());
 
   const [dismissedIds, setDismissedIds] = useState(() => {
@@ -56,14 +141,26 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
     localStorage.setItem(`dismissed_rejections_${memberId}`, JSON.stringify(updated));
   };
 
+  // ── Default savings target month (same logic as Savings.jsx) ──────
+  const todayDay   = today.getDate();
+  const todayMonth = today.getMonth() + 1;
+  const todayYear  = today.getFullYear();
+  const defaultSavingsMonth = todayDay >= 11
+    ? (todayMonth === 12 ? 1 : todayMonth + 1)
+    : todayMonth;
+  const defaultSavingsYear  = todayDay >= 11 && todayMonth === 12
+    ? todayYear + 1
+    : todayYear;
+
   const [formData, setFormData] = useState({
     totalAmount: '', mpesaMessage: '', notes: '',
-    savings: '', loanPayment: '', selectedLoanId: '',
+    savings: '', savingsMonth: defaultSavingsMonth, savingsYear: defaultSavingsYear,
+    loanPayment: '', selectedLoanId: '',
     chamaaPayment: '', seedCapital: '', savingsFine: '',
     chamaaFine: '', agmFee: '', others: '',
   });
 
-  const derivedCode    = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
+  const derivedCode     = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
   const isDuplicateCode = derivedCode.length === 10 && memberCodes.has(derivedCode);
 
   const fetchActiveLoans = useCallback(async () => {
@@ -130,6 +227,10 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
     if (distributed === 0)         errs.distribution = 'Please allocate funds to at least one category';
     if (distributed > totalAmount) errs.distribution = `Distributed ${fmt(distributed)} exceeds deposit ${fmt(totalAmount)}`;
     if (Number(formData.loanPayment) > 0 && !formData.selectedLoanId) errs.selectedLoanId = 'Please select a loan to pay';
+    if (Number(formData.savings) > 0) {
+      if (!formData.savingsMonth) errs.savingsMonth = 'Select a month for savings';
+      if (!formData.savingsYear)  errs.savingsYear  = 'Enter a year for savings';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -147,6 +248,8 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
         notes: formData.notes,
         distribution: {
           savings:       Number(formData.savings       || 0),
+          savingsMonth:  Number(formData.savingsMonth),
+          savingsYear:   Number(formData.savingsYear),
           loanPayment:   Number(formData.loanPayment   || 0),
           loanId:        formData.selectedLoanId || null,
           chamaaPayment: Number(formData.chamaaPayment || 0),
@@ -185,16 +288,6 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
   const fmt = (v) => new Intl.NumberFormat('en-KE', {
     style: 'currency', currency: 'KES', minimumFractionDigits: 0
   }).format(v || 0);
-
-  const distributionRows = [
-    { label: 'Savings',        name: 'savings',       icon: 'savings' },
-    { label: 'Seed Capital',   name: 'seedCapital',   icon: 'seedCapital' },
-    { label: 'Chamaa Payment', name: 'chamaaPayment', icon: 'chamaaPayment' },
-    { label: 'Savings Fine',   name: 'savingsFine',   icon: 'savingsFine' },
-    { label: 'Chamaa Fine',    name: 'chamaaFine',    icon: 'chamaaFine' },
-    { label: 'AGM Fee',        name: 'agmFee',        icon: 'agmFee' },
-    { label: 'Others',         name: 'others',        icon: 'others' },
-  ];
 
   const summaryRows = [
     { label: 'Savings',       key: 'savingsAmount',       icon: 'savings' },
@@ -381,7 +474,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
                         />
                         {formData.mpesaMessage.trim() && (
                           <div className={`dm-code-preview ${
-                            isDuplicateCode       ? 'dm-code-preview--error'
+                            isDuplicateCode            ? 'dm-code-preview--error'
                             : derivedCode.length >= 10 ? 'dm-code-preview--success'
                             : 'dm-code-preview--warn'
                           }`}>
@@ -434,7 +527,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
 
                     {/* Sticky allocation tracker */}
                     <div className={`dm-tracker ${
-                      unallocated < 0  ? 'dm-tracker--over'
+                      unallocated < 0   ? 'dm-tracker--over'
                       : unallocated === 0 ? 'dm-tracker--done'
                       : 'dm-tracker--ok'
                     }`}>
@@ -451,7 +544,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
                       <div className="dm-tracker__cell dm-tracker__cell--right">
                         <span className="dm-tracker__cell-label">Remaining</span>
                         <span className={`dm-tracker__cell-value dm-tracker__cell-value--lg ${
-                          unallocated < 0  ? 'dm-tracker__cell-value--over'
+                          unallocated < 0   ? 'dm-tracker__cell-value--over'
                           : unallocated === 0 ? 'dm-tracker__cell-value--done'
                           : ''
                         }`}>{fmt(unallocated)}</span>
@@ -469,25 +562,195 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
                       )}
 
                       <div className="dm-dist-grid--form">
-                        {distributionRows.map(({ name, label, icon }) => (
-                          <div className="dm-field" key={name}>
-                            <label className="dm-label dm-label--icon">
-                              <CategoryIcon name={icon} size={13} /> {label}
-                            </label>
-                            <input
-                              className="dm-input"
-                              type="number"
-                              name={name}
-                              value={formData[name]}
-                              onChange={handleChange}
-                              placeholder="0"
-                              min="0"
-                              inputMode="numeric"
-                            />
-                          </div>
-                        ))}
 
-                        {/* Loan payment — full width on mobile */}
+                        {/* ── Savings — with month/year picker ── */}
+                        <div className="dm-field dm-field--full">
+                          <label className="dm-label dm-label--icon">
+                            <Wallet size={13} /> Savings
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="savings"
+                            value={formData.savings}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            step="1000"
+                            inputMode="numeric"
+                          />
+
+                          {/* Month/year selectors appear only when savings amount is entered */}
+                          {Number(formData.savings) > 0 && (
+                            <div style={{ marginTop: '10px' }}>
+                              <p style={{
+                                fontSize: '12px', color: '#555', marginBottom: '8px',
+                                display: 'flex', alignItems: 'center', gap: 5,
+                              }}>
+                                <CalendarDays size={13} />
+                                Which month are you saving <strong style={{ marginLeft: 2 }}>for</strong>?
+                              </p>
+
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 140px' }}>
+                                  <label className="dm-label">Month *</label>
+                                  <select
+                                    className={`dm-select ${errors.savingsMonth ? 'dm-input--error' : ''}`}
+                                    name="savingsMonth"
+                                    value={formData.savingsMonth}
+                                    onChange={handleChange}
+                                    required
+                                  >
+                                    {[...Array(12)].map((_, i) => (
+                                      <option key={i + 1} value={i + 1}>
+                                        {getMonthName(i + 1)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {errors.savingsMonth && (
+                                    <span className="dm-error"><AlertCircle size={12} />{errors.savingsMonth}</span>
+                                  )}
+                                </div>
+
+                                <div style={{ flex: '1 1 90px' }}>
+                                  <label className="dm-label">Year *</label>
+                                  <input
+                                    className={`dm-input ${errors.savingsYear ? 'dm-input--error' : ''}`}
+                                    type="number"
+                                    name="savingsYear"
+                                    value={formData.savingsYear}
+                                    onChange={handleChange}
+                                    min="2000"
+                                    max="2100"
+                                    required
+                                  />
+                                  {errors.savingsYear && (
+                                    <span className="dm-error"><AlertCircle size={12} />{errors.savingsYear}</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Window hint */}
+                              <p style={{
+                                fontSize: '11px', color: '#666', marginTop: '6px',
+                                display: 'flex', alignItems: 'center', gap: 5,
+                              }}>
+                                <Info size={11} />
+                                Payment window: 11th of previous month → 10th of target month
+                              </p>
+
+                              {/* On-time / Late banner */}
+                              <SavingsStatusBanner
+                                month={formData.savingsMonth}
+                                year={formData.savingsYear}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Seed Capital ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <Sprout size={13} /> Seed Capital
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="seedCapital"
+                            value={formData.seedCapital}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── Chamaa Payment ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <Users size={13} /> Chamaa Payment
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="chamaaPayment"
+                            value={formData.chamaaPayment}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── Savings Fine ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <AlertCircle size={13} /> Savings Fine
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="savingsFine"
+                            value={formData.savingsFine}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── Chamaa Fine ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <AlertTriangle size={13} /> Chamaa Fine
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="chamaaFine"
+                            value={formData.chamaaFine}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── AGM Fee ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <Landmark size={13} /> AGM Fee
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="agmFee"
+                            value={formData.agmFee}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── Others ── */}
+                        <div className="dm-field">
+                          <label className="dm-label dm-label--icon">
+                            <Package size={13} /> Others
+                          </label>
+                          <input
+                            className="dm-input"
+                            type="number"
+                            name="others"
+                            value={formData.others}
+                            onChange={handleChange}
+                            placeholder="0"
+                            min="0"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        {/* ── Loan Payment — full width ── */}
                         <div className="dm-field dm-field--full">
                           <label className="dm-label dm-label--icon">
                             <FileText size={13} /> Loan Payment
@@ -509,6 +772,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
                               value={formData.selectedLoanId}
                               onChange={handleChange}
                               required
+                              style={{ marginTop: '8px' }}
                             >
                               <option value="">Select Loan</option>
                               {activeLoans.length === 0
@@ -524,6 +788,7 @@ const DepositModal = ({ memberId, onClose, onSuccess, pendingDeposit = null, rej
                             <span className="dm-error"><AlertCircle size={12} />{errors.selectedLoanId}</span>
                           )}
                         </div>
+
                       </div>
                     </div>
 
