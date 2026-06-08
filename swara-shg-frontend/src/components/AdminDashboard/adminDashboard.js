@@ -82,16 +82,42 @@ const AdminDashboard = () => {
           .catch(() => {}),
       ]);
 
-      // Investment: sum all 10 cells of the Principal row (month === 0)
+      // ── Investment total: mirrors the Principal row "Total" column in InvestmentPage ──
+      // The Principal row total = autoSum (cols 1–3, computed from loans + fines APIs)
+      //                         + editSum (cols 4–10, saved in DB on the month=0 row)
+      // Cols 1–3 are NEVER written to the DB, so we must re-derive them here.
       try {
-        const invRes = await investmentAPI.getAll(CURRENT_YEAR);
-        const invRows = invRes.data.rows || [];
+        const [invRes, allLoansRes, allFinesRes] = await Promise.all([
+          investmentAPI.getAll(CURRENT_YEAR),
+          loansAPI.getAll({ _nocache: Date.now() }).catch(() => ({ data: { loans: [] } })),
+          finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
+        ]);
+
+        // Editable cols (4–10): read from DB Principal row (month === 0)
+        const invRows      = invRes.data.rows || [];
         const principalRow = invRows.find(r => Number(r.month) === 0);
-        if (principalRow) {
-          investmentTotal = [1,2,3,4,5,6,7,8,9,10].reduce((sum, i) => {
-            return sum + (Number(principalRow[`investment${i}Amount`]) || 0);
-          }, 0);
-        }
+        const editSum      = principalRow
+          ? [4, 5, 6, 7, 8, 9, 10].reduce((sum, i) => {
+              return sum + (Number(principalRow[`investment${i}Amount`]) || 0);
+            }, 0)
+          : 0;
+
+        // Auto col 1 (Loans): all-time sum of approved loan amounts
+        const allLoans = (allLoansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
+        const principalLoansTotal = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+        // Auto cols 2 & 3 (Savings Fines, Chamaa Fines): all-time fine totals
+        const allFines = allFinesRes.data.fines || [];
+        const principalSavingsFines = allFines
+          .filter(f => f.fineType === 'savings_late')
+          .reduce((s, f) => s + Number(f.amount || 0), 0);
+        const principalChamaaFines = allFines
+          .filter(f => f.fineType === 'chamaa_late')
+          .reduce((s, f) => s + Number(f.amount || 0), 0);
+
+        const autoSum = principalLoansTotal + principalSavingsFines + principalChamaaFines;
+
+        investmentTotal = autoSum + editSum;
       } catch (e) {
         investmentTotal = 0;
       }
@@ -314,11 +340,11 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment card — shows rowTotal(principalRow) from InvestmentPage:
-              = autoSum (col1 loans + col2 savings fines + col3 chamaa fines, all-time)
+          {/* Investment card — total mirrors the Principal row "Total" column in InvestmentPage:
+              autoSum (col1 all-time approved loans + col2 all-time savings fines + col3 all-time chamaa fines)
               + editSum (col4–10 amounts saved on the Principal row, month === 0)
-              This is the exact figure shown in the "Total" column at the end of
-              the Principal row in InvestmentPage. */}
+              Cols 1–3 are computed at runtime and never stored in the DB, so we
+              re-derive them from loansAPI + finesAPI just like InvestmentPage does. */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
