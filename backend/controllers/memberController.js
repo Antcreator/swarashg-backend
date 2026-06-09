@@ -3,22 +3,18 @@ const { Op }  = require('sequelize');
 const {
   User, Member, Savings, Loan, LoanGuarantor, LoanPayment,
   ChamaaCycle, ChamaaParticipant, ChamaaContribution, Fine,
+  sequelize,
 } = require('../models');
 const { sendEmail }  = require('../services/emailService');
 const emailTemplates = require('../services/emailTemplates');
 
 // ─── Helper: generate next memberId (SSHG001, SSHG002 …) ────────
 const generateMemberId = async () => {
-  // Find the highest existing numeric suffix across ALL members (active + inactive)
   const last = await Member.findOne({
-    where: {
-      memberId: { [Op.like]: 'SSHG%' },
-    },
+    where: { memberId: { [Op.like]: 'SSHG%' } },
     order: [['memberId', 'DESC']],
   });
-
   if (!last) return 'SSHG001';
-
   const num = parseInt(last.memberId.replace('SSHG', ''), 10);
   return `SSHG${String(num + 1).padStart(3, '0')}`;
 };
@@ -45,8 +41,8 @@ const getAllMembers = async (req, res) => {
 
         return {
           ...m.toJSON(),
-          email: m.user ? m.user.email : null,
-          total_savings: totalSavings,
+          email:             m.user ? m.user.email : null,
+          total_savings:     totalSavings,
           active_guarantees: activeGuarantees,
         };
       })
@@ -65,9 +61,7 @@ const getMemberById = async (req, res) => {
     const member = await Member.findByPk(req.params.id, {
       include: [{ model: User, as: 'user', attributes: ['email'] }],
     });
-    if (!member) {
-      return res.status(404).json({ message: 'Member not found' });
-    }
+    if (!member) return res.status(404).json({ message: 'Member not found' });
 
     const totalSavings = await Savings.sum('amount', {
       where: { memberId: member.id, isPaid: true },
@@ -83,9 +77,9 @@ const getMemberById = async (req, res) => {
     return res.json({
       member: {
         ...member.toJSON(),
-        email: member.user ? member.user.email : null,
-        total_savings: totalSavings,
-        max_loan_amount: maxLoanAmount,
+        email:             member.user ? member.user.email : null,
+        total_savings:     totalSavings,
+        max_loan_amount:   maxLoanAmount,
         active_guarantees: activeGuarantees,
       },
     });
@@ -101,20 +95,16 @@ const createMember = async (req, res) => {
 
   try {
     const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email already registered' });
-    }
+    if (existingUser) return res.status(400).json({ message: 'Email already registered' });
 
-    // Auto-generate the member ID
-    const memberId = await generateMemberId();
-
+    const memberId       = await generateMemberId();
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
       email,
       password:           hashedPassword,
       role:               'member',
-      mustChangePassword: true, // ← member must set their own password on first login
+      mustChangePassword: true,
     });
 
     const member = await Member.create({
@@ -126,16 +116,12 @@ const createMember = async (req, res) => {
       dateJoined: dateJoined || new Date(),
     });
 
-    // ── Send welcome email with login credentials ─────────────────
-    // The password is sent in plain text here because mustChangePassword
-    // is true — the member will be forced to change it on first login.
     try {
       await sendEmail({
         to: email,
         ...emailTemplates.memberWelcome({ firstName, lastName }, { email, password }),
       });
     } catch (emailErr) {
-      // Non-fatal — member is created, just log the failure
       console.error('Failed to send welcome email:', emailErr.message);
     }
 
@@ -156,18 +142,14 @@ const updateMember = async (req, res) => {
 
   try {
     const member = await Member.findByPk(id);
-    if (!member) {
-      return res.status(404).json({ message: 'Member not found' });
-    }
+    if (!member) return res.status(404).json({ message: 'Member not found' });
 
     if (firstName)  member.firstName  = firstName;
     if (lastName)   member.lastName   = lastName;
     if (phone)      member.phone      = phone;
     if (dateJoined) member.dateJoined = dateJoined;
-    // memberId is never updated — it is immutable once assigned
 
     await member.save();
-
     return res.json({ message: 'Member updated successfully', member });
   } catch (error) {
     console.error('Update member error:', error);
@@ -179,9 +161,7 @@ const updateMember = async (req, res) => {
 const deactivateMember = async (req, res) => {
   try {
     const member = await Member.findByPk(req.params.id);
-    if (!member) {
-      return res.status(404).json({ message: 'Member not found' });
-    }
+    if (!member) return res.status(404).json({ message: 'Member not found' });
     member.isActive = false;
     await member.save();
     return res.json({ message: 'Member deactivated successfully', member });
@@ -204,19 +184,18 @@ const deleteMember = async (req, res) => {
       ],
     });
 
-    if (!member) {
-      return res.status(404).json({ message: 'Member not found' });
-    }
+    if (!member) return res.status(404).json({ message: 'Member not found' });
 
+    // Block deletion if member has active or overdue loans
     const hasActiveLoans = member.loans &&
       member.loans.some(l => l.status === 'active' || l.status === 'arrears');
-
     if (hasActiveLoans) {
       return res.status(400).json({
         message: 'Cannot delete member with active or overdue loans. Clear loans first.',
       });
     }
 
+    // Block deletion if member has savings history
     const hasSavings = member.savings && member.savings.length > 0;
     if (hasSavings) {
       return res.status(400).json({
@@ -224,6 +203,27 @@ const deleteMember = async (req, res) => {
       });
     }
 
+    // ── Delete related records in dependency order ────────────────
+    // 1. ChamaaContributions — must go before ChamaaParticipants
+    //    Find all participant IDs for this member first, then delete their contributions
+    const participantIds = await ChamaaParticipant.findAll({
+      where:      { memberId: id },
+      attributes: ['id'],
+    }).then(rows => rows.map(r => r.id));
+
+    if (participantIds.length > 0) {
+      await ChamaaContribution.destroy({
+        where: { participantId: { [Op.in]: participantIds } },
+      });
+    }
+
+    // 2. ChamaaParticipants
+    await ChamaaParticipant.destroy({ where: { memberId: id } });
+
+    // 3. Fines
+    await Fine.destroy({ where: { memberId: id } });
+
+    // 4. Now safe to delete member and user
     if (member.user) await member.user.destroy();
     await member.destroy();
 
@@ -232,7 +232,7 @@ const deleteMember = async (req, res) => {
     });
   } catch (error) {
     console.error('Delete member error:', error);
-    return res.status(500).json({ message: 'Failed to delete member' });
+    return res.status(500).json({ message: 'Failed to delete member', error: error.message });
   }
 };
 
@@ -244,9 +244,7 @@ const getMemberDashboard = async (req, res) => {
     const member = await Member.findByPk(memberId, {
       include: [{ model: User, as: 'user', attributes: ['email'] }],
     });
-    if (!member) {
-      return res.status(404).json({ message: 'Member not found' });
-    }
+    if (!member) return res.status(404).json({ message: 'Member not found' });
 
     const totalSavings = await Savings.sum('amount', {
       where: { memberId, isPaid: true },
@@ -261,9 +259,9 @@ const getMemberDashboard = async (req, res) => {
     });
 
     const loans = await Loan.findAll({
-      where: { memberId, status: 'active' },
+      where:   { memberId, status: 'active' },
       include: [{ model: LoanPayment, as: 'payments' }],
-      order: [['disbursementDate', 'DESC']],
+      order:   [['disbursementDate', 'DESC']],
     });
 
     const loansWithPaid = loans.map((l) => {
@@ -272,10 +270,10 @@ const getMemberDashboard = async (req, res) => {
     });
 
     const guaranteedLoans = await LoanGuarantor.findAll({
-      where: { guarantorId: memberId },
+      where:   { guarantorId: memberId },
       include: [{
-        model: Loan, as: 'loan',
-        where: { status: 'active' },
+        model:   Loan, as: 'loan',
+        where:   { status: 'active' },
         include: [{ model: Member, as: 'member', attributes: ['firstName', 'lastName', 'memberId'] }],
       }],
     });
@@ -286,7 +284,7 @@ const getMemberDashboard = async (req, res) => {
     }));
 
     const chamaa = await ChamaaParticipant.findAll({
-      where: { memberId },
+      where:   { memberId },
       include: [{
         model: ChamaaCycle, as: 'cycle',
         where: { isActive: true },
@@ -315,8 +313,8 @@ const getMemberDashboard = async (req, res) => {
     console.error('Get member dashboard error:', error);
     return res.status(500).json({
       message: 'Failed to fetch dashboard data',
-      error:  error.message,
-      detail: error.parent?.message,
+      error:   error.message,
+      detail:  error.parent?.message,
     });
   }
 };
