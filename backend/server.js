@@ -3,6 +3,7 @@ require('dotenv').config();
 const express   = require('express');
 const cors      = require('cors');
 const bcrypt    = require('bcrypt');
+const path      = require('path');
 const sequelize = require('./config/database');
 const models    = require('./models');
 
@@ -20,7 +21,7 @@ const statutoryRoutes       = require('./routes/statutory');
 const agmFeeRoutes          = require('./routes/agmFees');
 const investmentRoutes      = require('./routes/investments');
 const registrationFeeRoutes = require('./routes/registrationFees');
-const adminRoutes           = require('./routes/admins');   // ← NEW
+const adminRoutes           = require('./routes/admins');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -29,7 +30,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// ─── Routes ─────────────────────────────────────────────────────
+// ─── API Routes (must come BEFORE the static/catch-all) ─────────
 app.get('/health', (_req, res) =>
   res.json({ status: 'OK', message: 'Swara SHG API is running' })
 );
@@ -48,24 +49,29 @@ app.use('/api/statutory',         statutoryRoutes);
 app.use('/api/agm-fees',          agmFeeRoutes);
 app.use('/api/investments',       investmentRoutes);
 app.use('/api/registration-fees', registrationFeeRoutes);
-app.use('/api/admins',            adminRoutes);             // ← NEW
+app.use('/api/admins',            adminRoutes);
 
-// ─── 404 ────────────────────────────────────────────────────────
-app.use((_req, res) => res.status(404).json({ message: 'Route not found' }));
+// ─── Serve React frontend (production) ──────────────────────────
+// Assumes your React build output is at ../frontend/build relative
+// to this server.js file. Adjust the path if your folder structure differs.
+const buildPath = path.join(__dirname, '..', 'frontend', 'build');
+app.use(express.static(buildPath));
+
+// Catch-all: for any non-API route, return the React app's index.html
+// This allows React Router to handle client-side routing (e.g. /admin/dashboard)
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(buildPath, 'index.html'));
+});
 
 
 async function seedAdmin() {
   const { User } = models;
 
-  // Count existing admins — skip seed if any exist
   const adminCount = await User.count({ where: { role: 'admin' } });
-  if (adminCount > 0) {
-    // console.log(`[SEED] ${adminCount} admin(s) already exist — skipping seed`);
-    return;
-  }
+  if (adminCount > 0) return;
 
-  const email     = process.env.ADMIN_EMAIL     || 'admin@swara.co.ke';
-  const password  = process.env.ADMIN_PASSWORD  || 'ChangeMe@2025!';
+  const email     = process.env.ADMIN_EMAIL      || 'admin@swara.co.ke';
+  const password  = process.env.ADMIN_PASSWORD   || 'ChangeMe@2025!';
   const firstName = process.env.ADMIN_FIRST_NAME || 'System';
   const lastName  = process.env.ADMIN_LAST_NAME  || 'Admin';
 
@@ -78,17 +84,12 @@ async function seedAdmin() {
     role:      'admin',
     isActive:  true,
   });
-
-  // console.log(`[SEED] ✅ First admin created:`);
-  // console.log(`       Email:    ${email}`);
-  // console.log(`       Password: ${process.env.ADMIN_PASSWORD ? '(from .env)' : password + '  ← CHANGE THIS!'}`);
 }
 
 // ─── Boot ───────────────────────────────────────────────────────
 (async () => {
   try {
     await sequelize.sync({ force: false });
-    // console.log('[DB] All tables synced successfully');
 
     await seedAdmin();
 
