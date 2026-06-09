@@ -123,9 +123,12 @@ export const depositsAPI = {
   getPending:             (params = {}) => api.get('/deposits', {
     params: { depositStatus: 'pending_confirmation', ...params },
   }),
-  approveDeposit: (id)       => api.post(`/deposits/${id}/approve`),
-  rejectDeposit:  (id, data) => api.post(`/deposits/${id}/reject`, data),
-  updateDeposit:  (id, data) => api.put(`/deposits/${id}`, data),
+  approveDeposit:  (id)       => api.post(`/deposits/${id}/approve`),
+  rejectDeposit:   (id, data) => api.post(`/deposits/${id}/reject`, data),
+  updateDeposit:   (id, data) => api.put(`/deposits/${id}`, data),
+
+  // ── Fetch the member's active chamaa slots for the slot selector in DepositModal ──
+  getMemberChamaaSlots: (memberId) => api.get(`/deposits/chamaa-slots/${memberId}`),
 };
 
 // Fines API
@@ -138,10 +141,6 @@ export const finesAPI = {
 };
 
 // ── Seed Capital API ─────────────────────────────────────────────────────────
-// getByMember: fetches all seed capital records and filters client-side for
-// the given member. This avoids needing a dedicated backend route while still
-// returning the same shape ({ totalSeedCapital, contributions }) that both
-// MemberDashboard and MemberTransactions expect.
 export const seedCapitalAPI = {
   getStats:    ()         => api.get('/seed-capital/stats'),
   getAll:      ()         => api.get('/seed-capital'),
@@ -177,14 +176,10 @@ export const investmentAPI = {
   getAll:   (year) => api.get(`/investments?year=${year}`),
   save:     (data) => api.post('/investments/save', data),
   getStats: (year) => api.get(`/investments/stats?year=${year}`),
-  // Returns the principal row total (autoSum + editSum) calculated server-side.
-  // Falls back gracefully if the endpoint doesn't exist yet.
   getPrincipalTotal: async (year) => {
     try {
-      // Try dedicated stats endpoint first
       const res = await api.get(`/investments/stats?year=${year}`);
       const d   = res.data || {};
-      // Accept any of the common field names the backend might use
       const val =
         d.principalTotal    ??
         d.principal_total   ??
@@ -197,7 +192,6 @@ export const investmentAPI = {
       if (val !== null) return Number(val);
     } catch { /* fall through */ }
 
-    // Fallback: compute client-side from raw rows
     const res  = await api.get(`/investments?year=${year}`);
     const rows = res.data?.rows || [];
     const principalRow = rows.find(r => Number(r.month) === 0);
@@ -206,7 +200,7 @@ export const investmentAPI = {
     for (let i = 4; i <= 10; i++) {
       sum += Number(principalRow[`investment${i}Amount`] ?? 0) || 0;
     }
-    return sum; // Note: auto cols (loans/fines) added separately in dashboard
+    return sum;
   },
 };
 

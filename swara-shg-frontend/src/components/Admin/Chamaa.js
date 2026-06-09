@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import '../MembersManagementAdmin/Members.css';
 import { chamaaAPI, membersAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
+import { CheckCircle, Clock } from 'lucide-react';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -15,7 +16,7 @@ const Chamaa = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [expandedCycleId, setExpandedCycleId] = useState(null);
   const [participants, setParticipants]       = useState([]);
-  const [showContribModal, setShowContribModal]   = useState(false);
+  const [showContribModal, setShowContribModal]       = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
 
   // position-editing state
@@ -23,7 +24,7 @@ const Chamaa = () => {
   const [positionDraft, setPositionDraft]         = useState('');
   const [positionSaving, setPositionSaving]       = useState(false);
 
-  // schedule (month/year) editing state
+  // schedule editing state
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [scheduleDraft, setScheduleDraft]         = useState({ month: '', year: '' });
   const [scheduleSaving, setScheduleSaving]       = useState(false);
@@ -54,24 +55,14 @@ const Chamaa = () => {
     finally { setLoading(false); }
   };
 
-  // ── slot list helpers ──────────────────────────────────────────
-  const appendSlot = (memberId) => {
-    setCreateForm((prev) => ({ ...prev, slotList: [...prev.slotList, memberId] }));
-  };
-
-  const removeSlot = (index) => {
-    setCreateForm((prev) => ({
-      ...prev,
-      slotList: prev.slotList.filter((_, i) => i !== index),
-    }));
-  };
-
-  const moveSlot = (index, direction) => {
-    const list     = [...createForm.slotList];
-    const swapIdx  = index + direction;
+  const appendSlot  = (memberId) => setCreateForm(prev => ({ ...prev, slotList: [...prev.slotList, memberId] }));
+  const removeSlot  = (index)    => setCreateForm(prev => ({ ...prev, slotList: prev.slotList.filter((_, i) => i !== index) }));
+  const moveSlot    = (index, direction) => {
+    const list    = [...createForm.slotList];
+    const swapIdx = index + direction;
     if (swapIdx < 0 || swapIdx >= list.length) return;
     [list[index], list[swapIdx]] = [list[swapIdx], list[index]];
-    setCreateForm((prev) => ({ ...prev, slotList: list }));
+    setCreateForm(prev => ({ ...prev, slotList: list }));
   };
 
   const handleCreateSubmit = async (e) => {
@@ -122,8 +113,8 @@ const Chamaa = () => {
     try {
       await chamaaAPI.recordContribution({
         participantId: selectedParticipant.id,
-        month: Number(contribForm.month),
-        year: Number(contribForm.year),
+        month:  Number(contribForm.month),
+        year:   Number(contribForm.year),
         amount: Number(contribForm.amount),
         paymentDate: contribForm.paymentDate,
       });
@@ -136,10 +127,7 @@ const Chamaa = () => {
 
   const handleMarkReceived = async (participantId) => {
     try {
-      await chamaaAPI.markAsReceived({
-        participantId,
-        receivedDate: new Date().toISOString().split('T')[0],
-      });
+      await chamaaAPI.markAsReceived({ participantId, receivedDate: new Date().toISOString().split('T')[0] });
       alert('Marked as received');
       if (expandedCycleId) toggleExpand(expandedCycleId);
       fetchCycles();
@@ -155,13 +143,9 @@ const Chamaa = () => {
     } catch (err) { alert(err.response?.data?.message || 'Failed to end cycle'); }
   };
 
-  // ── position editing ──────────────────────────────────────────
-  const startEditingPosition = (p) => {
-    setEditingScheduleId(null);
-    setEditingPositionId(p.id);
-    setPositionDraft(String(p.position));
-  };
-  const cancelEditingPosition = () => { setEditingPositionId(null); setPositionDraft(''); };
+  // position editing
+  const startEditingPosition  = (p) => { setEditingScheduleId(null); setEditingPositionId(p.id); setPositionDraft(String(p.position)); };
+  const cancelEditingPosition = ()  => { setEditingPositionId(null); setPositionDraft(''); };
   const savePosition = async (participantId) => {
     const newPos = parseInt(positionDraft, 10);
     if (!newPos || newPos < 1) { alert('Position must be a positive number'); return; }
@@ -169,10 +153,10 @@ const Chamaa = () => {
     try {
       const res = await chamaaAPI.updateParticipantPosition(participantId, newPos);
       if (res.data.allParticipants) {
-        setParticipants((prev) => {
+        setParticipants(prev => {
           const map = {};
-          res.data.allParticipants.forEach((p) => { map[p.id] = p; });
-          return prev.map((p) => map[p.id] ? { ...p, position: map[p.id].position } : p)
+          res.data.allParticipants.forEach(p => { map[p.id] = p; });
+          return prev.map(p => map[p.id] ? { ...p, position: map[p.id].position } : p)
                      .sort((a, b) => a.position - b.position);
         });
       }
@@ -185,14 +169,11 @@ const Chamaa = () => {
     if (e.key === 'Escape') cancelEditingPosition();
   };
 
-  // ── schedule (month/year) editing ─────────────────────────────
-  const startEditingSchedule = (p) => {
+  // schedule editing
+  const startEditingSchedule  = (p) => {
     setEditingPositionId(null);
     setEditingScheduleId(p.id);
-    setScheduleDraft({
-      month: p.scheduledMonth ? String(p.scheduledMonth) : '',
-      year:  p.scheduledYear  ? String(p.scheduledYear)  : String(new Date().getFullYear()),
-    });
+    setScheduleDraft({ month: p.scheduledMonth ? String(p.scheduledMonth) : '', year: p.scheduledYear ? String(p.scheduledYear) : String(new Date().getFullYear()) });
   };
   const cancelEditingSchedule = () => { setEditingScheduleId(null); setScheduleDraft({ month: '', year: '' }); };
   const saveSchedule = async (participantId) => {
@@ -203,13 +184,8 @@ const Chamaa = () => {
     try {
       const res = await chamaaAPI.updateParticipantSchedule(participantId, { scheduledMonth: month, scheduledYear: year });
       const updated = res.data.participant;
-      setParticipants((prev) =>
-        prev.map((p) => p.id === participantId
-          ? { ...p, scheduledMonth: updated.scheduledMonth, scheduledYear: updated.scheduledYear }
-          : p)
-      );
-      setEditingScheduleId(null);
-      setScheduleDraft({ month: '', year: '' });
+      setParticipants(prev => prev.map(p => p.id === participantId ? { ...p, scheduledMonth: updated.scheduledMonth, scheduledYear: updated.scheduledYear } : p));
+      setEditingScheduleId(null); setScheduleDraft({ month: '', year: '' });
     } catch (err) { alert(err.response?.data?.message || 'Failed to update schedule'); }
     finally { setScheduleSaving(false); }
   };
@@ -218,25 +194,73 @@ const Chamaa = () => {
     if (e.key === 'Escape') cancelEditingSchedule();
   };
 
-  // ── helpers ───────────────────────────────────────────────────
   const formatCurrency = (amt) =>
     new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
   const getMemberName = (id) => {
-    const m = members.find((mem) => mem.id === Number(id));
+    const m = members.find(mem => mem.id === Number(id));
     return m ? `${m.firstName} ${m.lastName}` : `Member #${id}`;
   };
 
   const formatSchedule = (month, year) => {
-    if (!month) return <span style={{ color: '#bbb', fontStyle: 'italic', fontSize: '12px' }}>Not set</span>;
-    return <span style={{ fontWeight: 600, color: '#1565c0' }}>{MONTH_NAMES[month - 1]} {year || ''}</span>;
+    if (!month) return <span style={{ color:'#bbb', fontStyle:'italic', fontSize:'12px' }}>Not set</span>;
+    return <span style={{ fontWeight:600, color:'#1565c0' }}>{MONTH_NAMES[month - 1]} {year || ''}</span>;
+  };
+
+  // ── Contribution status cell ──────────────────────────────────
+  // Shows all months the slot has been paid for, derived from
+  // the contributions array attached to each participant.
+  // After a deposit is approved the contributions are written automatically.
+  const ContributionStatusCell = ({ participant }) => {
+    const contributions = participant.contributions || [];
+    const paidContribs  = contributions
+      .filter(c => c.isPaid)
+      .sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+      });
+
+    if (paidContribs.length === 0) {
+      return (
+        <div style={{ display:'flex', alignItems:'center', gap:4, color:'#bbb', fontSize:'12px' }}>
+          <Clock size={13} />
+          <span>No contributions yet</span>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display:'flex', flexWrap:'wrap', gap:'4px' }}>
+        {paidContribs.map((c, i) => (
+          <span key={i} style={{
+            display:       'inline-flex',
+            alignItems:    'center',
+            gap:           '3px',
+            padding:       '2px 8px',
+            borderRadius:  '12px',
+            fontSize:      '11px',
+            fontWeight:    700,
+            background:    c.isLate ? '#fff8e1' : '#e8f5e9',
+            color:         c.isLate ? '#e65100' : '#2e7d32',
+            border:        `1px solid ${c.isLate ? '#ffcc80' : '#a5d6a7'}`,
+            whiteSpace:    'nowrap',
+          }}
+            title={c.isLate ? `Late payment — Fine: KES ${c.fineAmount}` : 'Paid on time'}
+          >
+            <CheckCircle size={9} />
+            {MONTH_NAMES[c.month - 1]} {c.year}
+            {c.isLate && <span style={{ fontSize:'9px', opacity:0.8 }}>⚠</span>}
+          </span>
+        ))}
+      </div>
+    );
   };
 
   return (
     <>
       <Navbar />
       <div className="admin-container">
-        <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
+        <Link to="/admin/dashboard" style={{ color:'#1976d2', textDecoration:'none', fontSize:'14px' }}>← Dashboard</Link>
         <div className="page-header">
           <h1>Chamaa (Merry-Go-Round) Management</h1>
           {!isStaff && (
@@ -249,7 +273,7 @@ const Chamaa = () => {
         ) : (
           <div className="table-container">
             {cycles.length === 0 ? (
-              <p style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+              <p style={{ textAlign:'center', padding:'40px', color:'#666' }}>
                 No chamaa cycles yet.{!isStaff && ' Click "+ Create New Cycle" to start one.'}
               </p>
             ) : (
@@ -261,7 +285,7 @@ const Chamaa = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {cycles.map((cycle) => (
+                  {cycles.map(cycle => (
                     <React.Fragment key={cycle.id}>
                       <tr>
                         <td>{cycle.name}</td>
@@ -274,7 +298,7 @@ const Chamaa = () => {
                             {cycle.isActive ? 'Active' : 'Ended'}
                           </span>
                         </td>
-                        <td style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <td style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
                           <button className="btn-primary" style={smallBtn} onClick={() => toggleExpand(cycle.id)}>
                             {expandedCycleId === cycle.id ? 'Collapse' : 'Expand'}
                           </button>
@@ -286,151 +310,145 @@ const Chamaa = () => {
 
                       {expandedCycleId === cycle.id && (
                         <tr>
-                          <td colSpan={7} style={{ background: '#f9f9f9', padding: '16px' }}>
-                            <strong style={{ display: 'block', marginBottom: '10px' }}>
+                          <td colSpan={7} style={{ background:'#f9f9f9', padding:'16px' }}>
+                            <strong style={{ display:'block', marginBottom:'10px' }}>
                               Payout List — {participants.length} position{participants.length !== 1 ? 's' : ''}
                             </strong>
                             {!isStaff && (
-                              <p style={{ fontSize: '13px', color: '#888', marginBottom: '10px' }}>
-                                💡 Click a position number to reorder. Click a month cell to assign when that member receives the pot. Multiple members can share the same month.
+                              <p style={{ fontSize:'13px', color:'#888', marginBottom:'10px' }}>
+                                💡 Click a position number to reorder. Click a month cell to assign when that member receives the pot.
                               </p>
                             )}
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr style={{ background: '#eee' }}>
-                                  <th style={thSub}>
-                                    Position
-                                    {!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to edit)</span>}
-                                  </th>
-                                  <th style={thSub}>
-                                    Scheduled Month
-                                    {!isStaff && <span style={{ fontWeight: 400, color: '#999' }}> (click to set)</span>}
-                                  </th>
-                                  <th style={thSub}>Member</th>
-                                  <th style={thSub}>Contributions Made</th>
-                                  <th style={thSub}>Received Pot</th>
-                                  {!isStaff && <th style={thSub}>Actions</th>}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {participants.map((p) => {
-                                  const memberName = p.member
-                                    ? `${p.member.firstName} ${p.member.lastName}`
-                                    : getMemberName(p.memberId);
-                                  const sameSlots = participants.filter((s) => s.memberId === p.memberId);
-                                  const turnIndex = sameSlots.findIndex((s) => s.id === p.id) + 1;
-                                  const turnLabel = sameSlots.length > 1
-                                    ? ` (turn ${turnIndex} of ${sameSlots.length})`
-                                    : '';
+                            <div style={{ overflowX:'auto' }}>
+                              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                                <thead>
+                                  <tr style={{ background:'#eee' }}>
+                                    <th style={thSub}>
+                                      Position
+                                      {!isStaff && <span style={{ fontWeight:400, color:'#999' }}> (click to edit)</span>}
+                                    </th>
+                                    <th style={thSub}>
+                                      Scheduled Month
+                                      {!isStaff && <span style={{ fontWeight:400, color:'#999' }}> (click to set)</span>}
+                                    </th>
+                                    <th style={thSub}>Member</th>
+                                    {/* ── NEW: Contributions Paid column ── */}
+                                    <th style={thSub}>Contributions Paid</th>
+                                    <th style={thSub}>Received Pot</th>
+                                    {!isStaff && <th style={thSub}>Actions</th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {participants.map(p => {
+                                    const memberName = p.member
+                                      ? `${p.member.firstName} ${p.member.lastName}`
+                                      : getMemberName(p.memberId);
+                                    const sameSlots  = participants.filter(s => s.memberId === p.memberId);
+                                    const turnIndex  = sameSlots.findIndex(s => s.id === p.id) + 1;
+                                    const turnLabel  = sameSlots.length > 1
+                                      ? ` (turn ${turnIndex} of ${sameSlots.length})`
+                                      : '';
 
-                                  return (
-                                    <tr key={p.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                    return (
+                                      <tr key={p.id} style={{ borderBottom:'1px solid #ddd' }}>
 
-                                      {/* ── Position cell ── */}
-                                      <td style={tdSub}>
-                                        {!isStaff && editingPositionId === p.id ? (
-                                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <input
-                                              type="number" min="1" max={participants.length}
-                                              value={positionDraft}
-                                              onChange={(e) => setPositionDraft(e.target.value)}
-                                              onKeyDown={(e) => handlePositionKeyDown(e, p.id)}
-                                              style={positionInput} autoFocus disabled={positionSaving}
-                                            />
-                                            <button style={iconBtn('#2e7d32')} onClick={() => savePosition(p.id)} disabled={positionSaving}>{positionSaving ? '…' : '✓'}</button>
-                                            <button style={iconBtn('#c62828')} onClick={cancelEditingPosition} disabled={positionSaving}>✕</button>
-                                          </span>
-                                        ) : (
-                                          <span
-                                            style={!isStaff ? positionBadge : {}}
-                                            title={!isStaff ? 'Click to edit position' : ''}
-                                            onClick={() => !isStaff && startEditingPosition(p)}
-                                          >
-                                            {p.position}
-                                            {!isStaff && <span style={{ marginLeft: '4px', fontSize: '11px', color: '#1976d2' }}>✎</span>}
-                                          </span>
-                                        )}
-                                      </td>
-
-                                      {/* ── Scheduled Month cell ── */}
-                                      <td style={tdSub}>
-                                        {!isStaff && editingScheduleId === p.id ? (
-                                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                            <select
-                                              value={scheduleDraft.month}
-                                              onChange={(e) => setScheduleDraft((d) => ({ ...d, month: e.target.value }))}
-                                              onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
-                                              onClick={(e) => e.stopPropagation()}
-                                              style={scheduleSelect}
-                                              disabled={scheduleSaving}
-                                              autoFocus
-                                            >
-                                              <option value="">— month —</option>
-                                              {MONTH_NAMES.map((name, i) => (
-                                                <option key={i + 1} value={i + 1}>{name}</option>
-                                              ))}
-                                            </select>
-                                            <input
-                                              type="number"
-                                              min="2000" max="2100"
-                                              value={scheduleDraft.year}
-                                              onChange={(e) => setScheduleDraft((d) => ({ ...d, year: e.target.value }))}
-                                              onKeyDown={(e) => handleScheduleKeyDown(e, p.id)}
-                                              onClick={(e) => e.stopPropagation()}
-                                              style={{ ...positionInput, width: '72px' }}
-                                              placeholder="Year"
-                                              disabled={scheduleSaving}
-                                            />
-                                            <button style={iconBtn('#2e7d32')} onClick={(e) => { e.stopPropagation(); saveSchedule(p.id); }} disabled={scheduleSaving}>{scheduleSaving ? '…' : '✓'}</button>
-                                            <button style={iconBtn('#c62828')} onClick={(e) => { e.stopPropagation(); cancelEditingSchedule(); }} disabled={scheduleSaving}>✕</button>
-                                          </span>
-                                        ) : (
-                                          <span
-                                            style={!isStaff ? scheduleBadge(p.scheduledMonth) : {}}
-                                            title={!isStaff ? 'Click to set scheduled month' : ''}
-                                            onClick={() => !isStaff && startEditingSchedule(p)}
-                                          >
-                                            {formatSchedule(p.scheduledMonth, p.scheduledYear)}
-                                            {!isStaff && (
-                                              <span style={{ marginLeft: '4px', fontSize: '11px', color: '#1976d2' }}>✎</span>
-                                            )}
-                                          </span>
-                                        )}
-                                      </td>
-
-                                      {/* ── Member cell ── */}
-                                      <td style={tdSub}>
-                                        {memberName}
-                                        {turnLabel && (
-                                          <span style={{ fontSize: '11px', color: '#999', marginLeft: '4px' }}>{turnLabel}</span>
-                                        )}
-                                      </td>
-
-                                      <td style={tdSub}>{p.paidContributions} / {cycle.totalParticipants}</td>
-
-                                      <td style={tdSub}>
-                                        {p.hasReceived
-                                          ? <span style={badges.active}>Yes — {new Date(p.receivedDate).toLocaleDateString()}</span>
-                                          : <span style={badges.ended}>No</span>}
-                                      </td>
-
-                                      {!isStaff && (
+                                        {/* Position */}
                                         <td style={tdSub}>
-                                          {cycle.isActive && (
-                                            <>
-                                              <button className="btn-primary" style={smallBtn} onClick={() => openContribModal(p, cycle)}>Contribute</button>
-                                              {!p.hasReceived && (
-                                                <button className="btn-primary" style={{ ...smallBtn, background: '#7b1fa2', marginLeft: '6px' }} onClick={() => handleMarkReceived(p.id)}>Mark Received</button>
-                                              )}
-                                            </>
+                                          {!isStaff && editingPositionId === p.id ? (
+                                            <span style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                                              <input type="number" min="1" max={participants.length}
+                                                value={positionDraft} onChange={e => setPositionDraft(e.target.value)}
+                                                onKeyDown={e => handlePositionKeyDown(e, p.id)}
+                                                style={positionInput} autoFocus disabled={positionSaving} />
+                                              <button style={iconBtn('#2e7d32')} onClick={() => savePosition(p.id)} disabled={positionSaving}>{positionSaving ? '…' : '✓'}</button>
+                                              <button style={iconBtn('#c62828')} onClick={cancelEditingPosition} disabled={positionSaving}>✕</button>
+                                            </span>
+                                          ) : (
+                                            <span
+                                              style={!isStaff ? positionBadge : {}}
+                                              title={!isStaff ? 'Click to edit position' : ''}
+                                              onClick={() => !isStaff && startEditingPosition(p)}
+                                            >
+                                              {p.position}
+                                              {!isStaff && <span style={{ marginLeft:'4px', fontSize:'11px', color:'#1976d2' }}>✎</span>}
+                                            </span>
                                           )}
                                         </td>
-                                      )}
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+
+                                        {/* Scheduled Month */}
+                                        <td style={tdSub}>
+                                          {!isStaff && editingScheduleId === p.id ? (
+                                            <span style={{ display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap' }}>
+                                              <select value={scheduleDraft.month}
+                                                onChange={e => setScheduleDraft(d => ({ ...d, month: e.target.value }))}
+                                                onKeyDown={e => handleScheduleKeyDown(e, p.id)}
+                                                onClick={e => e.stopPropagation()}
+                                                style={scheduleSelect} disabled={scheduleSaving} autoFocus>
+                                                <option value="">— month —</option>
+                                                {MONTH_NAMES.map((name, i) => <option key={i + 1} value={i + 1}>{name}</option>)}
+                                              </select>
+                                              <input type="number" min="2000" max="2100"
+                                                value={scheduleDraft.year}
+                                                onChange={e => setScheduleDraft(d => ({ ...d, year: e.target.value }))}
+                                                onKeyDown={e => handleScheduleKeyDown(e, p.id)}
+                                                onClick={e => e.stopPropagation()}
+                                                style={{ ...positionInput, width:'72px' }}
+                                                placeholder="Year" disabled={scheduleSaving} />
+                                              <button style={iconBtn('#2e7d32')} onClick={e => { e.stopPropagation(); saveSchedule(p.id); }} disabled={scheduleSaving}>{scheduleSaving ? '…' : '✓'}</button>
+                                              <button style={iconBtn('#c62828')} onClick={e => { e.stopPropagation(); cancelEditingSchedule(); }} disabled={scheduleSaving}>✕</button>
+                                            </span>
+                                          ) : (
+                                            <span
+                                              style={!isStaff ? scheduleBadge(p.scheduledMonth) : {}}
+                                              title={!isStaff ? 'Click to set scheduled month' : ''}
+                                              onClick={() => !isStaff && startEditingSchedule(p)}
+                                            >
+                                              {formatSchedule(p.scheduledMonth, p.scheduledYear)}
+                                              {!isStaff && <span style={{ marginLeft:'4px', fontSize:'11px', color:'#1976d2' }}>✎</span>}
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* Member */}
+                                        <td style={tdSub}>
+                                          {memberName}
+                                          {turnLabel && <span style={{ fontSize:'11px', color:'#999', marginLeft:'4px' }}>{turnLabel}</span>}
+                                        </td>
+
+                                        {/* ── Contributions Paid (NEW) ── */}
+                                        {/* Shows month badges for each paid contribution.
+                                            Auto-populated after admin approves a deposit with chamaa slots selected.
+                                            Admin can also manually record via the Contribute button. */}
+                                        <td style={{ ...tdSub, minWidth:'160px' }}>
+                                          <ContributionStatusCell participant={p} />
+                                        </td>
+
+                                        {/* Received Pot */}
+                                        <td style={tdSub}>
+                                          {p.hasReceived
+                                            ? <span style={badges.active}>Yes — {new Date(p.receivedDate).toLocaleDateString()}</span>
+                                            : <span style={badges.ended}>No</span>}
+                                        </td>
+
+                                        {/* Actions */}
+                                        {!isStaff && (
+                                          <td style={tdSub}>
+                                            {cycle.isActive && (
+                                              <>
+                                                <button className="btn-primary" style={smallBtn} onClick={() => openContribModal(p, cycle)}>Contribute</button>
+                                                {!p.hasReceived && (
+                                                  <button className="btn-primary" style={{ ...smallBtn, background:'#7b1fa2', marginLeft:'6px' }} onClick={() => handleMarkReceived(p.id)}>Mark Received</button>
+                                                )}
+                                              </>
+                                            )}
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -442,61 +460,44 @@ const Chamaa = () => {
           </div>
         )}
 
-        {/* ── Create Cycle Modal ─────────────────────────────────── */}
+        {/* Create Cycle Modal */}
         {showCreateModal && !isStaff && (
           <div className="modal-overlay" onClick={() => { setShowCreateModal(false); setCreateForm(createDefaults); }}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth:'600px' }}>
               <h2>Create New Chamaa Cycle</h2>
               <form onSubmit={handleCreateSubmit}>
-
                 <div className="form-group">
                   <label>Cycle Name *</label>
-                  <input type="text" value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} required />
+                  <input type="text" value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Contribution Amount (KES) *</label>
-                  <input type="number" min="1" value={createForm.contributionAmount} onChange={(e) => setCreateForm({ ...createForm, contributionAmount: e.target.value })} required />
+                  <input type="number" min="1" value={createForm.contributionAmount} onChange={e => setCreateForm({ ...createForm, contributionAmount: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Start Date</label>
-                  <input type="date" value={createForm.startDate} onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })} />
+                  <input type="date" value={createForm.startDate} onChange={e => setCreateForm({ ...createForm, startDate: e.target.value })} />
                 </div>
-
-                {/* ── two-panel slot builder ── */}
                 <div className="form-group">
-                  <label style={{ display: 'block', marginBottom: '4px' }}>
-                    Payout List *
-                  </label>
-                  <p style={{ fontSize: '12px', color: '#888', marginTop: 0, marginBottom: '10px' }}>
+                  <label style={{ display:'block', marginBottom:'4px' }}>Payout List *</label>
+                  <p style={{ fontSize:'12px', color:'#888', marginTop:0, marginBottom:'10px' }}>
                     Click a member on the left to add them to the next position on the right.
-                    The same member can be added multiple times. You can assign months after creating the cycle.
+                    The same member can be added multiple times.
                   </p>
-
                   <div style={styles.builderWrap}>
-                    {/* LEFT: member picker */}
                     <div style={styles.leftPanel}>
                       <p style={styles.panelHeader}>Members</p>
-                      {members.map((m) => {
-                        const count = createForm.slotList.filter((id) => id === m.id).length;
+                      {members.map(m => {
+                        const count = createForm.slotList.filter(id => id === m.id).length;
                         return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            style={styles.memberBtn}
-                            onClick={() => appendSlot(m.id)}
-                            title={`Add ${m.firstName} to the next position`}
-                          >
+                          <button key={m.id} type="button" style={styles.memberBtn} onClick={() => appendSlot(m.id)}>
                             <span style={styles.memberBtnName}>{m.firstName} {m.lastName}</span>
-                            {count > 0 && (
-                              <span style={styles.memberBtnBadge}>×{count}</span>
-                            )}
+                            {count > 0 && <span style={styles.memberBtnBadge}>×{count}</span>}
                             <span style={styles.memberBtnPlus}>＋</span>
                           </button>
                         );
                       })}
                     </div>
-
-                    {/* RIGHT: ordered slot list */}
                     <div style={styles.rightPanel}>
                       <p style={styles.panelHeader}>
                         Payout order {createForm.slotList.length > 0 && `(${createForm.slotList.length})`}
@@ -508,16 +509,15 @@ const Chamaa = () => {
                           <div key={idx} style={styles.slotRow}>
                             <span style={styles.slotPos}>{idx + 1}</span>
                             <span style={styles.slotName}>{getMemberName(memberId)}</span>
-                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, -1)} disabled={idx === 0} title="Move up">▲</button>
-                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, 1)} disabled={idx === createForm.slotList.length - 1} title="Move down">▼</button>
-                            <button type="button" style={{ ...styles.slotMoveBtn, color: '#c62828', borderColor: '#ffcdd2' }} onClick={() => removeSlot(idx)} title="Remove">✕</button>
+                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, -1)} disabled={idx === 0}>▲</button>
+                            <button type="button" style={styles.slotMoveBtn} onClick={() => moveSlot(idx, 1)} disabled={idx === createForm.slotList.length - 1}>▼</button>
+                            <button type="button" style={{ ...styles.slotMoveBtn, color:'#c62828', borderColor:'#ffcdd2' }} onClick={() => removeSlot(idx)}>✕</button>
                           </div>
                         ))
                       )}
                     </div>
                   </div>
                 </div>
-
                 <div className="modal-actions">
                   <button type="button" className="btn-secondary" onClick={() => { setShowCreateModal(false); setCreateForm(createDefaults); }}>Cancel</button>
                   <button type="submit" className="btn-primary">Create Cycle</button>
@@ -527,12 +527,12 @@ const Chamaa = () => {
           </div>
         )}
 
-        {/* ── Contribution Modal ─────────────────────────────────── */}
+        {/* Contribution Modal */}
         {showContribModal && selectedParticipant && !isStaff && (
           <div className="modal-overlay" onClick={() => setShowContribModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h2>Record Contribution</h2>
-              <p style={{ color: '#666', marginBottom: '16px' }}>
+              <p style={{ color:'#666', marginBottom:'16px' }}>
                 For <strong>
                   {selectedParticipant.member
                     ? `${selectedParticipant.member.firstName} ${selectedParticipant.member.lastName}`
@@ -544,24 +544,24 @@ const Chamaa = () => {
               <form onSubmit={handleContribSubmit}>
                 <div className="form-group">
                   <label>Amount (KES) *</label>
-                  <input type="number" value={contribForm.amount} onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })} required />
-                  <small style={{ color: '#999' }}>Must be exactly {formatCurrency(selectedParticipant.contributionAmount)}</small>
+                  <input type="number" value={contribForm.amount} onChange={e => setContribForm({ ...contribForm, amount: e.target.value })} required />
+                  <small style={{ color:'#999' }}>Must be exactly {formatCurrency(selectedParticipant.contributionAmount)}</small>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Month *</label>
-                    <select value={contribForm.month} onChange={(e) => setContribForm({ ...contribForm, month: e.target.value })} required>
+                    <select value={contribForm.month} onChange={e => setContribForm({ ...contribForm, month: e.target.value })} required>
                       {[...Array(12)].map((_, i) => <option key={i + 1} value={i + 1}>{MONTH_NAMES[i]}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
                     <label>Year *</label>
-                    <input type="number" value={contribForm.year} onChange={(e) => setContribForm({ ...contribForm, year: e.target.value })} min="2000" required />
+                    <input type="number" value={contribForm.year} onChange={e => setContribForm({ ...contribForm, year: e.target.value })} min="2000" required />
                   </div>
                 </div>
                 <div className="form-group">
                   <label>Payment Date</label>
-                  <input type="date" value={contribForm.paymentDate} onChange={(e) => setContribForm({ ...contribForm, paymentDate: e.target.value })} />
+                  <input type="date" value={contribForm.paymentDate} onChange={e => setContribForm({ ...contribForm, paymentDate: e.target.value })} />
                 </div>
                 <div className="modal-actions">
                   <button type="button" className="btn-secondary" onClick={() => setShowContribModal(false)}>Cancel</button>
@@ -576,88 +576,49 @@ const Chamaa = () => {
   );
 };
 
-// ── styles ─────────────────────────────────────────────────────
+// ── Styles ──────────────────────────────────────────────────────
 const badges = {
-  active: { background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: '12px', fontWeight: 600, fontSize: '13px' },
-  ended:  { background: '#eceff1', color: '#546e7a', padding: '4px 10px', borderRadius: '12px', fontWeight: 600, fontSize: '13px' },
+  active: { background:'#e8f5e9', color:'#2e7d32', padding:'4px 10px', borderRadius:'12px', fontWeight:600, fontSize:'13px' },
+  ended:  { background:'#eceff1', color:'#546e7a', padding:'4px 10px', borderRadius:'12px', fontWeight:600, fontSize:'13px' },
 };
-const smallBtn      = { padding: '6px 12px', fontSize: '13px' };
-const thSub         = { padding: '8px 10px', textAlign: 'left', fontWeight: 600, color: '#666', fontSize: '13px', borderBottom: '2px solid #ddd' };
-const tdSub         = { padding: '8px 10px', fontSize: '14px', color: '#333' };
+const smallBtn      = { padding:'6px 12px', fontSize:'13px' };
+const thSub         = { padding:'8px 10px', textAlign:'left', fontWeight:600, color:'#666', fontSize:'13px', borderBottom:'2px solid #ddd' };
+const tdSub         = { padding:'8px 10px', fontSize:'14px', color:'#333', verticalAlign:'top' };
 const positionBadge = {
-  display: 'inline-flex', alignItems: 'center', gap: '4px',
-  cursor: 'pointer', fontWeight: 700, padding: '3px 8px', borderRadius: '6px',
-  background: '#e3f2fd', color: '#1565c0', border: '1px dashed #90caf9',
+  display:'inline-flex', alignItems:'center', gap:'4px',
+  cursor:'pointer', fontWeight:700, padding:'3px 8px', borderRadius:'6px',
+  background:'#e3f2fd', color:'#1565c0', border:'1px dashed #90caf9',
 };
 const scheduleBadge = (hasMonth) => ({
-  display: 'inline-flex', alignItems: 'center', gap: '4px',
-  cursor: 'pointer', padding: '3px 8px', borderRadius: '6px',
+  display:'inline-flex', alignItems:'center', gap:'4px',
+  cursor:'pointer', padding:'3px 8px', borderRadius:'6px',
   background: hasMonth ? '#fff3e0' : '#fafafa',
-  border: hasMonth ? '1px dashed #ffb74d' : '1px dashed #e0e0e0',
+  border:     hasMonth ? '1px dashed #ffb74d' : '1px dashed #e0e0e0',
 });
 const positionInput = {
-  width: '60px', padding: '4px 6px', fontSize: '14px',
-  border: '2px solid #1976d2', borderRadius: '4px', textAlign: 'center',
+  width:'60px', padding:'4px 6px', fontSize:'14px',
+  border:'2px solid #1976d2', borderRadius:'4px', textAlign:'center',
 };
-const scheduleSelect = {
-  padding: '4px 6px', fontSize: '13px',
-  border: '2px solid #1976d2', borderRadius: '4px',
-};
+const scheduleSelect = { padding:'4px 6px', fontSize:'13px', border:'2px solid #1976d2', borderRadius:'4px' };
 const iconBtn = (color) => ({
-  background: color, color: '#fff', border: 'none',
-  borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '13px', fontWeight: 700,
+  background:color, color:'#fff', border:'none',
+  borderRadius:'4px', padding:'4px 8px', cursor:'pointer', fontSize:'13px', fontWeight:700,
 });
 
 const styles = {
-  builderWrap: {
-    display: 'flex', gap: '12px', alignItems: 'flex-start',
-  },
-  leftPanel: {
-    flex: '0 0 200px', border: '1px solid #ddd', borderRadius: '6px',
-    overflow: 'hidden', maxHeight: '340px', overflowY: 'auto',
-  },
-  rightPanel: {
-    flex: 1, border: '1px solid #ddd', borderRadius: '6px',
-    overflow: 'hidden', maxHeight: '340px', overflowY: 'auto',
-  },
-  panelHeader: {
-    margin: 0, padding: '7px 10px', background: '#f5f5f5',
-    fontSize: '12px', fontWeight: 600, color: '#555',
-    borderBottom: '1px solid #ddd', position: 'sticky', top: 0,
-  },
-  memberBtn: {
-    display: 'flex', alignItems: 'center', width: '100%',
-    padding: '8px 10px', background: '#fff', border: 'none',
-    borderBottom: '1px solid #f0f0f0', cursor: 'pointer',
-    textAlign: 'left', gap: '6px',
-    transition: 'background 0.12s',
-  },
-  memberBtnName: { flex: 1, fontSize: '13px', color: '#333' },
-  memberBtnBadge: {
-    background: '#1976d2', color: '#fff', borderRadius: '10px',
-    padding: '1px 7px', fontSize: '11px', fontWeight: 700,
-  },
-  memberBtnPlus: {
-    fontSize: '16px', fontWeight: 700, color: '#1976d2', lineHeight: 1,
-  },
-  emptyHint: {
-    padding: '20px 12px', fontSize: '13px', color: '#aaa', textAlign: 'center', margin: 0,
-  },
-  slotRow: {
-    display: 'flex', alignItems: 'center', gap: '6px',
-    padding: '6px 8px', borderBottom: '1px solid #f0f0f0',
-  },
-  slotPos: {
-    width: '22px', height: '22px', display: 'inline-flex',
-    alignItems: 'center', justifyContent: 'center',
-    background: '#1976d2', color: '#fff', borderRadius: '50%',
-    fontSize: '11px', fontWeight: 700, flexShrink: 0,
-  },
-  slotName: { flex: 1, fontSize: '13px', color: '#333' },
-  slotMoveBtn: {
-    background: 'none', border: '1px solid #ddd', borderRadius: '4px',
-    padding: '2px 6px', cursor: 'pointer', fontSize: '11px', color: '#555',
-  },
+  builderWrap:   { display:'flex', gap:'12px', alignItems:'flex-start' },
+  leftPanel:     { flex:'0 0 200px', border:'1px solid #ddd', borderRadius:'6px', overflow:'hidden', maxHeight:'340px', overflowY:'auto' },
+  rightPanel:    { flex:1, border:'1px solid #ddd', borderRadius:'6px', overflow:'hidden', maxHeight:'340px', overflowY:'auto' },
+  panelHeader:   { margin:0, padding:'7px 10px', background:'#f5f5f5', fontSize:'12px', fontWeight:600, color:'#555', borderBottom:'1px solid #ddd', position:'sticky', top:0 },
+  memberBtn:     { display:'flex', alignItems:'center', width:'100%', padding:'8px 10px', background:'#fff', border:'none', borderBottom:'1px solid #f0f0f0', cursor:'pointer', textAlign:'left', gap:'6px' },
+  memberBtnName: { flex:1, fontSize:'13px', color:'#333' },
+  memberBtnBadge:{ background:'#1976d2', color:'#fff', borderRadius:'10px', padding:'1px 7px', fontSize:'11px', fontWeight:700 },
+  memberBtnPlus: { fontSize:'16px', fontWeight:700, color:'#1976d2', lineHeight:1 },
+  emptyHint:     { padding:'20px 12px', fontSize:'13px', color:'#aaa', textAlign:'center', margin:0 },
+  slotRow:       { display:'flex', alignItems:'center', gap:'6px', padding:'6px 8px', borderBottom:'1px solid #f0f0f0' },
+  slotPos:       { width:'22px', height:'22px', display:'inline-flex', alignItems:'center', justifyContent:'center', background:'#1976d2', color:'#fff', borderRadius:'50%', fontSize:'11px', fontWeight:700, flexShrink:0 },
+  slotName:      { flex:1, fontSize:'13px', color:'#333' },
+  slotMoveBtn:   { background:'none', border:'1px solid #ddd', borderRadius:'4px', padding:'2px 6px', cursor:'pointer', fontSize:'11px', color:'#555' },
 };
 
 export default Chamaa;

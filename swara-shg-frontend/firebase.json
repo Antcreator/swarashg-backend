@@ -8,13 +8,13 @@
     ],
     "rewrites": [
       {
-        "source": "**",
+        "glob": "**",
         "destination": "/index.html"
       }
     ],
     "headers": [
       {
-        "source": "/index.html",
+        "glob": "**",
         "headers": [
           {
             "key": "Cache-Control",
@@ -31,7 +31,7 @@
         ]
       },
       {
-        "source": "/static/**",
+        "glob": "/static/**",
         "headers": [
           {
             "key": "Cache-Control",
