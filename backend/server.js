@@ -52,14 +52,19 @@ app.use('/api/registration-fees', registrationFeeRoutes);
 app.use('/api/admins',            adminRoutes);
 
 // ─── Serve React frontend (production) ──────────────────────────
-// Assumes your React build output is at ../frontend/build relative
-// to this server.js file. Adjust the path if your folder structure differs.
 const buildPath = path.join(__dirname, '..', 'frontend', 'build');
+
+// Static assets (JS/CSS/images) — safe to cache; React gives them hashed filenames
 app.use(express.static(buildPath));
 
-// Catch-all: for any non-API route, return the React app's index.html
-// This allows React Router to handle client-side routing (e.g. /admin/dashboard)
+// Catch-all: serve index.html for every non-API route so React Router works.
+// index.html is intentionally NOT cached so the browser always fetches the
+// latest version after a new deployment, preventing the blank-page-until-
+// hard-refresh problem.
 app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
