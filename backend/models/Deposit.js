@@ -25,8 +25,8 @@ Deposit.init({
     unique: true
   },
   mpesa_message: {
-  type: DataTypes.TEXT,
-  allowNull: true
+    type: DataTypes.TEXT,
+    allowNull: true
   },
 
   // ── Stage 1: Deposit Confirmation ───────────────────────────
@@ -67,7 +67,6 @@ Deposit.init({
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
-
   savingsMonth: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -78,7 +77,6 @@ Deposit.init({
     allowNull: true,
     comment: 'Year the member is saving FOR'
   },
-  
   loanPaymentAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
@@ -87,11 +85,29 @@ Deposit.init({
     type: DataTypes.STRING(20),
     allowNull: true,
     references: { model: 'loans', key: 'id' }
-},
+  },
   chamaaPaymentAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
+
+  // ── NEW: stores the participant slot IDs the member selected ──
+  // Stored as JSON array e.g. [3, 7, 12]
+  // Each slot = one full contribution amount (KES 2030 per slot)
+  chamaaSlotIds: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'JSON array of ChamaaParticipant IDs the member is paying for',
+    get() {
+      const raw = this.getDataValue('chamaaSlotIds');
+      if (!raw) return [];
+      try { return JSON.parse(raw); } catch { return []; }
+    },
+    set(val) {
+      this.setDataValue('chamaaSlotIds', val ? JSON.stringify(val) : null);
+    },
+  },
+
   seedCapitalAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
@@ -104,7 +120,6 @@ Deposit.init({
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
-  // ── ADDED: AGM Fee ───────────────────────────────────────────
   agmFeeAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
@@ -113,7 +128,6 @@ Deposit.init({
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
   },
-
   notes: {
     type: DataTypes.TEXT,
     allowNull: true
