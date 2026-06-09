@@ -91,12 +91,14 @@ Deposit.init({
     defaultValue: 0
   },
 
-  // ── NEW: stores the participant slot IDs the member selected ──
-  // Stored as JSON array e.g. [3, 7, 12]
-  // Each slot = one full contribution amount (KES 2030 per slot)
+  // ── Chamaa slot IDs selected by the member ───────────────────
+  // PostgreSQL stores this as lowercase "chamaaslotids" so we use
+  // the `field` mapping to bridge the camelCase JS name to the
+  // actual DB column name and avoid the "column does not exist" error.
   chamaaSlotIds: {
     type: DataTypes.TEXT,
     allowNull: true,
+    field: 'chamaaslotids',   // ← maps JS chamaaSlotIds → DB chamaaslotids
     comment: 'JSON array of ChamaaParticipant IDs the member is paying for',
     get() {
       const raw = this.getDataValue('chamaaSlotIds');
