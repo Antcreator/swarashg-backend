@@ -92,13 +92,12 @@ Deposit.init({
   },
 
   // ── Chamaa slot IDs selected by the member ───────────────────
-  // PostgreSQL stores this as lowercase "chamaaslotids" so we use
-  // the `field` mapping to bridge the camelCase JS name to the
-  // actual DB column name and avoid the "column does not exist" error.
+  // Stored as JSON text e.g. "[3,7,12]"
+  // No field mapping needed — Sequelize will quote it as "chamaaSlotIds"
+  // which matches the actual PostgreSQL column name exactly.
   chamaaSlotIds: {
     type: DataTypes.TEXT,
     allowNull: true,
-    field: 'chamaaslotids',   // ← maps JS chamaaSlotIds → DB chamaaslotids
     comment: 'JSON array of ChamaaParticipant IDs the member is paying for',
     get() {
       const raw = this.getDataValue('chamaaSlotIds');
