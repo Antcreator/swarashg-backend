@@ -106,6 +106,7 @@ export const chamaaAPI = {
   getAllCycles:               (params)               => api.get('/chamaa', { params }),
   getCycleById:              (id)                   => api.get(`/chamaa/${id}`),
   getMonthlyReport:          (cycleId, month, year) => api.get(`/chamaa/report/${cycleId}/${month}/${year}`),
+  getPaymentsReport:         (month, year)          => api.get('/chamaa/payments-report', { params: { month, year } }),
   createCycle:               (cycleData)            => api.post('/chamaa', cycleData),
   addParticipant:            (participantData)      => api.post('/chamaa/participant', participantData),
   updateParticipantPosition: (id, newPosition)      => api.put(`/chamaa/participant/${id}/position`, { newPosition }),

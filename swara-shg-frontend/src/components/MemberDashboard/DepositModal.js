@@ -8,21 +8,23 @@ import { depositsAPI, loansAPI } from '../../Service/Api';
 import { useToast, ToastContainer } from '../../useToast';
 import './DepositModal.css';
 
-// ─── Savings window helpers ────────────────────────────────────
+const CHAMAA_AMOUNT = 2030; // Fixed chamaa contribution per month
+
+// ─── Month helpers ────────────────────────────────────────────
 const MONTHS = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const getMonthName = (n) => MONTHS[n] || '';
 
+// ─── Payment window evaluation (same logic for both savings & chamaa) ──
 const getSavingWindow = (targetMonth, targetYear) => {
   let prevMonth = targetMonth - 1;
   let prevYear  = targetYear;
   if (prevMonth === 0) { prevMonth = 12; prevYear -= 1; }
   const windowStart = new Date(prevYear, prevMonth - 1, 11);
   const windowEnd   = new Date(targetYear, targetMonth - 1, 10);
-  return { windowStart, windowEnd, prevMonth, prevYear };
+  return { windowStart, windowEnd };
 };
 
 const evaluatePayment = (targetMonth, targetYear) => {
@@ -41,6 +43,57 @@ const evaluatePayment = (targetMonth, targetYear) => {
   return { isLate: true, finalMonth, finalYear, windowStart, windowEnd };
 };
 
+// ─── Default target month (same logic for savings & chamaa) ──────
+const getDefaultTargetMonth = () => {
+  const today = new Date();
+  const day   = today.getDate();
+  const month = today.getMonth() + 1;
+  const year  = today.getFullYear();
+  return {
+    month: day >= 11 ? (month === 12 ? 1 : month + 1) : month,
+    year:  day >= 11 && month === 12 ? year + 1 : year,
+  };
+};
+
+// ─── Reusable Status Banner (used for both savings and chamaa) ───
+const PaymentStatusBanner = ({ month, year, label = 'Saving' }) => {
+  if (!month || !year) return null;
+  const fmtDate = (d) =>
+    d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
+  const { isLate, finalMonth, finalYear, windowStart, windowEnd } =
+    evaluatePayment(Number(month), Number(year));
+
+  if (!isLate) {
+    return (
+      <div style={{ background:'#e8f5e9', padding:'12px 14px', borderRadius:'8px', marginTop:'10px', border:'1.5px solid #43a047' }}>
+        <p style={{ margin:0, color:'#2e7d32', fontWeight:'bold', fontSize:'13px', display:'flex', alignItems:'center', gap:6 }}>
+          <CheckCircle size={14} />
+          ON TIME — {label} for <strong style={{ marginLeft:4 }}>{getMonthName(Number(month))} {year}</strong>
+        </p>
+        <p style={{ margin:'5px 0 0', color:'#388e3c', fontSize:'12px' }}>
+          Window: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
+          &nbsp;|&nbsp; Multiple payments allowed within this window.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background:'#ffebee', padding:'12px 14px', borderRadius:'8px', marginTop:'10px', border:'1.5px solid #e53935' }}>
+      <p style={{ margin:0, color:'#c62828', fontWeight:'bold', fontSize:'13px', display:'flex', alignItems:'center', gap:6 }}>
+        <AlertTriangle size={14} />
+        LATE — Window for {getMonthName(Number(month))} {year} has closed.
+      </p>
+      <p style={{ margin:'4px 0 0', color:'#b71c1c', fontSize:'12px' }}>
+        Window was: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
+      </p>
+      <p style={{ margin:'4px 0 0', color:'#c62828', fontSize:'12px', fontWeight:600 }}>
+        Will be pushed to <strong>{getMonthName(finalMonth)} {finalYear}</strong> + KES 500 fine.
+      </p>
+    </div>
+  );
+};
+
 // ─── Icon map ─────────────────────────────────────────────────
 const CategoryIcon = ({ name, size = 15 }) => {
   const icons = {
@@ -56,133 +109,6 @@ const CategoryIcon = ({ name, size = 15 }) => {
   return icons[name] || null;
 };
 
-// ─── Savings Status Banner ────────────────────────────────────
-const SavingsStatusBanner = ({ month, year }) => {
-  if (!month || !year) return null;
-  const fmtDate = (d) =>
-    d.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
-  const { isLate, finalMonth, finalYear, windowStart, windowEnd } = evaluatePayment(
-    Number(month), Number(year)
-  );
-  if (!isLate) {
-    return (
-      <div style={{ background:'#e8f5e9', padding:'12px 14px', borderRadius:'8px', marginTop:'10px', border:'1.5px solid #43a047' }}>
-        <p style={{ margin:0, color:'#2e7d32', fontWeight:'bold', fontSize:'13px', display:'flex', alignItems:'center', gap:6 }}>
-          <CheckCircle size={14} /> ON TIME — Saving for <strong style={{ marginLeft:4 }}>{getMonthName(Number(month))} {year}</strong>
-        </p>
-        <p style={{ margin:'5px 0 0', color:'#388e3c', fontSize:'12px' }}>
-          Window: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div style={{ background:'#ffebee', padding:'12px 14px', borderRadius:'8px', marginTop:'10px', border:'1.5px solid #e53935' }}>
-      <p style={{ margin:0, color:'#c62828', fontWeight:'bold', fontSize:'13px', display:'flex', alignItems:'center', gap:6 }}>
-        <AlertTriangle size={14} /> LATE — Window for {getMonthName(Number(month))} {year} has closed.
-      </p>
-      <p style={{ margin:'4px 0 0', color:'#b71c1c', fontSize:'12px' }}>Window was: {fmtDate(windowStart)} → {fmtDate(windowEnd)}</p>
-      <p style={{ margin:'4px 0 0', color:'#c62828', fontSize:'12px', fontWeight:600 }}>
-        Will be pushed to <strong>{getMonthName(finalMonth)} {finalYear}</strong> + KES 500 fine.
-      </p>
-    </div>
-  );
-};
-
-// ─── Chamaa Slot Selector ─────────────────────────────────────
-// Shows all active chamaa slots for the member. Each slot shows the
-// cycle name, position, scheduled month, and contribution amount.
-// Member can select one or more. The chamaa amount auto-fills to
-// slots selected × contribution per slot.
-const ChamaaSlotSelector = ({ slots, selectedSlotIds, onToggle, contributionPerSlot }) => {
-  if (slots.length === 0) {
-    return (
-      <div style={{ padding:'12px', background:'#f5f5f5', borderRadius:'8px', color:'#888', fontSize:'13px', textAlign:'center' }}>
-        You have no active chamaa slots.
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:'8px', marginTop:'8px' }}>
-      {slots.map(slot => {
-        const isSelected = selectedSlotIds.includes(slot.participantId);
-        const schedLabel = slot.scheduledMonth
-          ? `${MONTH_NAMES_SHORT[slot.scheduledMonth - 1]} ${slot.scheduledYear || ''}`
-          : 'Not scheduled';
-
-        return (
-          <div
-            key={slot.participantId}
-            onClick={() => onToggle(slot.participantId)}
-            style={{
-              display:        'flex',
-              alignItems:     'center',
-              gap:            '12px',
-              padding:        '10px 14px',
-              borderRadius:   '10px',
-              border:         `2px solid ${isSelected ? '#7b1fa2' : '#e0e0e0'}`,
-              background:     isSelected ? '#f3e5f5' : '#fafafa',
-              cursor:         'pointer',
-              transition:     'all 0.15s',
-              userSelect:     'none',
-            }}
-          >
-            {/* Checkbox */}
-            <div style={{
-              width:'20px', height:'20px', borderRadius:'50%', flexShrink:0,
-              background: isSelected ? '#7b1fa2' : 'white',
-              border:     `2px solid ${isSelected ? '#7b1fa2' : '#bbb'}`,
-              display:    'flex', alignItems:'center', justifyContent:'center',
-            }}>
-              {isSelected && <CheckCircle size={12} color="white" strokeWidth={3} />}
-            </div>
-
-            {/* Slot info */}
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:700, fontSize:'13px', color:'#1a1a2e' }}>
-                {slot.cycleName}
-                <span style={{
-                  marginLeft:'8px', fontSize:'11px', fontWeight:600,
-                  background:'#e8eaf6', color:'#3949ab',
-                  padding:'1px 7px', borderRadius:'10px',
-                }}>
-                  Position #{slot.position}
-                </span>
-              </div>
-              <div style={{ fontSize:'12px', color:'#666', marginTop:'3px', display:'flex', gap:'12px' }}>
-                <span>📅 Scheduled: <strong>{schedLabel}</strong></span>
-                <span>💰 Required: <strong>KES {Number(contributionPerSlot || slot.contributionAmount).toLocaleString()}</strong></span>
-              </div>
-            </div>
-
-            {isSelected && (
-              <span style={{ fontSize:'11px', fontWeight:700, color:'#7b1fa2', whiteSpace:'nowrap' }}>
-                ✓ Selected
-              </span>
-            )}
-          </div>
-        );
-      })}
-
-      {selectedSlotIds.length > 0 && (
-        <div style={{
-          marginTop:'4px', padding:'10px 14px',
-          background:'#ede7f6', borderRadius:'8px',
-          display:'flex', justifyContent:'space-between', alignItems:'center',
-        }}>
-          <span style={{ fontSize:'13px', color:'#7b1fa2', fontWeight:600 }}>
-            {selectedSlotIds.length} slot{selectedSlotIds.length > 1 ? 's' : ''} selected
-          </span>
-          <span style={{ fontSize:'14px', fontWeight:800, color:'#4a148c' }}>
-            Total: KES {(selectedSlotIds.length * Number(contributionPerSlot || (slots[0]?.contributionAmount || 0))).toLocaleString()}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ─── Main Modal ───────────────────────────────────────────────
 const DepositModal = ({
   memberId, onClose, onSuccess,
@@ -193,18 +119,11 @@ const DepositModal = ({
 
   const { toasts, toast, dismiss } = useToast();
 
-  const today = new Date();
-
   const [step, setStep]               = useState(1);
   const [activeLoans, setActiveLoans] = useState([]);
   const [errors, setErrors]           = useState({});
   const [submitting, setSubmitting]   = useState(false);
   const [memberCodes, setMemberCodes] = useState(new Set());
-
-  // ── Chamaa slots state ──────────────────────────────────────
-  const [chamaaSlots, setChamaaSlots]           = useState([]);  // all active slots
-  const [selectedSlotIds, setSelectedSlotIds]   = useState([]);  // which ones are ticked
-  const [slotsLoading, setSlotsLoading]         = useState(false);
 
   const [dismissedIds, setDismissedIds] = useState(() => {
     try {
@@ -228,41 +147,33 @@ const DepositModal = ({
     if (onDismiss) onDismiss();
   };
 
-  // ── Default savings target month ───────────────────────────
-  const todayDay   = today.getDate();
-  const todayMonth = today.getMonth() + 1;
-  const todayYear  = today.getFullYear();
-  const defaultSavingsMonth = todayDay >= 11
-    ? (todayMonth === 12 ? 1 : todayMonth + 1)
-    : todayMonth;
-  const defaultSavingsYear  = todayDay >= 11 && todayMonth === 12
-    ? todayYear + 1
-    : todayYear;
+  const defaults = getDefaultTargetMonth();
 
   const [formData, setFormData] = useState({
-    totalAmount: '', mpesaMessage: '', notes: '',
-    savings: '', savingsMonth: defaultSavingsMonth, savingsYear: defaultSavingsYear,
-    loanPayment: '', selectedLoanId: '',
-    chamaaPayment: '',   // auto-filled when slots are selected
-    seedCapital: '', savingsFine: '', chamaaFine: '', agmFee: '', others: '',
+    totalAmount:   '',
+    mpesaMessage:  '',
+    notes:         '',
+    // Savings
+    savings:       '',
+    savingsMonth:  defaults.month,
+    savingsYear:   defaults.year,
+    // Loan
+    loanPayment:   '',
+    selectedLoanId:'',
+    // Chamaa — mirrors savings exactly, fixed at KES 2030
+    chamaaPayment: '',
+    chamaaMonth:   defaults.month,
+    chamaaYear:    defaults.year,
+    // Other
+    seedCapital:   '',
+    savingsFine:   '',
+    chamaaFine:    '',
+    agmFee:        '',
+    others:        '',
   });
 
   const derivedCode     = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
   const isDuplicateCode = derivedCode.length === 10 && memberCodes.has(derivedCode);
-
-  // Fetch active chamaa slots for this member
-  const fetchChamaaSlots = useCallback(async () => {
-    setSlotsLoading(true);
-    try {
-      const res = await depositsAPI.getMemberChamaaSlots(memberId);
-      setChamaaSlots(res.data.slots || []);
-    } catch (err) {
-      console.error('Failed to fetch chamaa slots:', err);
-      setChamaaSlots([]);
-    } finally {
-      setSlotsLoading(false);
-    }
-  }, [memberId]);
 
   const fetchActiveLoans = useCallback(async () => {
     try {
@@ -289,35 +200,12 @@ const DepositModal = ({
   useEffect(() => {
     fetchActiveLoans();
     fetchMemberCodes();
-    fetchChamaaSlots();
-  }, [fetchActiveLoans, fetchMemberCodes, fetchChamaaSlots]);
+  }, [fetchActiveLoans, fetchMemberCodes]);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
   }, []);
-
-  // ── Auto-fill chamaa amount when slots are selected ─────────
-  // contribution amount per slot comes from the first slot
-  // (all slots in an active cycle share the same contribution amount)
-  const contributionPerSlot = chamaaSlots.length > 0
-    ? Number(chamaaSlots[0].contributionAmount)
-    : 2030; // fallback default as specified
-
-  const toggleSlot = (participantId) => {
-    setSelectedSlotIds(prev => {
-      const next = prev.includes(participantId)
-        ? prev.filter(id => id !== participantId)
-        : [...prev, participantId];
-
-      // Auto-fill chamaa amount
-      const autoAmount = next.length * contributionPerSlot;
-      setFormData(f => ({ ...f, chamaaPayment: autoAmount > 0 ? String(autoAmount) : '' }));
-      return next;
-    });
-    // Clear any chamaa error
-    setErrors(e => ({ ...e, chamaaSlots: '' }));
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -325,11 +213,25 @@ const DepositModal = ({
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
+  // When member ticks "pay chamaa", auto-fill the fixed amount
+  const handleChamaaToggle = (e) => {
+    const checked = e.target.checked;
+    setFormData(prev => ({
+      ...prev,
+      chamaaPayment: checked ? String(CHAMAA_AMOUNT) : '',
+    }));
+    if (errors.chamaaPayment) setErrors(prev => ({ ...prev, chamaaPayment: '' }));
+  };
+
   const totalDistributed = () =>
-    Number(formData.savings       || 0) + Number(formData.loanPayment   || 0) +
-    Number(formData.chamaaPayment || 0) + Number(formData.seedCapital   || 0) +
-    Number(formData.savingsFine   || 0) + Number(formData.chamaaFine    || 0) +
-    Number(formData.agmFee        || 0) + Number(formData.others        || 0);
+    Number(formData.savings       || 0) +
+    Number(formData.loanPayment   || 0) +
+    Number(formData.chamaaPayment || 0) +
+    Number(formData.seedCapital   || 0) +
+    Number(formData.savingsFine   || 0) +
+    Number(formData.chamaaFine    || 0) +
+    Number(formData.agmFee        || 0) +
+    Number(formData.others        || 0);
 
   const totalAmount = Number(formData.totalAmount || 0);
   const distributed = totalDistributed();
@@ -355,22 +257,17 @@ const DepositModal = ({
       if (!formData.savingsMonth) errs.savingsMonth = 'Select a month for savings';
       if (!formData.savingsYear)  errs.savingsYear  = 'Enter a year for savings';
     }
-    // Chamaa: if amount entered, slots must be selected
-    if (Number(formData.chamaaPayment) > 0 && selectedSlotIds.length === 0) {
-      errs.chamaaSlots = 'Please select which chamaa slot(s) you are paying for';
-    }
-    // Chamaa: if slots selected, amount must match
-    if (selectedSlotIds.length > 0) {
-      const expectedChamaa = selectedSlotIds.length * contributionPerSlot;
-      if (Number(formData.chamaaPayment) !== expectedChamaa) {
-        errs.chamaaSlots = `Amount must be KES ${expectedChamaa.toLocaleString()} (${selectedSlotIds.length} slot(s) × KES ${contributionPerSlot.toLocaleString()})`;
-      }
+    if (Number(formData.chamaaPayment) > 0) {
+      if (!formData.chamaaMonth) errs.chamaaMonth = 'Select a month for chamaa';
+      if (!formData.chamaaYear)  errs.chamaaYear  = 'Enter a year for chamaa';
+      if (Number(formData.chamaaPayment) !== CHAMAA_AMOUNT)
+        errs.chamaaPayment = `Chamaa payment must be exactly KES ${CHAMAA_AMOUNT.toLocaleString()}`;
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleNext = (e) => { e.preventDefault(); if (validateStep1()) setStep(2); };
+  const handleNext    = (e) => { e.preventDefault(); if (validateStep1()) setStep(2); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -381,7 +278,7 @@ const DepositModal = ({
         memberId,
         totalAmount,
         mpesaMessage: formData.mpesaMessage,
-        notes: formData.notes,
+        notes:        formData.notes,
         distribution: {
           savings:        Number(formData.savings       || 0),
           savingsMonth:   Number(formData.savingsMonth),
@@ -389,13 +286,14 @@ const DepositModal = ({
           loanPayment:    Number(formData.loanPayment   || 0),
           loanId:         formData.selectedLoanId || null,
           chamaaPayment:  Number(formData.chamaaPayment || 0),
-          chamaaSlotIds:  selectedSlotIds,           // ← NEW: send selected slot IDs
+          chamaaMonth:    Number(formData.chamaaMonth),
+          chamaaYear:     Number(formData.chamaaYear),
           seedCapital:    Number(formData.seedCapital   || 0),
           savingsFine:    Number(formData.savingsFine   || 0),
           chamaaFine:     Number(formData.chamaaFine    || 0),
           agmFee:         Number(formData.agmFee        || 0),
           others:         Number(formData.others        || 0),
-        }
+        },
       });
 
       toast.success(
@@ -404,7 +302,6 @@ const DepositModal = ({
         { duration: 5000 }
       );
       setTimeout(() => { onSuccess(); }, 900);
-
     } catch (err) {
       const data = err.response?.data;
       const msg  = data?.message || err.message || 'Failed to submit deposit';
@@ -421,7 +318,7 @@ const DepositModal = ({
   };
 
   const fmt = (v) => new Intl.NumberFormat('en-KE', {
-    style: 'currency', currency: 'KES', minimumFractionDigits: 0
+    style: 'currency', currency: 'KES', minimumFractionDigits: 0,
   }).format(v || 0);
 
   const summaryRows = [
@@ -434,6 +331,8 @@ const DepositModal = ({
     { label: 'AGM Fee',       key: 'agmFeeAmount',        icon: 'agmFee' },
     { label: 'Others',        key: 'othersAmount',        icon: 'others' },
   ];
+
+  const chamaaChecked = Number(formData.chamaaPayment) === CHAMAA_AMOUNT;
 
   return (
     <>
@@ -459,9 +358,7 @@ const DepositModal = ({
             {hasRejections && visibleRejections.length > 0 && (
               <div className="dm-section">
                 <div className="dm-rejections__head">
-                  <h4 className="dm-rejections__title">
-                    <XCircle size={15} /> Rejected Deposits
-                  </h4>
+                  <h4 className="dm-rejections__title"><XCircle size={15} /> Rejected Deposits</h4>
                   {visibleRejections.length > 1 && (
                     <button className="dm-btn-dismiss-all" onClick={dismissAll}>Dismiss All</button>
                   )}
@@ -495,9 +392,7 @@ const DepositModal = ({
                     </div>
                   </div>
                 ))}
-                {!isViewMode && (
-                  <p className="dm-info-note"><Info size={12} /> You can submit a new deposit below.</p>
-                )}
+                {!isViewMode && <p className="dm-info-note"><Info size={12} /> You can submit a new deposit below.</p>}
               </div>
             )}
 
@@ -520,10 +415,9 @@ const DepositModal = ({
                     <strong>{fmt(pendingDeposit[r.key])}</strong>
                   </div>
                 ))}
-                {/* Show selected chamaa slots if any */}
-                {pendingDeposit.chamaaSlotIds?.length > 0 && (
-                  <div style={{ marginTop:'8px', padding:'8px 12px', background:'#f3e5f5', borderRadius:'8px', fontSize:'12px', color:'#7b1fa2' }}>
-                    <strong>Chamaa slots selected:</strong> {pendingDeposit.chamaaSlotIds.length} slot(s)
+                {pendingDeposit.chamaaMonth && (
+                  <div style={{ marginTop:'6px', fontSize:'12px', color:'#7b1fa2', padding:'6px 10px', background:'#f3e5f5', borderRadius:'6px' }}>
+                    Chamaa for: <strong>{getMonthName(pendingDeposit.chamaaMonth)} {pendingDeposit.chamaaYear}</strong>
                   </div>
                 )}
                 <div className="dm-summary-total">
@@ -537,7 +431,6 @@ const DepositModal = ({
             {/* Step forms */}
             {!isViewMode && (
               <>
-                {/* Step indicator */}
                 <div className="dm-steps">
                   {['Deposit Info', 'Distribute Funds'].map((label, i) => (
                     <div key={i} className="dm-step">
@@ -559,23 +452,17 @@ const DepositModal = ({
 
                       <div className="dm-field">
                         <label className="dm-label">Total Amount Deposited *</label>
-                        <input
-                          className={`dm-input ${errors.totalAmount ? 'dm-input--error' : ''}`}
+                        <input className={`dm-input ${errors.totalAmount ? 'dm-input--error' : ''}`}
                           type="number" name="totalAmount" value={formData.totalAmount}
-                          onChange={handleChange} placeholder="Enter total amount" min="1" inputMode="numeric" required
-                        />
-                        {errors.totalAmount && (
-                          <span className="dm-error"><AlertCircle size={12} />{errors.totalAmount}</span>
-                        )}
+                          onChange={handleChange} placeholder="Enter total amount" min="1" inputMode="numeric" required />
+                        {errors.totalAmount && <span className="dm-error"><AlertCircle size={12} />{errors.totalAmount}</span>}
                       </div>
 
                       <div className="dm-field">
                         <label className="dm-label">M-PESA Message *</label>
-                        <textarea
-                          className={`dm-textarea ${errors.mpesaMessage ? 'dm-input--error' : ''}`}
+                        <textarea className={`dm-textarea ${errors.mpesaMessage ? 'dm-input--error' : ''}`}
                           name="mpesaMessage" value={formData.mpesaMessage} onChange={handleChange}
-                          placeholder="Paste the full M-PESA confirmation message..." rows="4"
-                        />
+                          placeholder="Paste the full M-PESA confirmation message..." rows="4" />
                         {formData.mpesaMessage.trim() && (
                           <div className={`dm-code-preview ${
                             isDuplicateCode            ? 'dm-code-preview--error'
@@ -591,9 +478,7 @@ const DepositModal = ({
                             )}
                           </div>
                         )}
-                        {errors.mpesaMessage && (
-                          <span className="dm-error"><AlertCircle size={12} />{errors.mpesaMessage}</span>
-                        )}
+                        {errors.mpesaMessage && <span className="dm-error"><AlertCircle size={12} />{errors.mpesaMessage}</span>}
                         <p className="dm-hint"><Info size={11} /> Paste the complete SMS you received from M-PESA.</p>
                       </div>
 
@@ -648,14 +533,12 @@ const DepositModal = ({
                       <p className="dm-section__note">Allocate across categories — total must not exceed deposit</p>
 
                       {errors.distribution && (
-                        <div className="dm-error-banner">
-                          <AlertCircle size={13} /> {errors.distribution}
-                        </div>
+                        <div className="dm-error-banner"><AlertCircle size={13} /> {errors.distribution}</div>
                       )}
 
                       <div className="dm-dist-grid--form">
 
-                        {/* Savings */}
+                        {/* ── Savings ── */}
                         <div className="dm-field dm-field--full">
                           <label className="dm-label dm-label--icon"><Wallet size={13} /> Savings</label>
                           <input className="dm-input" type="number" name="savings" value={formData.savings}
@@ -670,9 +553,7 @@ const DepositModal = ({
                                   <label className="dm-label">Month *</label>
                                   <select className={`dm-select ${errors.savingsMonth ? 'dm-input--error' : ''}`}
                                     name="savingsMonth" value={formData.savingsMonth} onChange={handleChange} required>
-                                    {[...Array(12)].map((_, i) => (
-                                      <option key={i + 1} value={i + 1}>{getMonthName(i + 1)}</option>
-                                    ))}
+                                    {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{getMonthName(i+1)}</option>)}
                                   </select>
                                   {errors.savingsMonth && <span className="dm-error"><AlertCircle size={12} />{errors.savingsMonth}</span>}
                                 </div>
@@ -684,64 +565,77 @@ const DepositModal = ({
                                   {errors.savingsYear && <span className="dm-error"><AlertCircle size={12} />{errors.savingsYear}</span>}
                                 </div>
                               </div>
-                              <SavingsStatusBanner month={formData.savingsMonth} year={formData.savingsYear} />
+                              <p style={{ fontSize:'11px', color:'#666', marginTop:'6px', display:'flex', alignItems:'center', gap:5 }}>
+                                <Info size={11} /> Payment window: 11th of previous month → 10th of target month
+                              </p>
+                              <PaymentStatusBanner month={formData.savingsMonth} year={formData.savingsYear} label="Saving" />
                             </div>
                           )}
                         </div>
 
-                        {/* ── Chamaa Payment with slot selector ── */}
+                        {/* ── Chamaa Payment — mirrors savings exactly ── */}
                         <div className="dm-field dm-field--full">
-                          <label className="dm-label dm-label--icon">
-                            <Users size={13} /> Chamaa Payment
+                          <label className="dm-label dm-label--icon"><Users size={13} /> Chamaa Payment</label>
+
+                          {/* Checkbox toggle — auto-fills KES 2030 */}
+                          <label style={{
+                            display:'inline-flex', alignItems:'center', gap:'10px',
+                            padding:'10px 14px', borderRadius:'10px', cursor:'pointer',
+                            background: chamaaChecked ? '#f3e5f5' : '#fafafa',
+                            border: `2px solid ${chamaaChecked ? '#7b1fa2' : '#e0e0e0'}`,
+                            transition:'all 0.15s', userSelect:'none', marginTop:'4px',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={chamaaChecked}
+                              onChange={handleChamaaToggle}
+                              style={{ width:'16px', height:'16px', accentColor:'#7b1fa2', cursor:'pointer' }}
+                            />
+                            <span style={{ fontSize:'13px', fontWeight:700, color: chamaaChecked ? '#7b1fa2' : '#555' }}>
+                              Pay this month's chamaa
+                            </span>
+                            <span style={{
+                              marginLeft:'auto', fontWeight:800, fontSize:'14px',
+                              color: chamaaChecked ? '#4a148c' : '#999',
+                            }}>
+                              KES {CHAMAA_AMOUNT.toLocaleString()}
+                            </span>
                           </label>
 
-                          {slotsLoading ? (
-                            <div style={{ padding:'12px', fontSize:'13px', color:'#888' }}>
-                              Loading your chamaa slots…
-                            </div>
-                          ) : chamaaSlots.length === 0 ? (
-                            <div style={{ padding:'12px', background:'#f5f5f5', borderRadius:'8px', color:'#888', fontSize:'13px' }}>
-                              You have no active chamaa slots — nothing to pay here.
-                            </div>
-                          ) : (
-                            <>
-                              <p style={{ fontSize:'12px', color:'#555', margin:'4px 0 8px', display:'flex', alignItems:'center', gap:5 }}>
-                                <Info size={12} />
-                                Select the slot(s) you want to pay for. Each slot costs{' '}
-                                <strong style={{ marginLeft:3 }}>KES {contributionPerSlot.toLocaleString()}</strong>.
+                          {errors.chamaaPayment && (
+                            <span className="dm-error" style={{ marginTop:'6px' }}>
+                              <AlertCircle size={12} />{errors.chamaaPayment}
+                            </span>
+                          )}
+
+                          {/* Month/year picker — appears when chamaa is ticked, same as savings */}
+                          {chamaaChecked && (
+                            <div style={{ marginTop:'12px' }}>
+                              <p style={{ fontSize:'12px', color:'#555', marginBottom:'8px', display:'flex', alignItems:'center', gap:5 }}>
+                                <CalendarDays size={13} /> Which month are you paying chamaa <strong style={{ marginLeft:2 }}>for</strong>?
                               </p>
-
-                              <ChamaaSlotSelector
-                                slots={chamaaSlots}
-                                selectedSlotIds={selectedSlotIds}
-                                onToggle={toggleSlot}
-                                contributionPerSlot={contributionPerSlot}
-                              />
-
-                              {/* Auto-filled amount (read-only) */}
-                              {selectedSlotIds.length > 0 && (
-                                <div style={{ marginTop:'10px' }}>
-                                  <label className="dm-label">Auto-calculated Chamaa Amount</label>
-                                  <input
-                                    className="dm-input"
-                                    type="number"
-                                    name="chamaaPayment"
-                                    value={formData.chamaaPayment}
-                                    readOnly
-                                    style={{ background:'#f3e5f5', color:'#7b1fa2', fontWeight:700, cursor:'not-allowed' }}
-                                  />
-                                  <p style={{ fontSize:'11px', color:'#9c27b0', marginTop:'4px' }}>
-                                    Auto-filled: {selectedSlotIds.length} slot(s) × KES {contributionPerSlot.toLocaleString()}
-                                  </p>
+                              <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                                <div style={{ flex:'1 1 140px' }}>
+                                  <label className="dm-label">Month *</label>
+                                  <select className={`dm-select ${errors.chamaaMonth ? 'dm-input--error' : ''}`}
+                                    name="chamaaMonth" value={formData.chamaaMonth} onChange={handleChange} required>
+                                    {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{getMonthName(i+1)}</option>)}
+                                  </select>
+                                  {errors.chamaaMonth && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaMonth}</span>}
                                 </div>
-                              )}
-
-                              {errors.chamaaSlots && (
-                                <span className="dm-error" style={{ marginTop:'6px' }}>
-                                  <AlertCircle size={12} />{errors.chamaaSlots}
-                                </span>
-                              )}
-                            </>
+                                <div style={{ flex:'1 1 90px' }}>
+                                  <label className="dm-label">Year *</label>
+                                  <input className={`dm-input ${errors.chamaaYear ? 'dm-input--error' : ''}`}
+                                    type="number" name="chamaaYear" value={formData.chamaaYear}
+                                    onChange={handleChange} min="2000" max="2100" required />
+                                  {errors.chamaaYear && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaYear}</span>}
+                                </div>
+                              </div>
+                              <p style={{ fontSize:'11px', color:'#666', marginTop:'6px', display:'flex', alignItems:'center', gap:5 }}>
+                                <Info size={11} /> Payment window: 11th of previous month → 10th of target month
+                              </p>
+                              <PaymentStatusBanner month={formData.chamaaMonth} year={formData.chamaaYear} label="Paying chamaa" />
+                            </div>
                           )}
                         </div>
 
@@ -810,11 +704,8 @@ const DepositModal = ({
                       <button type="button" className="dm-btn dm-btn--secondary" onClick={() => setStep(1)}>
                         <ChevronLeft size={15} /> Back
                       </button>
-                      <button
-                        type="submit"
-                        className="dm-btn dm-btn--primary"
-                        disabled={submitting || unallocated < 0 || distributed === 0}
-                      >
+                      <button type="submit" className="dm-btn dm-btn--primary"
+                        disabled={submitting || unallocated < 0 || distributed === 0}>
                         <Send size={14} />
                         {submitting ? 'Submitting…' : 'Submit'}
                       </button>
