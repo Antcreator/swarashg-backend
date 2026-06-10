@@ -90,11 +90,6 @@ Deposit.init({
   },
 
   // ── Chamaa Payment ────────────────────────────────────────────
-  // Works exactly like savings — member specifies which month/year
-  // they are paying chamaa for. Fixed amount KES 2030 per payment.
-  // On approval the system checks the payment window and applies a
-  // KES 500 fine + pushes to the next month if the payment is late,
-  // mirroring the savings late-payment logic exactly.
   chamaaPaymentAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0,
@@ -108,6 +103,25 @@ Deposit.init({
     type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Year the member is paying chamaa FOR',
+  },
+
+  // ── Chamaa slot IDs ───────────────────────────────────────────
+  // PostgreSQL stores this as lowercase "chamaaslotids" because it was
+  // created without quotes. The field mapping bridges the camelCase JS
+  // name to the actual DB column name.
+  chamaaSlotIds: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    field: 'chamaaslotids',
+    comment: 'JSON array of ChamaaParticipant IDs selected by member',
+    get() {
+      const raw = this.getDataValue('chamaaSlotIds');
+      if (!raw) return [];
+      try { return JSON.parse(raw); } catch { return []; }
+    },
+    set(val) {
+      this.setDataValue('chamaaSlotIds', val ? JSON.stringify(val) : null);
+    },
   },
 
   // ── Other categories ──────────────────────────────────────────

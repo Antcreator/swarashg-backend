@@ -8,7 +8,7 @@ const { recordAgmFeeFromDeposit } = require('./agmFeeController');
 const { sendEmail }    = require('../services/emailService');
 const emailTemplates   = require('../services/emailTemplates');
 
-const CHAMAA_AMOUNT = 2030; // Fixed chamaa contribution per month
+const CHAMAA_AMOUNT = 2030; // Fixed contribution per slot per month
 
 // ─── Helper: get member email ────────────────────────────────────
 const getMemberEmail = async (memberId) => {
@@ -31,8 +31,9 @@ const getAdminEmails = async () => {
   } catch { return []; }
 };
 
-// ─── Helper: evaluate late payment (mirrors savingsController) ───
+// ─── Helper: evaluate late payment ───────────────────────────────
 // Window to pay for month M of year Y = 11th of (M-1) → 10th of M
+// Mirrors the logic in savingsController and DepositModal frontend.
 const evaluateLatePayment = (targetMonth, targetYear, paymentDate) => {
   let prevMonth = targetMonth - 1;
   let prevYear  = targetYear;
@@ -41,10 +42,11 @@ const evaluateLatePayment = (targetMonth, targetYear, paymentDate) => {
   const windowStart = new Date(prevYear,   prevMonth - 1, 11);
   const windowEnd   = new Date(targetYear, targetMonth - 1, 10);
 
-  const payDay   = paymentDate.getDate();
-  const payMonth = paymentDate.getMonth() + 1;
-  const payYear  = paymentDate.getFullYear();
-  const payOnly  = new Date(payYear, payMonth - 1, payDay);
+  const payOnly = new Date(
+    paymentDate.getFullYear(),
+    paymentDate.getMonth(),
+    paymentDate.getDate()
+  );
 
   const isWithinWindow = payOnly >= windowStart && payOnly <= windowEnd;
   if (isWithinWindow) {
@@ -66,7 +68,7 @@ const createDeposit = async (req, res) => {
     if (!memberId)    return res.status(400).json({ message: 'memberId is required' });
     if (!totalAmount) return res.status(400).json({ message: 'totalAmount is required' });
 
-    const rawMessage  = mpesaMessage || legacyCode || '';
+    const rawMessage = mpesaMessage || legacyCode || '';
     if (!rawMessage.trim())
       return res.status(400).json({ message: 'M-PESA message is required' });
 
@@ -81,25 +83,32 @@ const createDeposit = async (req, res) => {
     if (existing)
       return res.status(400).json({ message: 'This M-PESA transaction has already been submitted' });
 
-    const chamaaAmount = Number(distribution.chamaaPayment || 0);
+    const chamaaAmount  = Number(distribution.chamaaPayment || 0);
+    const chamaaSlotIds = Array.isArray(distribution.chamaaSlotIds)
+      ? distribution.chamaaSlotIds.map(Number).filter(Boolean)
+      : [];
 
-    // Validate chamaa amount is exactly KES 2030 if provided
-    if (chamaaAmount > 0 && chamaaAmount !== CHAMAA_AMOUNT) {
-      return res.status(400).json({
-        message: `Chamaa payment must be exactly KES ${CHAMAA_AMOUNT}`,
-      });
-    }
-
-    // Require chamaaMonth/chamaaYear when chamaa amount is provided
+    // ── Chamaa validations ────────────────────────────────────────
     if (chamaaAmount > 0) {
       if (!distribution.chamaaMonth || !distribution.chamaaYear) {
         return res.status(400).json({
           message: 'chamaaMonth and chamaaYear are required when chamaa payment is provided',
         });
       }
+      if (chamaaSlotIds.length === 0) {
+        return res.status(400).json({
+          message: 'Please select at least one chamaa slot',
+        });
+      }
+      const expectedTotal = chamaaSlotIds.length * CHAMAA_AMOUNT;
+      if (chamaaAmount !== expectedTotal) {
+        return res.status(400).json({
+          message: `Chamaa amount should be KES ${expectedTotal} (${chamaaSlotIds.length} slot(s) × KES ${CHAMAA_AMOUNT})`,
+        });
+      }
     }
 
-    // Require savingsMonth/savingsYear when savings amount is provided
+    // ── Savings validations ───────────────────────────────────────
     if (Number(distribution.savings || 0) > 0) {
       if (!distribution.savingsMonth || !distribution.savingsYear) {
         return res.status(400).json({
@@ -142,6 +151,7 @@ const createDeposit = async (req, res) => {
       chamaaPaymentAmount:     chamaaAmount,
       chamaaMonth:             distribution.chamaaMonth  || null,
       chamaaYear:              distribution.chamaaYear   || null,
+      chamaaSlotIds:           chamaaSlotIds.length > 0 ? chamaaSlotIds : null,
       seedCapitalAmount:       distribution.seedCapital  || 0,
       savingsFineAmount:       distribution.savingsFine  || 0,
       chamaaFineAmount:        distribution.chamaaFine   || 0,
@@ -298,10 +308,8 @@ const approveDeposit = async (req, res) => {
     }
 
     // ── Chamaa Payment ─────────────────────────────────────────────
-    // Mirrors savings exactly: member specifies which month/year they
-    // are paying for. System checks the payment window and applies a
-    // KES 500 fine + pushes to next month if late.
-    // Writes to ChamaaContribution so the chamaa report shows paid.
+    // Writes one ChamaaContribution per selected slot.
+    // Each slot gets its own late fine if the payment is late.
     if (deposit.chamaaPaymentAmount > 0) {
       const targetMonth = Number(deposit.chamaaMonth) || (currentDate.getMonth() + 1);
       const targetYear  = Number(deposit.chamaaYear)  || currentYear;
@@ -309,70 +317,119 @@ const approveDeposit = async (req, res) => {
       const { isLate, finalMonth, finalYear, fineAmount } =
         evaluateLatePayment(targetMonth, targetYear, currentDate);
 
-      // Find the member's active participant slot in any active cycle
-      // If the member has multiple slots, apply to the first unpaid one
-      // for the final month; otherwise create a standalone contribution.
-      const activeParticipant = await ChamaaParticipant.findOne({
-        where: { memberId: deposit.memberId },
-        include: [{
-          model:    ChamaaCycle,
-          as:       'cycle',
-          where:    { isActive: true },
-          required: true,
-        }],
-        transaction,
-      });
+      // chamaaSlotIds getter returns parsed array or []
+      const slotIds = deposit.chamaaSlotIds || [];
 
-      if (activeParticipant) {
-        // Check if contribution already exists for this slot and month
-        const existingContrib = await ChamaaContribution.findOne({
-          where: {
-            participantId: activeParticipant.id,
-            month:         finalMonth,
-            year:          finalYear,
-          },
+      if (slotIds.length > 0) {
+        // ── Paid for specific slots ───────────────────────────────
+        for (const slotId of slotIds) {
+          const participant = await ChamaaParticipant.findByPk(slotId, { transaction });
+
+          if (!participant) {
+            console.warn(`[Deposit ${deposit.id}] Slot ${slotId} not found — skipping`);
+            continue;
+          }
+
+          // Check if a contribution already exists for this slot + month
+          const existing = await ChamaaContribution.findOne({
+            where: { participantId: slotId, month: finalMonth, year: finalYear },
+            transaction,
+          });
+
+          if (existing) {
+            // Add to existing (additive, same as savings logic)
+            existing.amount      = Number(existing.amount) + CHAMAA_AMOUNT;
+            existing.isLate      = existing.isLate || isLate;
+            existing.fineAmount  = Number(existing.fineAmount || 0) + (isLate ? fineAmount : 0);
+            existing.paymentDate = currentDate;
+            await existing.save({ transaction });
+          } else {
+            await ChamaaContribution.create({
+              participantId: slotId,
+              month:         finalMonth,
+              year:          finalYear,
+              amount:        CHAMAA_AMOUNT,
+              paymentDate:   currentDate,
+              isPaid:        true,
+              isLate,
+              fineAmount:    isLate ? fineAmount : 0,
+            }, { transaction });
+          }
+
+          // Create a fine record per slot if late
+          if (isLate && fineAmount > 0) {
+            await Fine.create({
+              memberId: deposit.memberId,
+              fineType: 'chamaa_late',
+              amount:   fineAmount,
+              month:    finalMonth,
+              year:     finalYear,
+              isPaid:   false,
+              notes:    `Auto-generated: late chamaa for slot #${slotId} via deposit ${deposit.mpesaCode}`,
+            }, { transaction });
+          }
+        }
+      } else {
+        // ── Fallback: no slot IDs stored (older deposits) ─────────
+        // Find the member's first active participant slot
+        const activeParticipant = await ChamaaParticipant.findOne({
+          where: { memberId: deposit.memberId },
+          include: [{
+            model:    ChamaaCycle,
+            as:       'cycle',
+            where:    { isActive: true },
+            required: true,
+          }],
           transaction,
         });
 
-        if (existingContrib) {
-          // Add to existing (same as savings additive logic)
-          existingContrib.amount      = Number(existingContrib.amount) + Number(deposit.chamaaPaymentAmount);
-          existingContrib.isLate      = existingContrib.isLate || isLate;
-          existingContrib.fineAmount  = Number(existingContrib.fineAmount || 0) + fineAmount;
-          existingContrib.paymentDate = currentDate;
-          await existingContrib.save({ transaction });
+        if (activeParticipant) {
+          const existing = await ChamaaContribution.findOne({
+            where: {
+              participantId: activeParticipant.id,
+              month:         finalMonth,
+              year:          finalYear,
+            },
+            transaction,
+          });
+
+          if (existing) {
+            existing.amount      = Number(existing.amount) + Number(deposit.chamaaPaymentAmount);
+            existing.isLate      = existing.isLate || isLate;
+            existing.fineAmount  = Number(existing.fineAmount || 0) + (isLate ? fineAmount : 0);
+            existing.paymentDate = currentDate;
+            await existing.save({ transaction });
+          } else {
+            await ChamaaContribution.create({
+              participantId: activeParticipant.id,
+              month:         finalMonth,
+              year:          finalYear,
+              amount:        Number(deposit.chamaaPaymentAmount),
+              paymentDate:   currentDate,
+              isPaid:        true,
+              isLate,
+              fineAmount:    isLate ? fineAmount : 0,
+            }, { transaction });
+          }
         } else {
-          await ChamaaContribution.create({
-            participantId: activeParticipant.id,
-            month:         finalMonth,
-            year:          finalYear,
-            amount:        Number(deposit.chamaaPaymentAmount),
-            paymentDate:   currentDate,
-            isPaid:        true,
-            isLate,
-            fineAmount,
+          console.warn(
+            `[Deposit ${deposit.id}] chamaaPaymentAmount=${deposit.chamaaPaymentAmount} ` +
+            `but no active chamaa slot found for member ${deposit.memberId}.`
+          );
+        }
+
+        // One fine for the whole payment if late (fallback path)
+        if (isLate && fineAmount > 0) {
+          await Fine.create({
+            memberId: deposit.memberId,
+            fineType: 'chamaa_late',
+            amount:   fineAmount,
+            month:    finalMonth,
+            year:     finalYear,
+            isPaid:   false,
+            notes:    `Auto-generated: late chamaa payment via deposit ${deposit.mpesaCode}`,
           }, { transaction });
         }
-      } else {
-        // Member has no active chamaa slot — log warning but don't fail approval
-        console.warn(
-          `[Deposit ${deposit.id}] chamaaPaymentAmount=${deposit.chamaaPaymentAmount} ` +
-          `but no active chamaa cycle found for member ${deposit.memberId}. ` +
-          `Chamaa contribution NOT recorded.`
-        );
-      }
-
-      // Always create the fine record if late, regardless of slot
-      if (isLate && fineAmount > 0) {
-        await Fine.create({
-          memberId: deposit.memberId,
-          fineType: 'chamaa_late',
-          amount:   fineAmount,
-          month:    finalMonth,
-          year:     finalYear,
-          isPaid:   false,
-          notes:    `Auto-generated: late chamaa payment via deposit ${deposit.mpesaCode}`,
-        }, { transaction });
       }
     }
 
@@ -400,14 +457,15 @@ const approveDeposit = async (req, res) => {
       let remaining = Number(deposit.savingsFineAmount);
       for (const fine of unpaid) {
         if (remaining <= 0) break;
-        const fineAmt = Number(fine.amount);
-        if (remaining >= fineAmt) {
-          fine.isPaid = true; fine.paidAt = currentDate;
+        const amt = Number(fine.amount);
+        if (remaining >= amt) {
+          fine.isPaid = true;
+          fine.paidAt = currentDate;
           fine.notes  = fine.notes
             ? `${fine.notes}; Paid via deposit ${deposit.mpesaCode}`
             : `Paid via deposit ${deposit.mpesaCode}`;
           await fine.save({ transaction });
-          remaining -= fineAmt;
+          remaining -= amt;
         } else {
           fine.notes = fine.notes
             ? `${fine.notes}; Partial KES ${remaining} paid via deposit ${deposit.mpesaCode}`
@@ -428,14 +486,15 @@ const approveDeposit = async (req, res) => {
       let remaining = Number(deposit.chamaaFineAmount);
       for (const fine of unpaid) {
         if (remaining <= 0) break;
-        const fineAmt = Number(fine.amount);
-        if (remaining >= fineAmt) {
-          fine.isPaid = true; fine.paidAt = currentDate;
+        const amt = Number(fine.amount);
+        if (remaining >= amt) {
+          fine.isPaid = true;
+          fine.paidAt = currentDate;
           fine.notes  = fine.notes
             ? `${fine.notes}; Paid via deposit ${deposit.mpesaCode}`
             : `Paid via deposit ${deposit.mpesaCode}`;
           await fine.save({ transaction });
-          remaining -= fineAmt;
+          remaining -= amt;
         } else {
           fine.notes = fine.notes
             ? `${fine.notes}; Partial KES ${remaining} paid via deposit ${deposit.mpesaCode}`
@@ -574,13 +633,14 @@ const updateDeposit = async (req, res) => {
         return res.status(400).json({ message: 'Distribution exceeds deposit amount' });
 
       deposit.savingsAmount       = distribution.savings       || 0;
-      if (distribution.savingsMonth) deposit.savingsMonth     = distribution.savingsMonth;
-      if (distribution.savingsYear)  deposit.savingsYear      = distribution.savingsYear;
+      if (distribution.savingsMonth)  deposit.savingsMonth    = distribution.savingsMonth;
+      if (distribution.savingsYear)   deposit.savingsYear     = distribution.savingsYear;
       deposit.loanPaymentAmount   = distribution.loanPayment   || 0;
       deposit.loanId              = distribution.loanId        || null;
       deposit.chamaaPaymentAmount = distribution.chamaaPayment || 0;
-      if (distribution.chamaaMonth)  deposit.chamaaMonth      = distribution.chamaaMonth;
-      if (distribution.chamaaYear)   deposit.chamaaYear       = distribution.chamaaYear;
+      if (distribution.chamaaMonth)   deposit.chamaaMonth     = distribution.chamaaMonth;
+      if (distribution.chamaaYear)    deposit.chamaaYear      = distribution.chamaaYear;
+      if (distribution.chamaaSlotIds) deposit.chamaaSlotIds   = distribution.chamaaSlotIds;
       deposit.seedCapitalAmount   = distribution.seedCapital   || 0;
       deposit.savingsFineAmount   = distribution.savingsFine   || 0;
       deposit.chamaaFineAmount    = distribution.chamaaFine    || 0;
@@ -694,6 +754,7 @@ const getDepositSummary = async (req, res) => {
       chamaaPaymentAmount: d.chamaaPaymentAmount,
       chamaaMonth:         d.chamaaMonth,
       chamaaYear:          d.chamaaYear,
+      chamaaSlotIds:       d.chamaaSlotIds,
       seedCapitalAmount:   d.seedCapitalAmount,
       savingsFineAmount:   d.savingsFineAmount,
       chamaaFineAmount:    d.chamaaFineAmount,
