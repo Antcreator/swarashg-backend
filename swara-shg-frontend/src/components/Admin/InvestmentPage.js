@@ -4,7 +4,7 @@ import { investmentAPI, loansAPI, finesAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 
 import Navbar from '../Navbar/navbar';
-import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock, User } from 'lucide-react';
+import { TrendingUp, Download, Printer, Save, CheckCircle, XCircle, Pencil, Lock, User, AlertCircle } from 'lucide-react';
 
 // ── Month ordering (Principal first, then Dec → Nov) ─────────────────────────
 const MONTHS = [
@@ -55,19 +55,13 @@ const blankRow = ({ name, num, isPrincipal }) => {
 
 const defaultRows = () => MONTHS.map(blankRow);
 
-// ── Resolve the logged-in admin's display name from localStorage ──────────────
-// The login endpoint returns { user: { firstName, lastName, email, role, ... } }
-// and the frontend typically stores this in localStorage under a key like
-// 'user' or 'authUser'. Adjust the key name below if yours differs.
 const getAdminDisplayName = () => {
   try {
-    // Try common storage key names in order of preference
     const keys = ['user', 'authUser', 'currentUser', 'loggedInUser'];
     for (const key of keys) {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
-      // Support both { firstName, lastName } and flat { name } shapes
       if (parsed?.firstName || parsed?.lastName) {
         return `${parsed.firstName || ''} ${parsed.lastName || ''}`.trim();
       }
@@ -76,7 +70,6 @@ const getAdminDisplayName = () => {
       if (parsed?.username) return parsed.username;
       if (parsed?.email)    return parsed.email;
     }
-    // Fallback: try token decode (works if JWT payload has name fields)
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');
     if (token) {
       const payload = JSON.parse(atob(token.split('.')[1]));
@@ -86,9 +79,7 @@ const getAdminDisplayName = () => {
       if (payload?.name)  return payload.name;
       if (payload?.email) return payload.email;
     }
-  } catch {
-    // ignore parse errors
-  }
+  } catch { /* ignore */ }
   return 'Admin';
 };
 
@@ -105,6 +96,7 @@ const InvestmentPage = () => {
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
   const [dirtyRows, setDirtyRows]         = useState(new Set());
+  const [autoError, setAutoError]         = useState(false);
 
   const [autoData, setAutoData] = useState({
     byMonth:   {},
@@ -113,7 +105,11 @@ const InvestmentPage = () => {
 
   // ── Fetch auto-populated data (loans + fines) ─────────────────────────────
   const fetchAutoData = useCallback(async () => {
+    setAutoError(false);
     try {
+      // ── Loans: fetch all approved loans ────────────────────────────────
+      // Use a fresh token on every call so a newly logged-in admin always
+      // gets data (avoids stale auth from a previous session).
       const loansRes = await loansAPI.getAll({ _nocache: Date.now() });
       const allLoans = (loansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
 
@@ -128,9 +124,12 @@ const InvestmentPage = () => {
         loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0);
       });
 
-      const finesRes = await finesAPI.getAll({ year });
+      // ── Fines: fetch ALL fines (not filtered by year) so the Principal
+      //    row shows the all-time totals correctly ─────────────────────────
+      const finesRes = await finesAPI.getAll({});
       const allFines = finesRes.data.fines || [];
 
+      // For the monthly breakdown, only include fines for the selected year
       const savingsByMonth = {};
       const chamaaByMonth  = {};
       allFines.forEach(f => {
@@ -143,6 +142,7 @@ const InvestmentPage = () => {
         }
       });
 
+      // For the Principal row: all-time totals across ALL years
       const principalSavingsFines = allFines
         .filter(f => f.fineType === 'savings_late')
         .reduce((s, f) => s + Number(f.amount || 0), 0);
@@ -169,6 +169,8 @@ const InvestmentPage = () => {
       });
     } catch (err) {
       console.error('Failed to fetch auto data:', err);
+      // Show a visible warning so admins know auto columns may be stale
+      setAutoError(true);
     }
   }, [year]);
 
@@ -183,7 +185,11 @@ const InvestmentPage = () => {
         const saved = rawRows.find(r => r.month === m.num);
         const base  = blankRow(m);
         if (saved) {
-          EDIT_COLS.forEach(i => {
+          // Restore ALL 10 columns from DB — auto cols (1-3) are stored as 0
+          // in the DB but displayed from autoData; edit cols (4-10) are the
+          // values the admin actually typed. We restore both so the row
+          // object is complete and any admin can see the edit cols correctly.
+          COLS.forEach(i => {
             base[`investment${i}Amount`] = saved[`investment${i}Amount`] ?? '';
           });
           base.id       = saved.id       ?? null;
@@ -201,7 +207,8 @@ const InvestmentPage = () => {
       const restored      = defaultEditColNames();
       EDIT_COLS.forEach(i => { restored[`col${i}`] = savedColNames[`col${i}`] || ''; });
       setEditColNames(restored);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load investment data:', err);
       showToast('Failed to load investment data', 'error');
       setRows(defaultRows());
     } finally {
@@ -209,6 +216,9 @@ const InvestmentPage = () => {
     }
   }, [year]);
 
+  // Run both fetches whenever year changes or component mounts.
+  // They run in parallel — autoData and rows load independently so
+  // neither blocks the other.
   useEffect(() => {
     fetchAutoData();
     fetchData();
@@ -232,15 +242,9 @@ const InvestmentPage = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // ── Resolve admin name from localStorage ──────────────────────────────
-      // The login response stores user info (firstName, lastName, etc.) in
-      // localStorage. getAdminDisplayName() reads those fields in order of
-      // preference and returns a human-readable name string.
       const adminName = getAdminDisplayName();
+      const now       = new Date().toISOString();
 
-      const now = new Date().toISOString();
-
-      // Stamp editedBy / editedAt only on rows the user actually changed
       const stampedRows = rows.map(r => {
         if (dirtyRows.has(r.month)) {
           return { ...r, editedBy: adminName, editedAt: now };
@@ -252,7 +256,6 @@ const InvestmentPage = () => {
       await investmentAPI.save({ year, rows: stampedRows, colNames });
 
       showToast('Investments saved successfully');
-      // Re-fetch so the UI reflects the persisted editedBy value
       await fetchData();
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to save', 'error');
@@ -287,7 +290,6 @@ const InvestmentPage = () => {
     return autoSum + editSum;
   };
 
-  // Column totals exclude the Principal row to avoid double-counting
   const colTotals = COLS.map(i => {
     const monthRows = rows.filter(r => !r.isPrincipal);
     if (AUTO_COLS.includes(i)) {
@@ -391,7 +393,6 @@ const InvestmentPage = () => {
       background: row.isPrincipal ? '#f3e5f5' : 'transparent',
     };
 
-    // Row is dirty (unsaved changes)
     if (isDirtyRow && !saving) {
       return (
         <td style={cellBase}>
@@ -402,14 +403,10 @@ const InvestmentPage = () => {
       );
     }
 
-    // No editor recorded yet
     if (!name) {
-      return (
-        <td style={{ ...cellBase, color: '#ccc', fontSize: '12px' }}>—</td>
-      );
+      return <td style={{ ...cellBase, color: '#ccc', fontSize: '12px' }}>—</td>;
     }
 
-    // Has a saved editor name
     return (
       <td style={cellBase}>
         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -421,9 +418,7 @@ const InvestmentPage = () => {
           }}>
             <User size={9} /> {name}
           </span>
-          {ts && (
-            <span style={{ fontSize: '9px', color: '#aaa', whiteSpace: 'nowrap' }}>{ts}</span>
-          )}
+          {ts && <span style={{ fontSize: '9px', color: '#aaa', whiteSpace: 'nowrap' }}>{ts}</span>}
         </div>
       </td>
     );
@@ -435,7 +430,7 @@ const InvestmentPage = () => {
       <Navbar />
       <div style={{ padding: '24px', fontFamily: 'sans-serif' }}>
 
-        {/* ── Header ──────────────────────────────────────────────────────── */}
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <Link to="/admin/dashboard" style={{ color: '#1976d2', textDecoration: 'none', fontSize: '14px' }}>← Dashboard</Link>
@@ -476,7 +471,28 @@ const InvestmentPage = () => {
           </div>
         </div>
 
-        {/* ── Table ───────────────────────────────────────────────────────── */}
+        {/* Auto-data error warning */}
+        {autoError && (
+          <div style={{
+            marginBottom: '16px', padding: '12px 16px', borderRadius: '8px',
+            background: '#fff8e1', border: '1px solid #ffc107',
+            display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#e65100',
+          }}>
+            <AlertCircle size={16} />
+            <span>
+              Could not load auto-populated data (Loans, Savings Fines, Chamaa Fines).
+              Columns 1–3 may show — until data loads.
+            </span>
+            <button
+              onClick={fetchAutoData}
+              style={{ marginLeft: 'auto', padding: '4px 12px', background: '#e65100', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Table */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>Loading…</div>
         ) : (
@@ -540,13 +556,11 @@ const InvestmentPage = () => {
                       </th>
                     );
                   })}
-
                   <th style={{ padding: '12px 10px', color: '#ce93d8', textAlign: 'center', fontWeight: 600, minWidth: '100px', background: '#1a1a2e', fontSize: '12px', whiteSpace: 'nowrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       <User size={12} style={{ opacity: 0.8 }} /> Edited By
                     </span>
                   </th>
-
                   <th style={{ padding: '12px 14px', color: 'white', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
                     Total
                   </th>
@@ -561,10 +575,8 @@ const InvestmentPage = () => {
                     <tr key={`${row.month}-${idx}`} style={{ background: bg, borderBottom: '1px solid #f0f0f0' }}>
                       {/* Month label */}
                       <td style={{
-                        padding: '10px 14px',
-                        fontWeight: row.isPrincipal ? 800 : 600,
-                        color: row.isPrincipal ? '#7b1fa2' : '#1a1a2e',
-                        whiteSpace: 'nowrap',
+                        padding: '10px 14px', fontWeight: row.isPrincipal ? 800 : 600,
+                        color: row.isPrincipal ? '#7b1fa2' : '#1a1a2e', whiteSpace: 'nowrap',
                         position: 'sticky', left: 0, background: bg, zIndex: 1,
                         borderRight: '2px solid #e0e0e0',
                         fontStyle: row.isPrincipal ? 'italic' : 'normal',
@@ -588,12 +600,7 @@ const InvestmentPage = () => {
                           const val = autoValue(row, i);
                           return (
                             <td key={i} style={{ padding: '6px 8px', background: row.isPrincipal ? '#ede7f6' : '#f0f7ff', borderRight: '1px solid #bbdefb' }}>
-                              <span style={{
-                                display: 'block', textAlign: 'right',
-                                color: val > 0 ? '#1565c0' : '#bbb',
-                                fontWeight: val > 0 ? 700 : 400,
-                                fontSize: '13px',
-                              }}>
+                              <span style={{ display: 'block', textAlign: 'right', color: val > 0 ? '#1565c0' : '#bbb', fontWeight: val > 0 ? 700 : 400, fontSize: '13px' }}>
                                 {val > 0 ? fmtKES(val) : '—'}
                               </span>
                             </td>
@@ -603,20 +610,16 @@ const InvestmentPage = () => {
                         return (
                           <td key={i} style={{ padding: '6px 8px', background: row.isPrincipal ? '#f3e5f5' : 'transparent' }}>
                             {isStaff ? (
-                              // Staff view: read-only display
                               <span style={{ display: 'block', textAlign: 'right', color: fieldVal ? '#7b1fa2' : '#bbb', fontWeight: 600, fontSize: '13px' }}>
                                 {fieldVal ? fmtKES(Number(fieldVal)) : '—'}
                               </span>
                             ) : saving ? (
-                              // Saving state: temporarily read-only
                               <span style={{ display: 'block', textAlign: 'right', color: '#bbb', fontWeight: 600, fontSize: '13px' }}>
                                 {fieldVal ? fmtKES(Number(fieldVal)) : '—'}
                               </span>
                             ) : (
-                              // Admin edit mode
                               <input
-                                type="number"
-                                min="0"
+                                type="number" min="0"
                                 value={fieldVal}
                                 onChange={e => handleCellChange(row.month, fieldKey, e.target.value)}
                                 placeholder="0"
@@ -627,10 +630,8 @@ const InvestmentPage = () => {
                         );
                       })}
 
-                      {/* Edited By cell */}
                       {renderEditedByCell(row)}
 
-                      {/* Row total */}
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: rt > 0 ? (row.isPrincipal ? '#7b1fa2' : '#1a1a2e') : '#bbb', whiteSpace: 'nowrap' }}>
                         {rt > 0 ? fmtKES(rt) : '—'}
                       </td>
@@ -656,7 +657,7 @@ const InvestmentPage = () => {
         )}
       </div>
 
-      {/* ── Toast ────────────────────────────────────────────────────────── */}
+      {/* Toast */}
       {toast && (
         <div style={{
           position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999,
