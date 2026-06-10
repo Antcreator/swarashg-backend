@@ -301,8 +301,10 @@ const DepositModal = ({
     setSlotsLoading(true);
     setSlotsError(false);
     try {
-      const cyclesRes = await chamaaAPI.getAllCycles({ isActive: true });
-      const cycles    = cyclesRes.data.cycles || [];
+      // Fetch all cycles and filter active ones client-side
+      // (getAllCycles may not support query params in all setups)
+      const cyclesRes = await chamaaAPI.getAllCycles();
+      const cycles    = (cyclesRes.data.cycles || []).filter(c => c.isActive);
       const found     = [];
 
       for (const cycle of cycles) {
