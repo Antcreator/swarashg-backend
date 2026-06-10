@@ -3,21 +3,23 @@ import {
   X, CreditCard, Clock, CheckCircle, AlertTriangle, Wallet,
   Sprout, Users, AlertCircle, FileText, Package, ChevronRight,
   ChevronLeft, Send, XCircle, Info, Landmark, CalendarDays,
+  RefreshCw,
 } from 'lucide-react';
-import { depositsAPI, loansAPI } from '../../Service/Api';
+import { depositsAPI, loansAPI, chamaaAPI } from '../../Service/Api';
 import { useToast, ToastContainer } from '../../useToast';
 import './DepositModal.css';
 
-const CHAMAA_AMOUNT = 2030; // Fixed chamaa contribution per month
+const CHAMAA_AMOUNT = 2030;
 
 // ─── Month helpers ────────────────────────────────────────────
 const MONTHS = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const getMonthName = (n) => MONTHS[n] || '';
 
-// ─── Payment window evaluation (same logic for both savings & chamaa) ──
+// ─── Payment window evaluation ────────────────────────────────
 const getSavingWindow = (targetMonth, targetYear) => {
   let prevMonth = targetMonth - 1;
   let prevYear  = targetYear;
@@ -43,7 +45,7 @@ const evaluatePayment = (targetMonth, targetYear) => {
   return { isLate: true, finalMonth, finalYear, windowStart, windowEnd };
 };
 
-// ─── Default target month (same logic for savings & chamaa) ──────
+// ─── Default target month ─────────────────────────────────────
 const getDefaultTargetMonth = () => {
   const today = new Date();
   const day   = today.getDate();
@@ -55,7 +57,7 @@ const getDefaultTargetMonth = () => {
   };
 };
 
-// ─── Reusable Status Banner (used for both savings and chamaa) ───
+// ─── Reusable Payment Status Banner ──────────────────────────
 const PaymentStatusBanner = ({ month, year, label = 'Saving' }) => {
   if (!month || !year) return null;
   const fmtDate = (d) =>
@@ -94,6 +96,95 @@ const PaymentStatusBanner = ({ month, year, label = 'Saving' }) => {
   );
 };
 
+// ─── Active Chamaa Slot Info Banner ──────────────────────────
+// Shows the member's active cycle details above the chamaa checkbox
+// so they know exactly what they are paying for.
+const ActiveChamaaInfo = ({ slot, loading, error, onRetry }) => {
+  if (loading) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px', background:'#f3e5f5', borderRadius:'8px', marginBottom:'10px', fontSize:'12px', color:'#9c27b0' }}>
+        <RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }} />
+        Loading your chamaa details…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px', background:'#fff8e1', borderRadius:'8px', marginBottom:'10px', fontSize:'12px', color:'#e65100', border:'1px solid #ffe082' }}>
+        <AlertCircle size={13} />
+        Could not load chamaa details.
+        <button onClick={onRetry} style={{ marginLeft:'auto', background:'none', border:'none', color:'#e65100', cursor:'pointer', fontSize:'12px', fontWeight:700, textDecoration:'underline' }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!slot) {
+    return (
+      <div style={{ padding:'10px 14px', background:'#f5f5f5', borderRadius:'8px', marginBottom:'10px', fontSize:'12px', color:'#9e9e9e', border:'1px solid #e0e0e0' }}>
+        <Info size={13} style={{ verticalAlign:'middle', marginRight:'6px' }} />
+        You are not currently in an active chamaa cycle.
+      </div>
+    );
+  }
+
+  const scheduledLabel = slot.scheduledMonth
+    ? `${MONTH_NAMES_SHORT[slot.scheduledMonth - 1]} ${slot.scheduledYear || ''}`
+    : 'Not yet scheduled';
+
+  return (
+    <div style={{
+      padding:'12px 14px', borderRadius:'10px', marginBottom:'10px',
+      background:'linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%)',
+      border:'1.5px solid #ce93d8',
+    }}>
+      <div style={{ fontSize:'11px', fontWeight:700, color:'#7b1fa2', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px', display:'flex', alignItems:'center', gap:'6px' }}>
+        <Users size={12} /> Your Active Chamaa
+      </div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:'8px' }}>
+        {/* Cycle name */}
+        <div style={{ flex:'1 1 auto', minWidth:'120px' }}>
+          <div style={{ fontSize:'10px', color:'#9c27b0', fontWeight:600, marginBottom:'2px' }}>CYCLE</div>
+          <div style={{ fontSize:'14px', fontWeight:800, color:'#4a148c' }}>{slot.cycleName}</div>
+        </div>
+        {/* Position */}
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontSize:'10px', color:'#9c27b0', fontWeight:600, marginBottom:'2px' }}>POSITION</div>
+          <div style={{
+            width:'36px', height:'36px', borderRadius:'50%',
+            background:'#7b1fa2', color:'white',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:'15px', fontWeight:800,
+          }}>
+            {slot.position}
+          </div>
+        </div>
+        {/* Scheduled month */}
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontSize:'10px', color:'#9c27b0', fontWeight:600, marginBottom:'2px' }}>RECEIVES POT</div>
+          <div style={{
+            padding:'4px 12px', borderRadius:'20px',
+            background: slot.scheduledMonth ? '#7b1fa2' : '#e0e0e0',
+            color: slot.scheduledMonth ? 'white' : '#9e9e9e',
+            fontSize:'12px', fontWeight:700, whiteSpace:'nowrap',
+          }}>
+            {scheduledLabel}
+          </div>
+        </div>
+        {/* Contribution amount */}
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:'10px', color:'#9c27b0', fontWeight:600, marginBottom:'2px' }}>MONTHLY</div>
+          <div style={{ fontSize:'14px', fontWeight:800, color:'#4a148c' }}>
+            KES {CHAMAA_AMOUNT.toLocaleString()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Icon map ─────────────────────────────────────────────────
 const CategoryIcon = ({ name, size = 15 }) => {
   const icons = {
@@ -125,6 +216,11 @@ const DepositModal = ({
   const [submitting, setSubmitting]   = useState(false);
   const [memberCodes, setMemberCodes] = useState(new Set());
 
+  // ── Active chamaa slot state ──────────────────────────────
+  const [activeSlot, setActiveSlot]           = useState(null);
+  const [slotLoading, setSlotLoading]         = useState(false);
+  const [slotError, setSlotError]             = useState(false);
+
   const [dismissedIds, setDismissedIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`dismissed_rejections_${memberId}`) || '[]');
@@ -150,30 +246,67 @@ const DepositModal = ({
   const defaults = getDefaultTargetMonth();
 
   const [formData, setFormData] = useState({
-    totalAmount:   '',
-    mpesaMessage:  '',
-    notes:         '',
-    // Savings
-    savings:       '',
-    savingsMonth:  defaults.month,
-    savingsYear:   defaults.year,
-    // Loan
-    loanPayment:   '',
-    selectedLoanId:'',
-    // Chamaa — mirrors savings exactly, fixed at KES 2030
-    chamaaPayment: '',
-    chamaaMonth:   defaults.month,
-    chamaaYear:    defaults.year,
-    // Other
-    seedCapital:   '',
-    savingsFine:   '',
-    chamaaFine:    '',
-    agmFee:        '',
-    others:        '',
+    totalAmount:    '',
+    mpesaMessage:   '',
+    notes:          '',
+    savings:        '',
+    savingsMonth:   defaults.month,
+    savingsYear:    defaults.year,
+    loanPayment:    '',
+    selectedLoanId: '',
+    chamaaPayment:  '',
+    chamaaMonth:    defaults.month,
+    chamaaYear:     defaults.year,
+    seedCapital:    '',
+    savingsFine:    '',
+    chamaaFine:     '',
+    agmFee:         '',
+    others:         '',
   });
 
   const derivedCode     = formData.mpesaMessage.replace(/\s/g, '').substring(0, 10).toUpperCase();
   const isDuplicateCode = derivedCode.length === 10 && memberCodes.has(derivedCode);
+
+  // ── Fetch member's active chamaa slot ─────────────────────
+  const fetchActiveSlot = useCallback(async () => {
+    setSlotLoading(true);
+    setSlotError(false);
+    try {
+      // Use chamaaAPI to get all cycles, then find active participant slots
+      // for this member across active cycles
+      const cyclesRes = await chamaaAPI.getAllCycles({ isActive: true });
+      const cycles    = cyclesRes.data.cycles || [];
+
+      // Find the first active cycle that has this member as a participant
+      let found = null;
+      for (const cycle of cycles) {
+        try {
+          const cycleRes     = await chamaaAPI.getCycleById(cycle.id);
+          const participants = cycleRes.data.participants || [];
+          const mySlot       = participants.find(p => Number(p.memberId) === Number(memberId));
+          if (mySlot) {
+            found = {
+              participantId:  mySlot.id,
+              position:       mySlot.position,
+              scheduledMonth: mySlot.scheduledMonth,
+              scheduledYear:  mySlot.scheduledYear,
+              cycleName:      cycle.name,
+              cycleId:        cycle.id,
+              hasReceived:    mySlot.hasReceived,
+            };
+            break; // Use first active cycle found
+          }
+        } catch { /* skip this cycle if it fails */ }
+      }
+
+      setActiveSlot(found);
+    } catch (err) {
+      console.error('Failed to fetch active chamaa slot:', err);
+      setSlotError(true);
+    } finally {
+      setSlotLoading(false);
+    }
+  }, [memberId]);
 
   const fetchActiveLoans = useCallback(async () => {
     try {
@@ -189,18 +322,17 @@ const DepositModal = ({
 
   const fetchMemberCodes = useCallback(async () => {
     try {
-      const res = await depositsAPI.getSummary(memberId);
+      const res      = await depositsAPI.getSummary(memberId);
       const deposits = res.data?.deposits || [];
       setMemberCodes(new Set(deposits.map(d => d.mpesaCode).filter(Boolean)));
-    } catch (err) {
-      console.warn('Could not prefetch member deposit codes:', err.message);
-    }
+    } catch (err) { console.warn('Could not prefetch member deposit codes:', err.message); }
   }, [memberId]);
 
   useEffect(() => {
     fetchActiveLoans();
     fetchMemberCodes();
-  }, [fetchActiveLoans, fetchMemberCodes]);
+    fetchActiveSlot();
+  }, [fetchActiveLoans, fetchMemberCodes, fetchActiveSlot]);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -213,7 +345,7 @@ const DepositModal = ({
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
-  // When member ticks "pay chamaa", auto-fill the fixed amount
+  // When member ticks "pay chamaa", auto-fill fixed amount
   const handleChamaaToggle = (e) => {
     const checked = e.target.checked;
     setFormData(prev => ({
@@ -267,7 +399,7 @@ const DepositModal = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleNext    = (e) => { e.preventDefault(); if (validateStep1()) setStep(2); };
+  const handleNext   = (e) => { e.preventDefault(); if (validateStep1()) setStep(2); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -280,19 +412,19 @@ const DepositModal = ({
         mpesaMessage: formData.mpesaMessage,
         notes:        formData.notes,
         distribution: {
-          savings:        Number(formData.savings       || 0),
-          savingsMonth:   Number(formData.savingsMonth),
-          savingsYear:    Number(formData.savingsYear),
-          loanPayment:    Number(formData.loanPayment   || 0),
-          loanId:         formData.selectedLoanId || null,
-          chamaaPayment:  Number(formData.chamaaPayment || 0),
-          chamaaMonth:    Number(formData.chamaaMonth),
-          chamaaYear:     Number(formData.chamaaYear),
-          seedCapital:    Number(formData.seedCapital   || 0),
-          savingsFine:    Number(formData.savingsFine   || 0),
-          chamaaFine:     Number(formData.chamaaFine    || 0),
-          agmFee:         Number(formData.agmFee        || 0),
-          others:         Number(formData.others        || 0),
+          savings:       Number(formData.savings       || 0),
+          savingsMonth:  Number(formData.savingsMonth),
+          savingsYear:   Number(formData.savingsYear),
+          loanPayment:   Number(formData.loanPayment   || 0),
+          loanId:        formData.selectedLoanId || null,
+          chamaaPayment: Number(formData.chamaaPayment || 0),
+          chamaaMonth:   Number(formData.chamaaMonth),
+          chamaaYear:    Number(formData.chamaaYear),
+          seedCapital:   Number(formData.seedCapital   || 0),
+          savingsFine:   Number(formData.savingsFine   || 0),
+          chamaaFine:    Number(formData.chamaaFine    || 0),
+          agmFee:        Number(formData.agmFee        || 0),
+          others:        Number(formData.others        || 0),
         },
       });
 
@@ -322,14 +454,14 @@ const DepositModal = ({
   }).format(v || 0);
 
   const summaryRows = [
-    { label: 'Savings',       key: 'savingsAmount',       icon: 'savings' },
-    { label: 'Loan Payment',  key: 'loanPaymentAmount',   icon: 'loanPayment' },
-    { label: 'Chamaa',        key: 'chamaaPaymentAmount', icon: 'chamaaPayment' },
-    { label: 'Seed Capital',  key: 'seedCapitalAmount',   icon: 'seedCapital' },
-    { label: 'Savings Fine',  key: 'savingsFineAmount',   icon: 'savingsFine' },
-    { label: 'Chamaa Fine',   key: 'chamaaFineAmount',    icon: 'chamaaFine' },
-    { label: 'AGM Fee',       key: 'agmFeeAmount',        icon: 'agmFee' },
-    { label: 'Others',        key: 'othersAmount',        icon: 'others' },
+    { label:'Savings',       key:'savingsAmount',       icon:'savings'       },
+    { label:'Loan Payment',  key:'loanPaymentAmount',   icon:'loanPayment'   },
+    { label:'Chamaa',        key:'chamaaPaymentAmount', icon:'chamaaPayment' },
+    { label:'Seed Capital',  key:'seedCapitalAmount',   icon:'seedCapital'   },
+    { label:'Savings Fine',  key:'savingsFineAmount',   icon:'savingsFine'   },
+    { label:'Chamaa Fine',   key:'chamaaFineAmount',    icon:'chamaaFine'    },
+    { label:'AGM Fee',       key:'agmFeeAmount',        icon:'agmFee'        },
+    { label:'Others',        key:'othersAmount',        icon:'others'        },
   ];
 
   const chamaaChecked = Number(formData.chamaaPayment) === CHAMAA_AMOUNT;
@@ -431,6 +563,7 @@ const DepositModal = ({
             {/* Step forms */}
             {!isViewMode && (
               <>
+                {/* Step indicator */}
                 <div className="dm-steps">
                   {['Deposit Info', 'Distribute Funds'].map((label, i) => (
                     <div key={i} className="dm-step">
@@ -504,7 +637,7 @@ const DepositModal = ({
 
                     {/* Allocation tracker */}
                     <div className={`dm-tracker ${
-                      unallocated < 0   ? 'dm-tracker--over'
+                      unallocated < 0    ? 'dm-tracker--over'
                       : unallocated === 0 ? 'dm-tracker--done'
                       : 'dm-tracker--ok'
                     }`}>
@@ -521,7 +654,7 @@ const DepositModal = ({
                       <div className="dm-tracker__cell dm-tracker__cell--right">
                         <span className="dm-tracker__cell-label">Remaining</span>
                         <span className={`dm-tracker__cell-value dm-tracker__cell-value--lg ${
-                          unallocated < 0   ? 'dm-tracker__cell-value--over'
+                          unallocated < 0    ? 'dm-tracker__cell-value--over'
                           : unallocated === 0 ? 'dm-tracker__cell-value--done'
                           : ''
                         }`}>{fmt(unallocated)}</span>
@@ -538,7 +671,7 @@ const DepositModal = ({
 
                       <div className="dm-dist-grid--form">
 
-                        {/* ── Savings ── */}
+                        {/* Savings */}
                         <div className="dm-field dm-field--full">
                           <label className="dm-label dm-label--icon"><Wallet size={13} /> Savings</label>
                           <input className="dm-input" type="number" name="savings" value={formData.savings}
@@ -573,69 +706,80 @@ const DepositModal = ({
                           )}
                         </div>
 
-                        {/* ── Chamaa Payment — mirrors savings exactly ── */}
+                        {/* ── Chamaa Payment ── */}
                         <div className="dm-field dm-field--full">
                           <label className="dm-label dm-label--icon"><Users size={13} /> Chamaa Payment</label>
 
-                          {/* Checkbox toggle — auto-fills KES 2030 */}
-                          <label style={{
-                            display:'inline-flex', alignItems:'center', gap:'10px',
-                            padding:'10px 14px', borderRadius:'10px', cursor:'pointer',
-                            background: chamaaChecked ? '#f3e5f5' : '#fafafa',
-                            border: `2px solid ${chamaaChecked ? '#7b1fa2' : '#e0e0e0'}`,
-                            transition:'all 0.15s', userSelect:'none', marginTop:'4px',
-                          }}>
-                            <input
-                              type="checkbox"
-                              checked={chamaaChecked}
-                              onChange={handleChamaaToggle}
-                              style={{ width:'16px', height:'16px', accentColor:'#7b1fa2', cursor:'pointer' }}
-                            />
-                            <span style={{ fontSize:'13px', fontWeight:700, color: chamaaChecked ? '#7b1fa2' : '#555' }}>
-                              Pay this month's chamaa
-                            </span>
-                            <span style={{
-                              marginLeft:'auto', fontWeight:800, fontSize:'14px',
-                              color: chamaaChecked ? '#4a148c' : '#999',
-                            }}>
-                              KES {CHAMAA_AMOUNT.toLocaleString()}
-                            </span>
-                          </label>
+                          {/* Active cycle info banner — always shown in chamaa section */}
+                          <ActiveChamaaInfo
+                            slot={activeSlot}
+                            loading={slotLoading}
+                            error={slotError}
+                            onRetry={fetchActiveSlot}
+                          />
 
-                          {errors.chamaaPayment && (
-                            <span className="dm-error" style={{ marginTop:'6px' }}>
-                              <AlertCircle size={12} />{errors.chamaaPayment}
-                            </span>
-                          )}
+                          {/* Only show checkbox if member has an active cycle */}
+                          {!slotLoading && (activeSlot || slotError) && (
+                            <>
+                              <label style={{
+                                display:'inline-flex', alignItems:'center', gap:'10px',
+                                padding:'10px 14px', borderRadius:'10px', cursor: activeSlot ? 'pointer' : 'not-allowed',
+                                background: chamaaChecked ? '#f3e5f5' : '#fafafa',
+                                border: `2px solid ${chamaaChecked ? '#7b1fa2' : '#e0e0e0'}`,
+                                transition:'all 0.15s', userSelect:'none', marginTop:'4px',
+                                opacity: activeSlot ? 1 : 0.5,
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={chamaaChecked}
+                                  onChange={handleChamaaToggle}
+                                  disabled={!activeSlot}
+                                  style={{ width:'16px', height:'16px', accentColor:'#7b1fa2', cursor: activeSlot ? 'pointer' : 'not-allowed' }}
+                                />
+                                <span style={{ fontSize:'13px', fontWeight:700, color: chamaaChecked ? '#7b1fa2' : '#555' }}>
+                                  Pay this month's chamaa
+                                </span>
+                                <span style={{ marginLeft:'auto', fontWeight:800, fontSize:'14px', color: chamaaChecked ? '#4a148c' : '#999' }}>
+                                  KES {CHAMAA_AMOUNT.toLocaleString()}
+                                </span>
+                              </label>
 
-                          {/* Month/year picker — appears when chamaa is ticked, same as savings */}
-                          {chamaaChecked && (
-                            <div style={{ marginTop:'12px' }}>
-                              <p style={{ fontSize:'12px', color:'#555', marginBottom:'8px', display:'flex', alignItems:'center', gap:5 }}>
-                                <CalendarDays size={13} /> Which month are you paying chamaa <strong style={{ marginLeft:2 }}>for</strong>?
-                              </p>
-                              <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                                <div style={{ flex:'1 1 140px' }}>
-                                  <label className="dm-label">Month *</label>
-                                  <select className={`dm-select ${errors.chamaaMonth ? 'dm-input--error' : ''}`}
-                                    name="chamaaMonth" value={formData.chamaaMonth} onChange={handleChange} required>
-                                    {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{getMonthName(i+1)}</option>)}
-                                  </select>
-                                  {errors.chamaaMonth && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaMonth}</span>}
+                              {errors.chamaaPayment && (
+                                <span className="dm-error" style={{ marginTop:'6px' }}>
+                                  <AlertCircle size={12} />{errors.chamaaPayment}
+                                </span>
+                              )}
+
+                              {/* Month/year picker */}
+                              {chamaaChecked && (
+                                <div style={{ marginTop:'12px' }}>
+                                  <p style={{ fontSize:'12px', color:'#555', marginBottom:'8px', display:'flex', alignItems:'center', gap:5 }}>
+                                    <CalendarDays size={13} /> Which month are you paying chamaa <strong style={{ marginLeft:2 }}>for</strong>?
+                                  </p>
+                                  <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                                    <div style={{ flex:'1 1 140px' }}>
+                                      <label className="dm-label">Month *</label>
+                                      <select className={`dm-select ${errors.chamaaMonth ? 'dm-input--error' : ''}`}
+                                        name="chamaaMonth" value={formData.chamaaMonth} onChange={handleChange} required>
+                                        {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{getMonthName(i+1)}</option>)}
+                                      </select>
+                                      {errors.chamaaMonth && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaMonth}</span>}
+                                    </div>
+                                    <div style={{ flex:'1 1 90px' }}>
+                                      <label className="dm-label">Year *</label>
+                                      <input className={`dm-input ${errors.chamaaYear ? 'dm-input--error' : ''}`}
+                                        type="number" name="chamaaYear" value={formData.chamaaYear}
+                                        onChange={handleChange} min="2000" max="2100" required />
+                                      {errors.chamaaYear && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaYear}</span>}
+                                    </div>
+                                  </div>
+                                  <p style={{ fontSize:'11px', color:'#666', marginTop:'6px', display:'flex', alignItems:'center', gap:5 }}>
+                                    <Info size={11} /> Payment window: 11th of previous month → 10th of target month
+                                  </p>
+                                  <PaymentStatusBanner month={formData.chamaaMonth} year={formData.chamaaYear} label="Paying chamaa" />
                                 </div>
-                                <div style={{ flex:'1 1 90px' }}>
-                                  <label className="dm-label">Year *</label>
-                                  <input className={`dm-input ${errors.chamaaYear ? 'dm-input--error' : ''}`}
-                                    type="number" name="chamaaYear" value={formData.chamaaYear}
-                                    onChange={handleChange} min="2000" max="2100" required />
-                                  {errors.chamaaYear && <span className="dm-error"><AlertCircle size={12} />{errors.chamaaYear}</span>}
-                                </div>
-                              </div>
-                              <p style={{ fontSize:'11px', color:'#666', marginTop:'6px', display:'flex', alignItems:'center', gap:5 }}>
-                                <Info size={11} /> Payment window: 11th of previous month → 10th of target month
-                              </p>
-                              <PaymentStatusBanner month={formData.chamaaMonth} year={formData.chamaaYear} label="Paying chamaa" />
-                            </div>
+                              )}
+                            </>
                           )}
                         </div>
 
