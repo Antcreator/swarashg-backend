@@ -8,6 +8,8 @@ const { recordAgmFeeFromDeposit } = require('./agmFeeController');
 const { sendEmail }    = require('../services/emailService');
 const emailTemplates   = require('../services/emailTemplates');
 
+const CHAMAA_AMOUNT = 2030; // Fixed chamaa contribution per month
+
 // ─── Helper: get member email ────────────────────────────────────
 const getMemberEmail = async (memberId) => {
   try {
@@ -29,13 +31,14 @@ const getAdminEmails = async () => {
   } catch { return []; }
 };
 
-// ─── Helper: evaluate if a savings payment is late ──────────────
-const evaluateSavingsPayment = (targetMonth, targetYear, paymentDate) => {
+// ─── Helper: evaluate late payment (mirrors savingsController) ───
+// Window to pay for month M of year Y = 11th of (M-1) → 10th of M
+const evaluateLatePayment = (targetMonth, targetYear, paymentDate) => {
   let prevMonth = targetMonth - 1;
   let prevYear  = targetYear;
   if (prevMonth === 0) { prevMonth = 12; prevYear -= 1; }
 
-  const windowStart = new Date(prevYear,  prevMonth - 1, 11);
+  const windowStart = new Date(prevYear,   prevMonth - 1, 11);
   const windowEnd   = new Date(targetYear, targetMonth - 1, 10);
 
   const payDay   = paymentDate.getDate();
@@ -47,48 +50,12 @@ const evaluateSavingsPayment = (targetMonth, targetYear, paymentDate) => {
   if (isWithinWindow) {
     return { isLate: false, finalMonth: targetMonth, finalYear: targetYear, fineAmount: 0 };
   }
-  const finalMonth = targetMonth === 12 ? 1  : targetMonth + 1;
+  const finalMonth = targetMonth === 12 ? 1            : targetMonth + 1;
   const finalYear  = targetMonth === 12 ? targetYear + 1 : targetYear;
   return { isLate: true, finalMonth, finalYear, fineAmount: 500 };
 };
 
-// ─── GET /chamaa-slots/:memberId ─────────────────────────────────
-// Returns the member's active chamaa slots so DepositModal can
-// show the slot selector dropdown.
-const getMemberChamaaSlots = async (req, res) => {
-  const { memberId } = req.params;
-  try {
-    const participants = await ChamaaParticipant.findAll({
-      where: { memberId },
-      include: [{
-        model: ChamaaCycle,
-        as: 'cycle',
-        where: { isActive: true },
-        required: true,
-        attributes: ['id', 'name', 'contributionAmount'],
-      }],
-      order: [['id', 'ASC']],
-    });
-
-    const slots = participants.map(p => ({
-      participantId:      p.id,
-      position:           p.position,
-      scheduledMonth:     p.scheduledMonth,
-      scheduledYear:      p.scheduledYear,
-      cycleName:          p.cycle.name,
-      cycleId:            p.cycle.id,
-      contributionAmount: Number(p.cycle.contributionAmount),
-      hasReceived:        p.hasReceived,
-    }));
-
-    return res.json({ slots });
-  } catch (error) {
-    console.error('Get member chamaa slots error:', error);
-    return res.status(500).json({ message: 'Failed to fetch chamaa slots' });
-  }
-};
-
-// ─── MEMBER: Submit deposit + distribution in one step ──────────
+// ─── MEMBER: Submit deposit + distribution ──────────────────────
 const createDeposit = async (req, res) => {
   const {
     memberId, totalAmount, mpesaMessage, mpesaCode: legacyCode,
@@ -114,43 +81,29 @@ const createDeposit = async (req, res) => {
     if (existing)
       return res.status(400).json({ message: 'This M-PESA transaction has already been submitted' });
 
-    // ── Validate chamaa slot selection ────────────────────────────
-    const chamaaSlotIds = Array.isArray(distribution.chamaaSlotIds)
-      ? distribution.chamaaSlotIds.map(Number).filter(Boolean)
-      : [];
-
     const chamaaAmount = Number(distribution.chamaaPayment || 0);
 
-    if (chamaaAmount > 0 && chamaaSlotIds.length === 0) {
+    // Validate chamaa amount is exactly KES 2030 if provided
+    if (chamaaAmount > 0 && chamaaAmount !== CHAMAA_AMOUNT) {
       return res.status(400).json({
-        message: 'Please select which chamaa slot(s) you are paying for',
+        message: `Chamaa payment must be exactly KES ${CHAMAA_AMOUNT}`,
       });
     }
 
-    if (chamaaSlotIds.length > 0) {
-      // Verify all selected slots belong to this member and are in active cycles
-      const validSlots = await ChamaaParticipant.findAll({
-        where: { id: { [Op.in]: chamaaSlotIds }, memberId },
-        include: [{
-          model: ChamaaCycle,
-          as: 'cycle',
-          where: { isActive: true },
-          required: true,
-        }],
-      });
-
-      if (validSlots.length !== chamaaSlotIds.length) {
+    // Require chamaaMonth/chamaaYear when chamaa amount is provided
+    if (chamaaAmount > 0) {
+      if (!distribution.chamaaMonth || !distribution.chamaaYear) {
         return res.status(400).json({
-          message: 'One or more selected chamaa slots are invalid or not active',
+          message: 'chamaaMonth and chamaaYear are required when chamaa payment is provided',
         });
       }
+    }
 
-      // Validate amount matches slots × contribution amount
-      const contributionPerSlot = Number(validSlots[0].cycle.contributionAmount);
-      const expectedTotal       = contributionPerSlot * chamaaSlotIds.length;
-      if (chamaaAmount !== expectedTotal) {
+    // Require savingsMonth/savingsYear when savings amount is provided
+    if (Number(distribution.savings || 0) > 0) {
+      if (!distribution.savingsMonth || !distribution.savingsYear) {
         return res.status(400).json({
-          message: `Chamaa amount should be KES ${expectedTotal} (${chamaaSlotIds.length} slot(s) × KES ${contributionPerSlot})`,
+          message: 'savingsMonth and savingsYear are required when savings amount is provided',
         });
       }
     }
@@ -172,13 +125,6 @@ const createDeposit = async (req, res) => {
     if (distributedTotal === 0)
       return res.status(400).json({ message: 'Please allocate funds to at least one category' });
 
-    if (Number(distribution.savings || 0) > 0) {
-      if (!distribution.savingsMonth || !distribution.savingsYear)
-        return res.status(400).json({
-          message: 'savingsMonth and savingsYear are required when savings amount is provided',
-        });
-    }
-
     const depositPayload = {
       memberId,
       totalAmount,
@@ -188,17 +134,18 @@ const createDeposit = async (req, res) => {
       depositStatus:           'pending_confirmation',
       distributionStatus:      'pending',
       availableBalance:        totalAmount,
-      savingsAmount:           distribution.savings        || 0,
-      savingsMonth:            distribution.savingsMonth   || null,
-      savingsYear:             distribution.savingsYear    || null,
-      loanPaymentAmount:       distribution.loanPayment    || 0,
-      loanId:                  distribution.loanId         || null,
+      savingsAmount:           distribution.savings      || 0,
+      savingsMonth:            distribution.savingsMonth || null,
+      savingsYear:             distribution.savingsYear  || null,
+      loanPaymentAmount:       distribution.loanPayment  || 0,
+      loanId:                  distribution.loanId       || null,
       chamaaPaymentAmount:     chamaaAmount,
-      chamaaSlotIds:           chamaaSlotIds.length > 0 ? chamaaSlotIds : null,
-      seedCapitalAmount:       distribution.seedCapital    || 0,
-      savingsFineAmount:       distribution.savingsFine    || 0,
-      chamaaFineAmount:        distribution.chamaaFine     || 0,
-      agmFeeAmount:            distribution.agmFee         || 0,
+      chamaaMonth:             distribution.chamaaMonth  || null,
+      chamaaYear:              distribution.chamaaYear   || null,
+      seedCapitalAmount:       distribution.seedCapital  || 0,
+      savingsFineAmount:       distribution.savingsFine  || 0,
+      chamaaFineAmount:        distribution.chamaaFine   || 0,
+      agmFeeAmount:            distribution.agmFee       || 0,
       distributionRequestedAt: new Date(),
     };
 
@@ -231,20 +178,20 @@ const createDeposit = async (req, res) => {
       getAdminEmails(),
       Member.findByPk(memberId),
     ]);
-
     if (memberEmail && member) {
       try {
-        const tmpl = emailTemplates.depositSubmitted(member, deposit);
-        sendEmail({ to: memberEmail, ...tmpl });
+        sendEmail({ to: memberEmail, ...emailTemplates.depositSubmitted(member, deposit) });
       } catch (e) { console.error('Failed to send deposit submitted email:', e.message); }
     }
     for (const adminEmail of adminEmails) {
       try {
-        const tmpl = emailTemplates.adminDepositPending(
-          member || { firstName: 'Member', lastName: '' },
-          { ...deposit.toJSON(), mpesaMessage: rawMessage }
-        );
-        sendEmail({ to: adminEmail, ...tmpl });
+        sendEmail({
+          to: adminEmail,
+          ...emailTemplates.adminDepositPending(
+            member || { firstName: 'Member', lastName: '' },
+            { ...deposit.toJSON(), mpesaMessage: rawMessage }
+          ),
+        });
       } catch (e) { console.error('Failed to send deposit pending email:', e.message); }
     }
 
@@ -263,6 +210,7 @@ const approveDeposit = async (req, res) => {
   const { id }      = req.params;
   const adminUserId = req.user.id;
   const transaction = await sequelize.transaction();
+
   try {
     const deposit = await Deposit.findByPk(id, {
       include: [{ model: Member, as: 'member' }],
@@ -286,7 +234,7 @@ const approveDeposit = async (req, res) => {
       const targetYear  = Number(deposit.savingsYear)  || currentYear;
 
       const { isLate, finalMonth, finalYear, fineAmount } =
-        evaluateSavingsPayment(targetMonth, targetYear, currentDate);
+        evaluateLatePayment(targetMonth, targetYear, currentDate);
 
       const existingSavings = await Savings.findOne({
         where: { memberId: deposit.memberId, month: finalMonth, year: finalYear },
@@ -320,13 +268,13 @@ const approveDeposit = async (req, res) => {
 
       if (isLate && fineAmount > 0) {
         await Fine.create({
-          memberId:  deposit.memberId,
-          fineType:  'savings_late',
-          amount:    fineAmount,
-          month:     finalMonth,
-          year:      finalYear,
-          isPaid:    false,
-          notes:     `Auto-generated: late savings payment via deposit ${deposit.mpesaCode}`,
+          memberId: deposit.memberId,
+          fineType: 'savings_late',
+          amount:   fineAmount,
+          month:    finalMonth,
+          year:     finalYear,
+          isPaid:   false,
+          notes:    `Auto-generated: late savings payment via deposit ${deposit.mpesaCode}`,
         }, { transaction });
       }
     }
@@ -349,81 +297,93 @@ const approveDeposit = async (req, res) => {
       }
     }
 
-    // ── Chamaa Payment ────────────────────────────────────────────
-    // Write one ChamaaContribution per selected slot so the chamaa
-    // report and chamaa page both reflect the payment automatically.
+    // ── Chamaa Payment ─────────────────────────────────────────────
+    // Mirrors savings exactly: member specifies which month/year they
+    // are paying for. System checks the payment window and applies a
+    // KES 500 fine + pushes to next month if late.
+    // Writes to ChamaaContribution so the chamaa report shows paid.
     if (deposit.chamaaPaymentAmount > 0) {
-      // chamaaSlotIds is a getter that already returns a parsed array
-      const slotIds = deposit.chamaaSlotIds || [];
+      const targetMonth = Number(deposit.chamaaMonth) || (currentDate.getMonth() + 1);
+      const targetYear  = Number(deposit.chamaaYear)  || currentYear;
 
-      if (slotIds.length > 0) {
-        const currentMonth = currentDate.getMonth() + 1;
-        const currentYear2 = currentDate.getFullYear();
+      const { isLate, finalMonth, finalYear, fineAmount } =
+        evaluateLatePayment(targetMonth, targetYear, currentDate);
 
-        for (const slotId of slotIds) {
-          const participant = await ChamaaParticipant.findByPk(slotId, {
-            include: [{ model: ChamaaCycle, as: 'cycle' }],
-            transaction,
-          });
+      // Find the member's active participant slot in any active cycle
+      // If the member has multiple slots, apply to the first unpaid one
+      // for the final month; otherwise create a standalone contribution.
+      const activeParticipant = await ChamaaParticipant.findOne({
+        where: { memberId: deposit.memberId },
+        include: [{
+          model:    ChamaaCycle,
+          as:       'cycle',
+          where:    { isActive: true },
+          required: true,
+        }],
+        transaction,
+      });
 
-          if (!participant) {
-            console.warn(`[Deposit ${deposit.id}] Slot ${slotId} not found — skipping`);
-            continue;
-          }
+      if (activeParticipant) {
+        // Check if contribution already exists for this slot and month
+        const existingContrib = await ChamaaContribution.findOne({
+          where: {
+            participantId: activeParticipant.id,
+            month:         finalMonth,
+            year:          finalYear,
+          },
+          transaction,
+        });
 
-          // Skip if already paid for this month (idempotent)
-          const alreadyPaid = await ChamaaContribution.findOne({
-            where: { participantId: slotId, month: currentMonth, year: currentYear2 },
-            transaction,
-          });
-          if (alreadyPaid) {
-            console.warn(`[Deposit ${deposit.id}] Slot ${slotId} already has a contribution for ${currentMonth}/${currentYear2} — skipping`);
-            continue;
-          }
-
-          // Late if payment arrives after the 10th of the month
-          const isLate     = currentDate.getDate() > 10;
-          const fineAmount = isLate ? 500 : 0;
-
+        if (existingContrib) {
+          // Add to existing (same as savings additive logic)
+          existingContrib.amount      = Number(existingContrib.amount) + Number(deposit.chamaaPaymentAmount);
+          existingContrib.isLate      = existingContrib.isLate || isLate;
+          existingContrib.fineAmount  = Number(existingContrib.fineAmount || 0) + fineAmount;
+          existingContrib.paymentDate = currentDate;
+          await existingContrib.save({ transaction });
+        } else {
           await ChamaaContribution.create({
-            participantId: slotId,
-            month:         currentMonth,
-            year:          currentYear2,
-            amount:        Number(participant.cycle.contributionAmount),
+            participantId: activeParticipant.id,
+            month:         finalMonth,
+            year:          finalYear,
+            amount:        Number(deposit.chamaaPaymentAmount),
             paymentDate:   currentDate,
             isPaid:        true,
             isLate,
             fineAmount,
           }, { transaction });
-
-          if (isLate) {
-            await Fine.create({
-              memberId:  deposit.memberId,
-              fineType:  'chamaa_late',
-              amount:    fineAmount,
-              month:     currentMonth,
-              year:      currentYear2,
-              isPaid:    false,
-              notes:     `Auto-generated: late chamaa payment via deposit ${deposit.mpesaCode}`,
-            }, { transaction });
-          }
         }
       } else {
+        // Member has no active chamaa slot — log warning but don't fail approval
         console.warn(
           `[Deposit ${deposit.id}] chamaaPaymentAmount=${deposit.chamaaPaymentAmount} ` +
-          `but no chamaaSlotIds found — chamaa contributions NOT recorded.`
+          `but no active chamaa cycle found for member ${deposit.memberId}. ` +
+          `Chamaa contribution NOT recorded.`
         );
+      }
+
+      // Always create the fine record if late, regardless of slot
+      if (isLate && fineAmount > 0) {
+        await Fine.create({
+          memberId: deposit.memberId,
+          fineType: 'chamaa_late',
+          amount:   fineAmount,
+          month:    finalMonth,
+          year:     finalYear,
+          isPaid:   false,
+          notes:    `Auto-generated: late chamaa payment via deposit ${deposit.mpesaCode}`,
+        }, { transaction });
       }
     }
 
     // ── Seed Capital ─────────────────────────────────────────────
     if (deposit.seedCapitalAmount > 0) {
       await SeedCapital.create({
-        memberId:  deposit.memberId,
-        amount:    deposit.seedCapitalAmount,
-        depositId: deposit.id,
+        memberId:    deposit.memberId,
+        amount:      deposit.seedCapitalAmount,
+        depositId:   deposit.id,
         paymentDate: currentDate,
-        notes: `From deposit ${deposit.mpesaCode}`,
+        notes:       `From deposit ${deposit.mpesaCode}`,
       }, { transaction });
       const member = await Member.findByPk(deposit.memberId, { transaction });
       member.totalSeedCapital = Number(member.totalSeedCapital || 0) + Number(deposit.seedCapitalAmount);
@@ -521,8 +481,7 @@ const approveDeposit = async (req, res) => {
     ]);
     if (memberEmail && member) {
       try {
-        const tmpl = emailTemplates.depositApproved(member, deposit);
-        sendEmail({ to: memberEmail, ...tmpl });
+        sendEmail({ to: memberEmail, ...emailTemplates.depositApproved(member, deposit) });
       } catch (emailErr) {
         console.error('Failed to send deposit approval email:', emailErr.message);
       }
@@ -560,9 +519,10 @@ const rejectDeposit = async (req, res) => {
       const { createNotification } = require('./notificationController');
       if (deposit.member?.user) {
         await createNotification(deposit.member.user.id, {
-          memberId: deposit.memberId, type: 'deposit_rejected',
-          title: 'Deposit Rejected',
-          message: `Your deposit of KES ${Number(deposit.totalAmount).toLocaleString()} (M-PESA: ${deposit.mpesaCode}) was rejected. Reason: ${deposit.rejectionReason}`,
+          memberId:         deposit.memberId,
+          type:             'deposit_rejected',
+          title:            'Deposit Rejected',
+          message:          `Your deposit of KES ${Number(deposit.totalAmount).toLocaleString()} (M-PESA: ${deposit.mpesaCode}) was rejected. Reason: ${deposit.rejectionReason}`,
           relatedDepositId: deposit.id,
         });
       }
@@ -573,8 +533,7 @@ const rejectDeposit = async (req, res) => {
     const memberEmail = deposit.member?.user?.email || await getMemberEmail(deposit.memberId);
     if (memberEmail && deposit.member) {
       try {
-        const tmpl = emailTemplates.depositRejected(deposit.member, deposit);
-        sendEmail({ to: memberEmail, ...tmpl });
+        sendEmail({ to: memberEmail, ...emailTemplates.depositRejected(deposit.member, deposit) });
       } catch (emailErr) {
         console.error('Failed to send deposit rejection email:', emailErr.message);
       }
@@ -615,12 +574,13 @@ const updateDeposit = async (req, res) => {
         return res.status(400).json({ message: 'Distribution exceeds deposit amount' });
 
       deposit.savingsAmount       = distribution.savings       || 0;
-      if (distribution.savingsMonth) deposit.savingsMonth = distribution.savingsMonth;
-      if (distribution.savingsYear)  deposit.savingsYear  = distribution.savingsYear;
+      if (distribution.savingsMonth) deposit.savingsMonth     = distribution.savingsMonth;
+      if (distribution.savingsYear)  deposit.savingsYear      = distribution.savingsYear;
       deposit.loanPaymentAmount   = distribution.loanPayment   || 0;
       deposit.loanId              = distribution.loanId        || null;
       deposit.chamaaPaymentAmount = distribution.chamaaPayment || 0;
-      if (distribution.chamaaSlotIds) deposit.chamaaSlotIds = distribution.chamaaSlotIds;
+      if (distribution.chamaaMonth)  deposit.chamaaMonth      = distribution.chamaaMonth;
+      if (distribution.chamaaYear)   deposit.chamaaYear       = distribution.chamaaYear;
       deposit.seedCapitalAmount   = distribution.seedCapital   || 0;
       deposit.savingsFineAmount   = distribution.savingsFine   || 0;
       deposit.chamaaFineAmount    = distribution.chamaaFine    || 0;
@@ -664,6 +624,7 @@ const getDeposits = async (req, res) => {
       order: [['createdAt', 'DESC']],
     });
 
+    // Pull mpesaMessage via raw SQL
     let messageMap = {};
     try {
       const ids = deposits.map(d => d.id);
@@ -731,7 +692,8 @@ const getDepositSummary = async (req, res) => {
       savingsYear:         d.savingsYear,
       loanPaymentAmount:   d.loanPaymentAmount,
       chamaaPaymentAmount: d.chamaaPaymentAmount,
-      chamaaSlotIds:       d.chamaaSlotIds,
+      chamaaMonth:         d.chamaaMonth,
+      chamaaYear:          d.chamaaYear,
       seedCapitalAmount:   d.seedCapitalAmount,
       savingsFineAmount:   d.savingsFineAmount,
       chamaaFineAmount:    d.chamaaFineAmount,
@@ -761,7 +723,6 @@ module.exports = {
   updateDeposit,
   getDeposits,
   getDepositSummary,
-  getMemberChamaaSlots,
   confirmDeposit:      approveDeposit,
   approveDistribution: approveDeposit,
   rejectDistribution:  rejectDeposit,

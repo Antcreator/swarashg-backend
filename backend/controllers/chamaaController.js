@@ -326,6 +326,132 @@ const endCycle = async (req, res) => {
   }
 };
 
+const getChamaaPaymentsReport = async (req, res) => {
+  const { month, year } = req.query;
+ 
+  if (!month || !year) {
+    return res.status(400).json({ message: 'month and year are required' });
+  }
+ 
+  const targetMonth = Number(month);
+  const targetYear  = Number(year);
+ 
+  try {
+    const { Member, ChamaaParticipant, ChamaaCycle, ChamaaContribution, Deposit } = require('../models');
+ 
+    // Get all active members
+    const members = await Member.findAll({
+      where: { isActive: true },
+      order: [['lastName', 'ASC'], ['firstName', 'ASC']],
+    });
+ 
+    // Get all active chamaa cycles with their participants
+    const cycles = await ChamaaCycle.findAll({
+      where: { isActive: true },
+      include: [{
+        model: ChamaaParticipant,
+        as: 'participants',
+        include: [{
+          model: ChamaaContribution,
+          as: 'contributions',
+          where: { month: targetMonth, year: targetYear },
+          required: false,
+        }],
+      }],
+    });
+ 
+    // Also check deposits distributed with chamaa for this month/year
+    const chamaaDeposits = await Deposit.findAll({
+      where: {
+        depositStatus:      'distributed',
+        chamaaMonth:        targetMonth,
+        chamaaYear:         targetYear,
+        chamaaPaymentAmount: { [require('sequelize').Op.gt]: 0 },
+      },
+    });
+ 
+    // Build a set of memberIds who paid via deposit this month
+    const paidViaDeposit = new Set(chamaaDeposits.map(d => Number(d.memberId)));
+ 
+    // Build report rows — one row per member
+    const details = members.map(member => {
+      const mid = Number(member.id);
+ 
+      // Find all participant slots for this member across active cycles
+      const memberSlots = [];
+      cycles.forEach(cycle => {
+        const slots = (cycle.participants || []).filter(p => Number(p.memberId) === mid);
+        slots.forEach(slot => {
+          const contribs = slot.contributions || [];
+          const paid     = contribs.length > 0;
+          const isLate   = contribs.some(c => c.isLate);
+          const amount   = contribs.reduce((s, c) => s + Number(c.amount || 0), 0);
+          const fine     = contribs.reduce((s, c) => s + Number(c.fineAmount || 0), 0);
+          memberSlots.push({
+            cycleId:       cycle.id,
+            cycleName:     cycle.name,
+            participantId: slot.id,
+            position:      slot.position,
+            scheduledMonth:slot.scheduledMonth,
+            scheduledYear: slot.scheduledYear,
+            paid,
+            isLate,
+            amount,
+            fine,
+            paymentDate: contribs[0]?.paymentDate || null,
+            paidViaDeposit: paidViaDeposit.has(mid),
+          });
+        });
+      });
+ 
+      // Overall status for this member this month
+      const hasPaid      = memberSlots.some(s => s.paid) || paidViaDeposit.has(mid);
+      const hasLate      = memberSlots.some(s => s.isLate);
+      const totalAmount  = memberSlots.reduce((s, sl) => s + sl.amount, 0);
+      const totalFine    = memberSlots.reduce((s, sl) => s + sl.fine, 0);
+      const hasActiveChamaa = memberSlots.length > 0;
+ 
+      return {
+        id:             mid,
+        memberId:       member.memberId,
+        firstName:      member.firstName,
+        lastName:       member.lastName,
+        phone:          member.phone || '',
+        hasActiveChamaa,
+        slots:          memberSlots,
+        paid:           hasPaid,
+        isLate:         hasLate,
+        amount:         totalAmount,
+        fine:           totalFine,
+        paidViaDeposit: paidViaDeposit.has(mid),
+        status: !hasActiveChamaa
+          ? 'No Active Chamaa'
+          : !hasPaid
+            ? 'Not Paid'
+            : hasLate
+              ? 'Late'
+              : 'On Time',
+      };
+    });
+ 
+    const summary = {
+      totalMembers:        details.length,
+      membersWithChamaa:   details.filter(d => d.hasActiveChamaa).length,
+      paidMembers:         details.filter(d => d.paid && d.hasActiveChamaa).length,
+      unpaidMembers:       details.filter(d => !d.paid && d.hasActiveChamaa).length,
+      latePayments:        details.filter(d => d.isLate).length,
+      totalCollected:      details.reduce((s, d) => s + d.amount, 0),
+      totalFines:          details.reduce((s, d) => s + d.fine, 0),
+      paidViaDeposit:      details.filter(d => d.paidViaDeposit).length,
+    };
+ 
+    return res.json({ month: targetMonth, year: targetYear, summary, details });
+  } catch (error) {
+    console.error('Chamaa payments report error:', error);
+    return res.status(500).json({ message: 'Failed to generate chamaa payments report' });
+  }
+};
+
 // ─── GET /chamaa/report/:cycleId/:month/:year ───────────────────
 const getMonthlyChamaaReport = async (req, res) => {
   const { cycleId, month, year } = req.params;
@@ -389,5 +515,6 @@ module.exports = {
   recordContribution,
   markAsReceived,
   endCycle,
+  getChamaaPaymentsReport,
   getMonthlyChamaaReport,
 };

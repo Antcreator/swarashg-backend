@@ -15,5 +15,6 @@ router.put ('/participant/:id/schedule',     requireAdminOnly, chamaaController.
 router.post('/contribution',                 requireAdminOnly, chamaaController.recordContribution);
 router.post('/received',                     requireAdminOnly, chamaaController.markAsReceived);
 router.put ('/:id/end',                      requireAdminOnly, chamaaController.endCycle);
+router.get('/payments-report', authenticateToken, requireAdmin, chamaaController.getChamaaPaymentsReport);
 
 module.exports = router;
