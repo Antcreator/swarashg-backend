@@ -16,7 +16,10 @@ const MONTHS = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES_SHORT = [
+  'Jan','Feb','Mar','Apr','May','Jun',
+  'Jul','Aug','Sep','Oct','Nov','Dec',
+];
 const getMonthName = (n) => MONTHS[n] || '';
 
 // ─── Payment window evaluation ────────────────────────────────
@@ -39,8 +42,8 @@ const evaluatePayment = (targetMonth, targetYear) => {
     return { isLate: false, finalMonth: targetMonth, finalYear: targetYear, windowStart, windowEnd };
   }
   return {
-    isLate: true,
-    finalMonth: targetMonth === 12 ? 1 : targetMonth + 1,
+    isLate:     true,
+    finalMonth: targetMonth === 12 ? 1            : targetMonth + 1,
     finalYear:  targetMonth === 12 ? targetYear + 1 : targetYear,
     windowStart, windowEnd,
   };
@@ -58,7 +61,7 @@ const getDefaultTargetMonth = () => {
   };
 };
 
-// ─── Payment Status Banner (shared for savings + chamaa) ──────
+// ─── Payment Status Banner ────────────────────────────────────
 const PaymentStatusBanner = ({ month, year, label = 'Saving' }) => {
   if (!month || !year) return null;
   const fmtDate = (d) =>
@@ -89,17 +92,16 @@ const PaymentStatusBanner = ({ month, year, label = 'Saving' }) => {
         Window was: {fmtDate(windowStart)} → {fmtDate(windowEnd)}
       </p>
       <p style={{ margin:'4px 0 0', color:'#c62828', fontSize:'12px', fontWeight:600 }}>
-        Will be pushed to <strong>{getMonthName(finalMonth)} {finalYear}</strong> + KES 500 fine.
+        Will be pushed to <strong>{getMonthName(finalMonth)} {finalYear}</strong> + KES 500 fine per slot.
       </p>
     </div>
   );
 };
 
-// ─── Chamaa Slots Panel ───────────────────────────────────────
-// Shows ALL active slots for the member. Each slot has its own
-// checkbox so the member can select one, some, or all.
-// The chamaa payment amount auto-calculates as selected × 2030.
-const ChamaaSlotPanel = ({ slots, loading, error, onRetry, chamaaCheckedSlots, onToggleSlot }) => {
+// ─── Chamaa Slot Panel ────────────────────────────────────────
+// Shows ALL active slots for this member with individual checkboxes.
+// Amount auto-calculates as selected slots × KES 2030.
+const ChamaaSlotPanel = ({ slots, loading, error, onRetry, checkedSlotIds, onToggle }) => {
 
   if (loading) {
     return (
@@ -131,24 +133,20 @@ const ChamaaSlotPanel = ({ slots, loading, error, onRetry, chamaaCheckedSlots, o
     );
   }
 
-  const selectedCount = chamaaCheckedSlots.length;
+  const selectedCount = checkedSlotIds.length;
   const totalDue      = selectedCount * CHAMAA_AMOUNT;
 
   return (
     <div style={{ marginBottom:'4px' }}>
 
-      {/* Header */}
       <div style={{ fontSize:'11px', fontWeight:700, color:'#7b1fa2', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px', display:'flex', alignItems:'center', gap:'6px' }}>
         <Users size={12} />
-        {slots.length === 1
-          ? 'Your Active Chamaa Slot'
-          : `Your Active Chamaa Slots (${slots.length})`}
+        {slots.length === 1 ? 'Your Active Chamaa Slot' : `Your Active Chamaa Slots (${slots.length})`}
       </div>
 
-      {/* Slot cards */}
       <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-        {slots.map((slot, idx) => {
-          const isSelected = chamaaCheckedSlots.includes(slot.participantId);
+        {slots.map((slot) => {
+          const isSelected     = checkedSlotIds.includes(slot.participantId);
           const scheduledLabel = slot.scheduledMonth
             ? `${MONTH_NAMES_SHORT[slot.scheduledMonth - 1]} ${slot.scheduledYear || ''}`
             : 'Not scheduled';
@@ -166,15 +164,13 @@ const ChamaaSlotPanel = ({ slots, loading, error, onRetry, chamaaCheckedSlots, o
                 transition:'all 0.15s', userSelect:'none',
               }}
             >
-              {/* Checkbox */}
               <input
                 type="checkbox"
                 checked={isSelected}
-                onChange={() => onToggleSlot(slot.participantId)}
+                onChange={() => onToggle(slot.participantId)}
                 style={{ width:'16px', height:'16px', accentColor:'#7b1fa2', cursor:'pointer', flexShrink:0 }}
               />
 
-              {/* Cycle + position */}
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:700, fontSize:'13px', color:'#4a148c', marginBottom:'3px', display:'flex', alignItems:'center', gap:'8px' }}>
                   {slot.cycleName}
@@ -194,15 +190,13 @@ const ChamaaSlotPanel = ({ slots, loading, error, onRetry, chamaaCheckedSlots, o
                 </div>
               </div>
 
-              {isSelected && (
-                <CheckCircle size={18} color="#7b1fa2" style={{ flexShrink:0 }} />
-              )}
+              {isSelected && <CheckCircle size={18} color="#7b1fa2" style={{ flexShrink:0 }} />}
             </label>
           );
         })}
       </div>
 
-      {/* Running total when slots are selected */}
+      {/* Running total */}
       {selectedCount > 0 && (
         <div style={{
           marginTop:'10px', padding:'10px 14px', borderRadius:'8px',
@@ -252,11 +246,11 @@ const DepositModal = ({
   const [submitting, setSubmitting]   = useState(false);
   const [memberCodes, setMemberCodes] = useState(new Set());
 
-  // ── All active chamaa slots for this member ───────────────
-  const [activeSlots, setActiveSlots]         = useState([]);   // array of all slots
-  const [chamaaCheckedSlots, setChamaaCheckedSlots] = useState([]); // participantIds ticked
-  const [slotsLoading, setSlotsLoading]       = useState(false);
-  const [slotsError, setSlotsError]           = useState(false);
+  // ── Chamaa slots ──────────────────────────────────────────
+  const [activeSlots, setActiveSlots]             = useState([]);
+  const [checkedSlotIds, setCheckedSlotIds]       = useState([]);
+  const [slotsLoading, setSlotsLoading]           = useState(false);
+  const [slotsError, setSlotsError]               = useState(false);
 
   const [dismissedIds, setDismissedIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`dismissed_rejections_${memberId}`) || '[]'); }
@@ -289,7 +283,7 @@ const DepositModal = ({
     savingsYear:    defaults.year,
     loanPayment:    '',
     selectedLoanId: '',
-    chamaaPayment:  '',   // auto-calculated from selected slots
+    chamaaPayment:  '',   // auto-calculated from checked slots
     chamaaMonth:    defaults.month,
     chamaaYear:     defaults.year,
     seedCapital:    '',
@@ -309,13 +303,12 @@ const DepositModal = ({
     try {
       const cyclesRes = await chamaaAPI.getAllCycles({ isActive: true });
       const cycles    = cyclesRes.data.cycles || [];
+      const found     = [];
 
-      const found = [];
       for (const cycle of cycles) {
         try {
           const cycleRes     = await chamaaAPI.getCycleById(cycle.id);
           const participants = cycleRes.data.participants || [];
-          // Collect ALL slots belonging to this member in this cycle
           participants
             .filter(p => Number(p.memberId) === Number(memberId))
             .forEach(p => {
@@ -329,10 +322,9 @@ const DepositModal = ({
                 hasReceived:    p.hasReceived,
               });
             });
-        } catch { /* skip this cycle on error */ }
+        } catch { /* skip on error */ }
       }
 
-      // Sort by cycle name then position so display is consistent
       found.sort((a, b) => {
         if (a.cycleName !== b.cycleName) return a.cycleName.localeCompare(b.cycleName);
         return a.position - b.position;
@@ -347,20 +339,18 @@ const DepositModal = ({
     }
   }, [memberId]);
 
-  // ── Toggle a slot checkbox ────────────────────────────────
-  // When slots are toggled, auto-recalculate chamaaPayment
+  // ── Toggle slot + auto-recalculate chamaa amount ──────────
   const handleToggleSlot = useCallback((participantId) => {
-    setChamaaCheckedSlots(prev => {
+    setCheckedSlotIds(prev => {
       const next = prev.includes(participantId)
         ? prev.filter(id => id !== participantId)
         : [...prev, participantId];
 
-      // Auto-fill chamaa amount = selected count × 2030
       const total = next.length * CHAMAA_AMOUNT;
       setFormData(f => ({ ...f, chamaaPayment: total > 0 ? String(total) : '' }));
       return next;
     });
-    setErrors(e => ({ ...e, chamaaPayment: '', chamaaMonth: '', chamaaYear: '' }));
+    setErrors(e => ({ ...e, chamaaPayment:'', chamaaMonth:'', chamaaYear:'' }));
   }, []);
 
   const fetchActiveLoans = useCallback(async () => {
@@ -432,13 +422,13 @@ const DepositModal = ({
       if (!formData.savingsYear)  errs.savingsYear  = 'Enter a year for savings';
     }
     if (Number(formData.chamaaPayment) > 0) {
-      if (chamaaCheckedSlots.length === 0)
+      if (checkedSlotIds.length === 0)
         errs.chamaaPayment = 'Please select at least one chamaa slot above';
       if (!formData.chamaaMonth) errs.chamaaMonth = 'Select a month for chamaa';
       if (!formData.chamaaYear)  errs.chamaaYear  = 'Enter a year for chamaa';
-      const expected = chamaaCheckedSlots.length * CHAMAA_AMOUNT;
+      const expected = checkedSlotIds.length * CHAMAA_AMOUNT;
       if (Number(formData.chamaaPayment) !== expected)
-        errs.chamaaPayment = `Amount must be KES ${expected.toLocaleString()} (${chamaaCheckedSlots.length} slot${chamaaCheckedSlots.length > 1 ? 's' : ''} × KES ${CHAMAA_AMOUNT.toLocaleString()})`;
+        errs.chamaaPayment = `Amount must be KES ${expected.toLocaleString()} (${checkedSlotIds.length} slot${checkedSlotIds.length > 1 ? 's' : ''} × KES ${CHAMAA_AMOUNT.toLocaleString()})`;
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -457,19 +447,20 @@ const DepositModal = ({
         mpesaMessage: formData.mpesaMessage,
         notes:        formData.notes,
         distribution: {
-          savings:       Number(formData.savings       || 0),
-          savingsMonth:  Number(formData.savingsMonth),
-          savingsYear:   Number(formData.savingsYear),
-          loanPayment:   Number(formData.loanPayment   || 0),
-          loanId:        formData.selectedLoanId || null,
-          chamaaPayment: Number(formData.chamaaPayment || 0),
-          chamaaMonth:   Number(formData.chamaaMonth),
-          chamaaYear:    Number(formData.chamaaYear),
-          seedCapital:   Number(formData.seedCapital   || 0),
-          savingsFine:   Number(formData.savingsFine   || 0),
-          chamaaFine:    Number(formData.chamaaFine    || 0),
-          agmFee:        Number(formData.agmFee        || 0),
-          others:        Number(formData.others        || 0),
+          savings:        Number(formData.savings       || 0),
+          savingsMonth:   Number(formData.savingsMonth),
+          savingsYear:    Number(formData.savingsYear),
+          loanPayment:    Number(formData.loanPayment   || 0),
+          loanId:         formData.selectedLoanId || null,
+          chamaaPayment:  Number(formData.chamaaPayment || 0),
+          chamaaMonth:    Number(formData.chamaaMonth),
+          chamaaYear:     Number(formData.chamaaYear),
+          chamaaSlotIds:  checkedSlotIds,   // ← slot IDs sent to backend
+          seedCapital:    Number(formData.seedCapital   || 0),
+          savingsFine:    Number(formData.savingsFine   || 0),
+          chamaaFine:     Number(formData.chamaaFine    || 0),
+          agmFee:         Number(formData.agmFee        || 0),
+          others:         Number(formData.others        || 0),
         },
       });
       toast.success('Deposit Submitted', "Your deposit is pending admin approval.", { duration: 5000 });
@@ -537,7 +528,9 @@ const DepositModal = ({
                 </div>
                 {visibleRejections.map(d => (
                   <div key={d.id} className="dm-rejection-card">
-                    <button className="dm-rejection-card__close" onClick={() => dismissRejection(d.id)} aria-label="Dismiss"><X size={11} /></button>
+                    <button className="dm-rejection-card__close" onClick={() => dismissRejection(d.id)} aria-label="Dismiss">
+                      <X size={11} />
+                    </button>
                     <div className="dm-rejection-card__top">
                       <div>
                         <strong className="dm-rejection-card__amount">{fmt(d.totalAmount)}</strong>
@@ -586,6 +579,11 @@ const DepositModal = ({
                 {pendingDeposit.chamaaMonth && (
                   <div style={{ marginTop:'6px', fontSize:'12px', color:'#7b1fa2', padding:'6px 10px', background:'#f3e5f5', borderRadius:'6px' }}>
                     Chamaa for: <strong>{getMonthName(pendingDeposit.chamaaMonth)} {pendingDeposit.chamaaYear}</strong>
+                    {pendingDeposit.chamaaSlotIds?.length > 0 && (
+                      <span style={{ marginLeft:'8px', color:'#9c27b0' }}>
+                        · {pendingDeposit.chamaaSlotIds.length} slot{pendingDeposit.chamaaSlotIds.length > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="dm-summary-total">
@@ -659,7 +657,7 @@ const DepositModal = ({
                 {step === 2 && (
                   <form onSubmit={handleSubmit} className="dm-form">
 
-                    {/* Tracker */}
+                    {/* Allocation tracker */}
                     <div className={`dm-tracker ${unallocated < 0 ? 'dm-tracker--over' : unallocated === 0 ? 'dm-tracker--done' : 'dm-tracker--ok'}`}>
                       <div className="dm-tracker__cell">
                         <span className="dm-tracker__cell-label">Deposit</span>
@@ -714,18 +712,17 @@ const DepositModal = ({
                           )}
                         </div>
 
-                        {/* ── Chamaa Payment — multi-slot ── */}
+                        {/* Chamaa — multi-slot with checkboxes */}
                         <div className="dm-field dm-field--full">
                           <label className="dm-label dm-label--icon"><Users size={13} /> Chamaa Payment</label>
 
-                          {/* Slot selector — shows all active slots with checkboxes */}
                           <ChamaaSlotPanel
                             slots={activeSlots}
                             loading={slotsLoading}
                             error={slotsError}
                             onRetry={fetchActiveSlots}
-                            chamaaCheckedSlots={chamaaCheckedSlots}
-                            onToggleSlot={handleToggleSlot}
+                            checkedSlotIds={checkedSlotIds}
+                            onToggle={handleToggleSlot}
                           />
 
                           {errors.chamaaPayment && (
@@ -734,7 +731,7 @@ const DepositModal = ({
                             </span>
                           )}
 
-                          {/* Month/year picker — shown when at least one slot is ticked */}
+                          {/* Month/year picker — shown when slots are ticked */}
                           {hasChamaaPayment && (
                             <div style={{ marginTop:'12px' }}>
                               <p style={{ fontSize:'12px', color:'#555', marginBottom:'8px', display:'flex', alignItems:'center', gap:5 }}>
