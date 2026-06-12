@@ -8,12 +8,10 @@ import {
   Calendar, Eye, Users, Sprout, PiggyBank, FileText,
   Banknote, CreditCard, AlertTriangle, Bell, ClipboardList,
   ScrollText, FilePen, TrendingUp, KeyRound, UserPlus,
-  Wallet, FileBarChart, RefreshCw, TrendingDown,
+  Wallet, FileBarChart, RefreshCw, TrendingDown, Clock,
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
-
-
 
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -24,6 +22,7 @@ const AdminDashboard = () => {
     totalSeedCapital:   0,
     totalSavings:       0,
     activeLoans:        0,
+    pendingLoans:       0,   // ← NEW
     totalDisbursed:     0,
     pendingDeposits:    0,
     savingsFineTotal:   0,
@@ -56,6 +55,7 @@ const AdminDashboard = () => {
       let agmFeeTotal          = 0;
       let registrationTotal    = 0;
       let investmentTotal      = 0;
+      let pendingLoans         = 0;   // ← NEW
 
       await Promise.allSettled([
         depositsAPI.getPending({ year: CURRENT_YEAR })
@@ -80,12 +80,15 @@ const AdminDashboard = () => {
         registrationFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
+
+        // ── NEW: fetch pending (applied but not yet approved) loans ──
+        // These are loans with approvalStatus = 'pending'
+        loansAPI.getAll({ approvalStatus: 'pending' })
+          .then(r => { pendingLoans = (r.data.loans || []).length; })
+          .catch(() => {}),
       ]);
 
-      // ── Investment total: mirrors the Principal row "Total" column in InvestmentPage ──
-      // The Principal row total = autoSum (cols 1–3, computed from loans + fines APIs)
-      //                         + editSum (cols 4–10, saved in DB on the month=0 row)
-      // Cols 1–3 are NEVER written to the DB, so we must re-derive them here.
+      // ── Investment total ──────────────────────────────────────────
       try {
         const [invRes, allLoansRes, allFinesRes] = await Promise.all([
           investmentAPI.getAll(CURRENT_YEAR),
@@ -93,7 +96,6 @@ const AdminDashboard = () => {
           finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
         ]);
 
-        // Editable cols (4–10): read from DB Principal row (month === 0)
         const invRows      = invRes.data.rows || [];
         const principalRow = invRows.find(r => Number(r.month) === 0);
         const editSum      = principalRow
@@ -102,11 +104,9 @@ const AdminDashboard = () => {
             }, 0)
           : 0;
 
-        // Auto col 1 (Loans): all-time sum of approved loan amounts
         const allLoans = (allLoansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
         const principalLoansTotal = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
 
-        // Auto cols 2 & 3 (Savings Fines, Chamaa Fines): all-time fine totals
         const allFines = allFinesRes.data.fines || [];
         const principalSavingsFines = allFines
           .filter(f => f.fineType === 'savings_late')
@@ -115,14 +115,12 @@ const AdminDashboard = () => {
           .filter(f => f.fineType === 'chamaa_late')
           .reduce((s, f) => s + Number(f.amount || 0), 0);
 
-        const autoSum = principalLoansTotal + principalSavingsFines + principalChamaaFines;
-
-        investmentTotal = autoSum + editSum;
+        investmentTotal = principalLoansTotal + principalSavingsFines + principalChamaaFines + editSum;
       } catch (e) {
         investmentTotal = 0;
       }
 
-      // Withdrawals from localStorage
+      // ── Withdrawals from localStorage ─────────────────────────────
       let withdrawalsExpense = 0;
       try {
         const saved = localStorage.getItem('swara_withdrawals');
@@ -143,6 +141,7 @@ const AdminDashboard = () => {
         totalSeedCapital,
         totalSavings,
         activeLoans:       loanStats.active_loans || 0,
+        pendingLoans,                                    // ← NEW
         totalDisbursed:    parseFloat(loanStats.total_disbursed || 0),
         pendingDeposits:   pendingDepositsCount,
         savingsFineTotal,
@@ -247,16 +246,57 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          <div className="stat-card">
+          {/* ── Active Loans card with pending notification ── */}
+          <Link
+            to="/admin/loans?tab=pending"
+            className="stat-card clickable"
+            style={{ textDecoration: 'none', color: 'inherit', position: 'relative' }}
+          >
             <div className="stat-icon loans" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FileText size={28} />
             </div>
             <div className="stat-content">
               <h3>Active Loans <YearBadge /></h3>
               <p className="stat-value">{stats.activeLoans}</p>
-              <Link to="/admin/loans?tab=approved" className="stat-link">View Approved Loans →</Link>
+
+              {/* Pending loans notice */}
+              {stats.pendingLoans > 0 ? (
+                <span className="stat-link" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '5px',
+                  color: '#e65100', fontWeight: 700,
+                }}>
+                  <Clock size={12} />
+                  {stats.pendingLoans} loan{stats.pendingLoans > 1 ? 's' : ''} pending approval →
+                </span>
+              ) : (
+                <span className="stat-link">View Approved Loans →</span>
+              )}
             </div>
-          </div>
+
+            {/* Red notification badge for pending loans */}
+            {stats.pendingLoans > 0 && (
+              <div style={{
+                position:     'absolute',
+                top:          '-8px',
+                right:        '-8px',
+                background:   '#e53935',
+                color:        'white',
+                borderRadius: '50%',
+                minWidth:     '24px',
+                height:       '24px',
+                display:      'flex',
+                alignItems:   'center',
+                justifyContent: 'center',
+                fontSize:     '12px',
+                fontWeight:   800,
+                boxShadow:    '0 2px 6px rgba(229,57,53,0.5)',
+                padding:      '0 4px',
+                zIndex:        1,
+              }}>
+                {stats.pendingLoans}
+              </div>
+            )}
+          </Link>
 
           <div className="stat-card">
             <div className="stat-icon disbursed" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -340,11 +380,6 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
-          {/* Investment card — total mirrors the Principal row "Total" column in InvestmentPage:
-              autoSum (col1 all-time approved loans + col2 all-time savings fines + col3 all-time chamaa fines)
-              + editSum (col4–10 amounts saved on the Principal row, month === 0)
-              Cols 1–3 are computed at runtime and never stored in the DB, so we
-              re-derive them from loansAPI + finesAPI just like InvestmentPage does. */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -353,13 +388,10 @@ const AdminDashboard = () => {
               <h3>
                 Investment
                 <span style={{
-                  display: 'inline-block',
-                  fontSize: '10px', fontWeight: 700,
-                  background: '#f3e5f5', color: '#7b1fa2',
-                  border: '1px solid #ce93d8',
-                  borderRadius: '10px', padding: '1px 7px',
-                  verticalAlign: 'middle', marginLeft: '4px',
-                  letterSpacing: '0.02em',
+                  display: 'inline-block', fontSize: '10px', fontWeight: 700,
+                  background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8',
+                  borderRadius: '10px', padding: '1px 7px', verticalAlign: 'middle',
+                  marginLeft: '4px', letterSpacing: '0.02em',
                 }}>
                   All-time
                 </span>
@@ -424,12 +456,18 @@ const AdminDashboard = () => {
               <p>{isStaff ? 'View savings contributions' : 'Record monthly savings contributions'}</p>
             </Link>
 
-            <Link to="/admin/loans" className="action-card">
+            {/* Loans quick action — shows pending count if any */}
+            <Link to="/admin/loans" className="action-card" style={{ position: 'relative' }}>
               <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <FileText size={28} />
               </span>
               <h3>{isStaff ? 'View Loans' : 'Process Loan'}</h3>
               <p>{isStaff ? 'View member loans' : 'Approve and disburse member loans'}</p>
+              {stats.pendingLoans > 0 && (
+                <span className="action-badge" style={{ background: '#e53935' }}>
+                  {stats.pendingLoans} pending
+                </span>
+              )}
             </Link>
 
             <Link to="/admin/chamaa" className="action-card">
@@ -509,13 +547,10 @@ const AdminDashboard = () => {
 
 const YearBadge = () => (
   <span style={{
-    display: 'inline-block',
-    fontSize: '10px', fontWeight: 700,
-    background: '#e3f2fd', color: '#1565c0',
-    border: '1px solid #90caf9',
-    borderRadius: '10px', padding: '1px 7px',
-    verticalAlign: 'middle', marginLeft: '4px',
-    letterSpacing: '0.02em',
+    display: 'inline-block', fontSize: '10px', fontWeight: 700,
+    background: '#e3f2fd', color: '#1565c0', border: '1px solid #90caf9',
+    borderRadius: '10px', padding: '1px 7px', verticalAlign: 'middle',
+    marginLeft: '4px', letterSpacing: '0.02em',
   }}>
     {CURRENT_YEAR}
   </span>
