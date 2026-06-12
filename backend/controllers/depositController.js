@@ -235,7 +235,11 @@ const approveDeposit = async (req, res) => {
       return res.status(400).json({ message: `Deposit already ${deposit.depositStatus}` });
     }
 
-    const currentDate = new Date();
+    const currentDate  = new Date();
+    // Use the time the member submitted the deposit for late payment evaluation.
+    // This ensures that if a member deposits on time but the admin approves
+    // after the window closes, the payment is still recorded as on time.
+    const depositDate  = deposit.createdAt ? new Date(deposit.createdAt) : currentDate;
     const currentYear = currentDate.getFullYear();
 
     // ── Savings ──────────────────────────────────────────────────
@@ -244,7 +248,7 @@ const approveDeposit = async (req, res) => {
       const targetYear  = Number(deposit.savingsYear)  || currentYear;
 
       const { isLate, finalMonth, finalYear, fineAmount } =
-        evaluateLatePayment(targetMonth, targetYear, currentDate);
+        evaluateLatePayment(targetMonth, targetYear, depositDate);
 
       const existingSavings = await Savings.findOne({
         where: { memberId: deposit.memberId, month: finalMonth, year: finalYear },
@@ -315,7 +319,7 @@ const approveDeposit = async (req, res) => {
       const targetYear  = Number(deposit.chamaaYear)  || currentYear;
 
       const { isLate, finalMonth, finalYear, fineAmount } =
-        evaluateLatePayment(targetMonth, targetYear, currentDate);
+        evaluateLatePayment(targetMonth, targetYear, depositDate);
 
       // chamaaSlotIds getter returns parsed array or []
       const slotIds = deposit.chamaaSlotIds || [];
