@@ -1,32 +1,40 @@
-const { Withdrawal } = require('../models');
+const { Withdrawal, User } = require('../models');
 
 const TOTAL_ROWS = 150;
 
 // ─── GET /withdrawals ────────────────────────────────────────────
-// Returns all 150 rows. Rows not yet in DB are returned as empty objects.
 const getWithdrawals = async (req, res) => {
   try {
     const records = await Withdrawal.findAll({
       order: [['rowNumber', 'ASC']],
+      include: [{
+        model:      User,
+        as:         'withdrawalEditor',
+        attributes: ['firstName', 'lastName'],
+        required:   false,
+      }],
     });
 
-    // Build a map for O(1) lookup
     const map = {};
     records.forEach(r => { map[r.rowNumber] = r; });
 
-    // Return all 150 rows — missing ones as empty
     const rows = Array.from({ length: TOTAL_ROWS }, (_, i) => {
       const rowNumber = i + 1;
       const r = map[rowNumber];
       return {
         rowNumber,
-        date:      r?.date      ?? '',
-        narrative: r?.narrative ?? '',
-        loan:      r?.loan      !== null && r?.loan      !== undefined ? Number(r.loan)       : '',
-        chamaa:    r?.chamaa    !== null && r?.chamaa    !== undefined ? Number(r.chamaa)     : '',
-        expense:   r?.expense   !== null && r?.expense   !== undefined ? Number(r.expense)    : '',
-        investment:r?.investment!== null && r?.investment!== undefined ? Number(r.investment) : '',
-        others:    r?.others    !== null && r?.others    !== undefined ? Number(r.others)     : '',
+        date:       r?.date       ?? '',
+        narrative:  r?.narrative  ?? '',
+        loan:       r?.loan       !== null && r?.loan       !== undefined ? Number(r.loan)       : '',
+        chamaa:     r?.chamaa     !== null && r?.chamaa     !== undefined ? Number(r.chamaa)     : '',
+        expense:    r?.expense    !== null && r?.expense    !== undefined ? Number(r.expense)    : '',
+        investment: r?.investment !== null && r?.investment !== undefined ? Number(r.investment) : '',
+        others:     r?.others     !== null && r?.others     !== undefined ? Number(r.others)     : '',
+        // Editor name from the joined User
+        updatedBy:  r?.withdrawalEditor
+          ? `${r.withdrawalEditor.firstName} ${r.withdrawalEditor.lastName}`.trim()
+          : '',
+        updatedAt: r?.updatedAt ?? null,
       };
     });
 
@@ -38,22 +46,19 @@ const getWithdrawals = async (req, res) => {
 };
 
 // ─── POST /withdrawals/save ──────────────────────────────────────
-// Upserts all changed rows. Frontend sends only dirty rows to avoid
-// unnecessary DB writes.
 const saveWithdrawals = async (req, res) => {
   const { rows } = req.body;
   const adminId  = req.user?.id;
 
-  if (!Array.isArray(rows)) {
+  if (!Array.isArray(rows))
     return res.status(400).json({ message: 'rows must be an array' });
-  }
 
   try {
     await Promise.all(rows.map(async (row) => {
       const rowNumber = Number(row.rowNumber);
       if (!rowNumber || rowNumber < 1 || rowNumber > TOTAL_ROWS) return;
 
-      const payload = {
+      await Withdrawal.upsert({
         rowNumber,
         date:       row.date       || null,
         narrative:  row.narrative  || null,
@@ -63,9 +68,7 @@ const saveWithdrawals = async (req, res) => {
         investment: row.investment !== '' && row.investment != null ? Number(row.investment) : null,
         others:     row.others     !== '' && row.others     != null ? Number(row.others)     : null,
         updatedBy:  adminId ?? null,
-      };
-
-      await Withdrawal.upsert(payload);
+      });
     }));
 
     return res.json({ message: 'Withdrawals saved successfully' });
@@ -76,7 +79,6 @@ const saveWithdrawals = async (req, res) => {
 };
 
 // ─── DELETE /withdrawals/clear ───────────────────────────────────
-// Clears all rows (admin only)
 const clearWithdrawals = async (req, res) => {
   try {
     await Withdrawal.destroy({ where: {}, truncate: true });
