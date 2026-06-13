@@ -17,7 +17,7 @@ const AgmFee             = require('./AgmFee');
 const Investment         = require('./Investment');
 const InvestmentColumnName = require('./InvestmentColumnName');
 const RegistrationFee    = require('./RegistrationFee');
-const Withdrawal         = require('./Withdrawal');   // ← NEW
+const Withdrawal         = require("./Withdrawals");   // ← NEW
 
 // ─── User ↔ Member ──────────────────────────────────────────────
 User.hasOne(Member,    { foreignKey: 'userId', as: 'member' });
