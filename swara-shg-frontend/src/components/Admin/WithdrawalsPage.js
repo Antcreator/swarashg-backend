@@ -13,6 +13,7 @@ const TOTAL_ROWS = 150;
 const emptyRow = (rowNumber) => ({
   rowNumber, date: '', narrative: '',
   loan: '', chamaa: '', expense: '', investment: '', others: '',
+  updatedBy: '', updatedAt: null,
 });
 
 const initRows = () => Array.from({ length: TOTAL_ROWS }, (_, i) => emptyRow(i + 1));
@@ -69,6 +70,8 @@ const WithdrawalsPage = () => {
             expense:    apiRow.expense    !== null && apiRow.expense    !== undefined && apiRow.expense    !== '' ? String(apiRow.expense)    : '',
             investment: apiRow.investment !== null && apiRow.investment !== undefined && apiRow.investment !== '' ? String(apiRow.investment) : '',
             others:     apiRow.others     !== null && apiRow.others     !== undefined && apiRow.others     !== '' ? String(apiRow.others)     : '',
+            updatedBy:  apiRow.updatedBy  ?? '',
+            updatedAt:  apiRow.updatedAt  ?? null,
           };
         }));
       } catch (err) {
@@ -199,6 +202,7 @@ const WithdrawalsPage = () => {
         parseAmt(r.expense)    || '',
         parseAmt(r.investment) || '',
         parseAmt(r.others)     || '',
+        r.updatedBy            || '',
         rowTotal(r)            || '',
       ])
       .filter(r => r[1] || r[2] || r[3] || r[4] || r[5] || r[6] || r[7]);
@@ -406,6 +410,7 @@ const WithdrawalsPage = () => {
                   <th style={thStyle('110px','right')}>Expense</th>
                   <th style={thStyle('120px','right')}>Investment</th>
                   <th style={thStyle('110px','right')}>Others</th>
+                  <th style={thStyle('130px')}>Updated By</th>
                   <th style={{ ...thStyle('120px','right'), background:'#111827' }}>Totals</th>
                 </tr>
               </thead>
@@ -445,6 +450,22 @@ const WithdrawalsPage = () => {
                         <input type="number" value={row.others} onChange={e => updateCell(ri, 'others', e.target.value)} placeholder="0" min="0" step="1"
                           style={{ ...cellInputStyle('right'), color: row.others ? '#475569' : '#94a3b8', fontWeight: row.others ? 700 : 400 }} />
                       </td>
+                      <td style={{ padding:'6px 10px', fontSize:'11px', color:'#7b1fa2', verticalAlign:'middle' }}>
+                        {row.updatedBy ? (
+                          <div>
+                            <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:'#f3e5f5', borderRadius:'10px', padding:'2px 8px', fontWeight:600, whiteSpace:'nowrap' }}>
+                              👤 {row.updatedBy}
+                            </span>
+                            {row.updatedAt && (
+                              <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px', paddingLeft:'4px' }}>
+                                {new Date(row.updatedAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color:'#d1d5db' }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding:'4px 10px', textAlign:'right', fontWeight:800, fontSize:'12px', color: total ? '#1a1a2e' : '#d1d5db', background: total ? '#f8fafc' : 'transparent', borderLeft:'2px solid #e2e8f0' }}>
                         {total ? fmt(total) : '—'}
                       </td>
@@ -470,6 +491,7 @@ const WithdrawalsPage = () => {
                     <td style={tfootNumStyle('#fda4af')}>{fmt(colTotals.expense)}</td>
                     <td style={tfootNumStyle('#fde047')}>{fmt(colTotals.investment)}</td>
                     <td style={tfootNumStyle('#cbd5e1')}>{fmt(colTotals.others)}</td>
+                    <td style={{ padding:'12px 10px' }} />
                     <td style={{ ...tfootNumStyle('#fbbf24'), fontSize:'15px', background:'#111827' }}>{fmt(grandTotal)}</td>
                   </tr>
                 </tfoot>
