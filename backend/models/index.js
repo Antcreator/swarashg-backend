@@ -17,6 +17,7 @@ const AgmFee             = require('./AgmFee');
 const Investment         = require('./Investment');
 const InvestmentColumnName = require('./InvestmentColumnName');
 const RegistrationFee    = require('./RegistrationFee');
+const Withdrawal         = require('./Withdrawal');   // ← NEW
 
 // ─── User ↔ Member ──────────────────────────────────────────────
 User.hasOne(Member,    { foreignKey: 'userId', as: 'member' });
@@ -67,7 +68,7 @@ Deposit.belongsTo(Loan, { foreignKey: 'loanId', as: 'loan'     });
 Loan.hasMany(Deposit,   { foreignKey: 'loanId', as: 'deposits' });
 
 // ─── Deposit ↔ User (confirmer and approver) ────────────────────
-Deposit.belongsTo(User, { foreignKey: 'confirmedBy', as: 'confirmer'        });
+Deposit.belongsTo(User, { foreignKey: 'confirmedBy', as: 'confirmer'         });
 User.hasMany(Deposit,   { foreignKey: 'confirmedBy', as: 'confirmedDeposits' });
 
 Deposit.belongsTo(User, { foreignKey: 'approvedBy', as: 'depositApprover'  });
@@ -101,6 +102,10 @@ User.hasMany(Statutory,   { foreignKey: 'submittedBy', as: 'submittedStatutory' 
 Member.hasOne(RegistrationFee,    { foreignKey: 'memberId', as: 'registrationFee' });
 RegistrationFee.belongsTo(Member, { foreignKey: 'memberId', as: 'member'          });
 
+// ─── Withdrawal ↔ User (updatedBy) ──────────────────────────────
+// No mandatory association — updatedBy is just an audit FK.
+// Withdrawal stands alone; no hasMany/belongsTo on User needed.
+
 // ─── Investment ↔ InvestmentColumnName ──────────────────────────
 // ✅ NO association between these two models.
 // Both are keyed independently by `year`. The controller fetches them
@@ -127,4 +132,5 @@ module.exports = {
   Investment,
   InvestmentColumnName,
   RegistrationFee,
+  Withdrawal,             // ← NEW
 };

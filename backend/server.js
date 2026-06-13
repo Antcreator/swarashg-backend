@@ -22,6 +22,7 @@ const agmFeeRoutes          = require('./routes/agmFees');
 const investmentRoutes      = require('./routes/investments');
 const registrationFeeRoutes = require('./routes/registrationFees');
 const adminRoutes           = require('./routes/admins');
+const withdrawalRoutes      = require('./routes/withdrawals');   // ← NEW
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -50,17 +51,13 @@ app.use('/api/agm-fees',          agmFeeRoutes);
 app.use('/api/investments',       investmentRoutes);
 app.use('/api/registration-fees', registrationFeeRoutes);
 app.use('/api/admins',            adminRoutes);
+app.use('/api/withdrawals',       withdrawalRoutes);            // ← NEW
 
 // ─── Serve React frontend (production) ──────────────────────────
 const buildPath = path.join(__dirname, '..', 'frontend', 'build');
 
-// Static assets (JS/CSS/images) — safe to cache; React gives them hashed filenames
 app.use(express.static(buildPath));
 
-// Catch-all: serve index.html for every non-API route so React Router works.
-// index.html is intentionally NOT cached so the browser always fetches the
-// latest version after a new deployment, preventing the blank-page-until-
-// hard-refresh problem.
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
