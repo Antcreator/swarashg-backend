@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Frontend for Swara Self Help Group Management System",
   "private": true,
-  "homepage": ".",
+  "homepage": "/",
   "dependencies": {
     "ajv": "^8.20.0",
     "axios": "^1.16.0",
