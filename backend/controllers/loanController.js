@@ -67,12 +67,18 @@ const getRequiredGuarantors = (amount) => Number(amount) < 80000 ? 3 : 5;
 const formatCurrency = (amt) =>
   new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
+// ─── Update loan status ──────────────────────────────────────────
+// Key rules:
+//   - Active:  within due date
+//   - Arrears: 1–90 days past due → 5% per month on PRINCIPAL, one Fine per calendar month
+//   - Default: >90 days past due  → savings cleared
 const updateLoanStatus = async (loan) => {
   if (loan.approvalStatus !== 'approved') return loan;
 
   const now     = new Date();
   const dueDate = new Date(loan.dueDate);
 
+  // ── Paid ─────────────────────────────────────────────────────────
   if (loan.remainingBalance <= 0) {
     loan.status          = 'paid';
     loan.penaltyInterest = 0;
@@ -81,6 +87,7 @@ const updateLoanStatus = async (loan) => {
     return loan;
   }
 
+  // ── Active ───────────────────────────────────────────────────────
   if (now <= dueDate) {
     if (loan.status !== 'paid') {
       loan.status          = 'active';
@@ -93,29 +100,71 @@ const updateLoanStatus = async (loan) => {
 
   const daysPastDue = Math.floor((now - dueDate) / (1000 * 60 * 60 * 24));
 
-  const totalRepayment = Math.round(
-    Number(loan.amount) +
-    (Number(loan.amount) * Number(loan.interestRate) / 100) +
-    Number(loan.transactionFee || 0)
-  );
-  const baseBalance = Math.max(0, totalRepayment - Number(loan.amountPaid || 0));
-
+  // ── Arrears: 1–90 days past due ──────────────────────────────────
   if (daysPastDue <= 90) {
     loan.status    = 'arrears';
     loan.isOverdue = true;
 
-    const dailyRate      = 0.05 / 30;
-    const compoundFactor = Math.pow(1 + dailyRate, daysPastDue) - 1;
-    loan.penaltyInterest  = Math.round(baseBalance * compoundFactor);
-    loan.remainingBalance = Math.round(baseBalance + loan.penaltyInterest);
-    loan.arrearsMonths    = Math.ceil(daysPastDue / 30);
-  } else {
-    loan.status    = 'default';
-    loan.isOverdue = true;
+    const principal     = Number(loan.amount);
+    const monthsOverdue = Math.ceil(daysPastDue / 30); // day 1 = 1 month
+    const monthlyRate   = 0.05;                         // 5% per month on principal
 
-    if (loan.previousStatus !== 'default') {
-      await clearMemberSavingsForDefault(loan.memberId, loan.id);
+    // Total penalty = 5% × principal × months overdue
+    const totalPenalty   = Math.round(principal * monthlyRate * monthsOverdue);
+    const txFee          = Number(loan.transactionFee ?? 108);
+    const totalRepayment = calculateTotalRepayment(principal, loan.interestRate, txFee);
+    const paidSoFar      = Number(loan.amountPaid || 0);
+    const baseBalance    = Math.round(totalRepayment - paidSoFar);
+
+    loan.penaltyInterest  = totalPenalty;
+    loan.remainingBalance = Math.round(baseBalance + totalPenalty);
+    loan.arrearsMonths    = monthsOverdue;
+    await loan.save();
+
+    // ── Fine record: one per calendar month per loan ──────────────
+    const currentMonth      = now.getMonth() + 1;
+    const currentYear       = now.getFullYear();
+    const monthlyFineAmount = Math.round(principal * monthlyRate);
+
+    try {
+      const existingFine = await Fine.findOne({
+        where: {
+          memberId:    loan.memberId,
+          fineType:    'loan_arrears',
+          month:       currentMonth,
+          year:        currentYear,
+          referenceId: loan.id,
+        },
+      });
+
+      if (!existingFine) {
+        await Fine.create({
+          memberId:    loan.memberId,
+          fineType:    'loan_arrears',
+          amount:      monthlyFineAmount,
+          month:       currentMonth,
+          year:        currentYear,
+          isPaid:      false,
+          referenceId: loan.id,
+          notes: `Arrears penalty: 5% of principal ${formatCurrency(principal)} ` +
+                 `(Loan #${loan.id}, ${monthsOverdue} month${monthsOverdue > 1 ? 's' : ''} overdue) ` +
+                 `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear}`,
+        });
+        console.log(`[Loan ${loan.id}] Arrears fine KES ${monthlyFineAmount} created for ${currentMonth}/${currentYear}`);
+      }
+    } catch (fineErr) {
+      console.error(`[Loan ${loan.id}] Failed to create arrears fine:`, fineErr.message);
     }
+
+    return loan;
+  }
+
+  // ── Default: > 90 days past due ──────────────────────────────────
+  loan.status    = 'default';
+  loan.isOverdue = true;
+
+  if (loan.previousStatus !== 'default') {
+    await clearMemberSavingsForDefault(loan.memberId, loan.id);
   }
 
   loan.previousStatus = loan.status;
@@ -325,8 +374,6 @@ const applyForLoan = async (req, res) => {
       const guarantor = await Member.findOne({ where: { id: gId, isActive: true } });
       if (!guarantor) return res.status(400).json({ message: `Guarantor ID ${gId} not found or inactive` });
       try {
-        // FIX: use raw-SQL counter — LoanGuarantor.count+include produces a
-        // broken "LoanGuarantor->LoanGuarantor" alias that PostgreSQL rejects
         const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
         if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES)
           return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });
@@ -980,7 +1027,7 @@ const notifyMemberArrears = async (loan) => {
     if (member && member.user) {
       await createNotification(member.user.id, {
         memberId: loan.memberId, type: 'loan_arrears', title: 'Loan Payment Overdue - Arrears',
-        message: `Your loan is overdue. You have 3 months to clear KES ${Math.round(loan.remainingBalance).toLocaleString()}. Penalty: 5% per month.`,
+        message: `Your loan is overdue. You have 3 months to clear KES ${Math.round(loan.remainingBalance).toLocaleString()}. Penalty: 5% per month on principal.`,
         relatedLoanId: loan.id,
       });
       sendEmail({ to: member.user.email, ...emailTemplates.loanArrears(member, loan) });
@@ -1194,7 +1241,7 @@ const requestTopUp = async (req, res) => {
 
     if (Number(topUpAmount) <= currentBalance) {
       return res.status(400).json({
-        message: `Top-up amount must be greater than your current balance of ${formatCurrency(currentBalance)}. This ensures your old loan is cleared and you receive additional funds.`,
+        message: `Top-up amount must be greater than your current balance of ${formatCurrency(currentBalance)}.`,
       });
     }
 
@@ -1219,8 +1266,6 @@ const requestTopUp = async (req, res) => {
       if (Number(gId) === OFFICE_GUARANTOR_ID) continue;
       const guarantor = await Member.findOne({ where: { id: gId, isActive: true } });
       if (!guarantor) return res.status(400).json({ message: `Guarantor ID ${gId} not found or inactive` });
-      // FIX: use raw-SQL counter — LoanGuarantor.count+include produces a
-      // broken "LoanGuarantor->LoanGuarantor" alias that PostgreSQL rejects
       const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
       if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES)
         return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });

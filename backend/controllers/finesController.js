@@ -7,7 +7,6 @@ const getAllFines = async (req, res) => {
   let { memberId } = req.query;
 
   try {
-    // Members can only see their own fines
     if (req.user.role === 'member') {
       memberId = req.user.member_id;
     }
@@ -33,7 +32,7 @@ const getAllFines = async (req, res) => {
 
 // ─── GET /fines/stats ───────────────────────────────────────────
 const getFinesStats = async (req, res) => {
-  const year      = req.query.year ? parseInt(req.query.year) : null;
+  const year = req.query.year ? parseInt(req.query.year) : null;
 
   const dateWhere = year ? {
     [Op.or]: [
@@ -49,9 +48,10 @@ const getFinesStats = async (req, res) => {
   } : {};
 
   try {
-    const [savingsFineTotal, chamaaFineTotal, unpaidFines] = await Promise.all([
+    const [savingsFineTotal, chamaaFineTotal, arrearsTotal, unpaidFines] = await Promise.all([
       Fine.sum('amount', { where: { fineType: 'savings_late', ...dateWhere } }),
       Fine.sum('amount', { where: { fineType: 'chamaa_late',  ...dateWhere } }),
+      Fine.sum('amount', { where: { fineType: 'loan_arrears', ...dateWhere } }),
       Fine.count({ where: { isPaid: false, ...dateWhere } }),
     ]);
 
@@ -59,8 +59,11 @@ const getFinesStats = async (req, res) => {
       year:              year || 'all',
       savingsFineTotal:  Number(savingsFineTotal  || 0),
       chamaaFineTotal:   Number(chamaaFineTotal   || 0),
+      arrearsTotal:      Number(arrearsTotal      || 0),
       unpaidFinesCount:  Number(unpaidFines       || 0),
-      totalFines:        Number(savingsFineTotal  || 0) + Number(chamaaFineTotal || 0),
+      totalFines:        Number(savingsFineTotal  || 0) +
+                         Number(chamaaFineTotal   || 0) +
+                         Number(arrearsTotal      || 0),
     });
   } catch (error) {
     console.error('Get fines stats error:', error);
