@@ -118,7 +118,7 @@ const Navbar = () => {
                   <div className="dropdown-content">
                     <Link to="/admin/loans"                     onClick={handleLinkClick}>All Loans</Link>
                     <Link to="/admin/office-guarantor-requests" onClick={handleLinkClick}>Office Guarantor</Link>
-                    <Link to="/admin/defaulters"                onClick={handleLinkClick}>Defaulters</Link>
+                    <Link to="/admin/defaulters"                onClick={handleLinkClick}>Defaulters/Arrears</Link>
                   </div>
                 )}
               </div>
