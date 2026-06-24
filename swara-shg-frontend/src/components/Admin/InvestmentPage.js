@@ -83,6 +83,38 @@ const getAdminDisplayName = () => {
   return 'Admin';
 };
 
+// ── Arrears penalty: 5% × remaining principal × months overdue ───────────────
+// Payments clear interest first, then principal.
+// Matches loanController.js and Loans.jsx outstanding card exactly.
+const calcArrearsPenalty = (loan) => {
+  if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
+  if (!loan.dueDate) return 0;
+
+  const principal      = Number(loan.amount || 0);
+  const interestRate   = Number(loan.interestRate || 0);
+  const txFee          = Number(loan.transactionFee ?? 108);
+  const amountPaid     = Number(loan.amountPaid || 0);
+  const totalInterest  = Math.round(principal * interestRate / 100) + txFee;
+  const principalPaid  = Math.max(0, amountPaid - totalInterest);
+  const remainingPrincipal = Math.max(0, principal - principalPaid);
+
+  const now     = new Date();
+  const dueDate = new Date(loan.dueDate);
+  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+  const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+
+  return Math.round(remainingPrincipal * 0.05 * months);
+};
+
+// ── Outstanding amount per loan — matches the "Total Outstanding" card ────────
+// = totalRepayment (principal + interest + fee) + live arrears penalty
+// This is the same value shown on the outstanding card in Loans.jsx detail modal.
+const calcLoanOutstanding = (loan) => {
+  return Number(loan.totalRepayment || 0) + calcArrearsPenalty(loan);
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 const InvestmentPage = () => {
   const isStaff = useIsStaff();
@@ -107,56 +139,35 @@ const InvestmentPage = () => {
   const fetchAutoData = useCallback(async () => {
     setAutoError(false);
     try {
-      // ── Loans: fetch all approved loans ────────────────────────────────
-      // Use a fresh token on every call so a newly logged-in admin always
-      // gets data (avoids stale auth from a previous session).
       const loansRes = await loansAPI.getAll({ _nocache: Date.now() });
       const allLoans = (loansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
 
-      // ── Principal row: sum of all-time totalRepayment + live arrears penalty ──
-      // For loans in arrears/default, we add the real-time arrears penalty
-      // (5% × remaining principal × months overdue) so the Investment Loans
-      // column always reflects the true total owed including penalties.
-      const calcArrearsPenalty = (loan) => {
-        if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
-        if (!loan.dueDate) return 0;
-        const principal      = Number(loan.amount || 0);
-        const interestRate   = Number(loan.interestRate || 0);
-        const txFee          = Number(loan.transactionFee ?? 108);
-        const amountPaid     = Number(loan.amountPaid || 0);
-        const totalInterest      = Math.round(principal * interestRate / 100) + txFee;
-        const principalPaid      = Math.max(0, amountPaid - totalInterest);
-        const remainingPrincipal = Math.max(0, principal - principalPaid);
-        const now     = new Date();
-        const dueDate = new Date(loan.dueDate);
-        const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-        const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-        const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-        const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
-        return Math.round(remainingPrincipal * 0.05 * months);
-      };
-
-      // Principal row = sum of all approved loans' totalRepayment + arrears penalties
+      // ── Principal row (All-time) ──────────────────────────────────────────
+      // Sum of every approved loan's outstanding amount:
+      //   totalRepayment + arrears penalty
+      // This matches the outstanding card in the loan detail modal exactly.
       const principalLoansTotal = allLoans.reduce((sum, l) => {
-        return sum + Number(l.totalRepayment || 0) + calcArrearsPenalty(l);
+        return sum + calcLoanOutstanding(l);
       }, 0);
 
+      // ── Monthly rows ──────────────────────────────────────────────────────
+      // For each loan disbursed in the selected year, show its outstanding
+      // amount (totalRepayment + arrears penalty) in the month it was disbursed.
+      // This keeps it consistent with what the outstanding card shows.
       const loansByMonth = {};
       allLoans.forEach(loan => {
         if (!loan.disbursementDate) return;
         const d = new Date(loan.disbursementDate);
         if (d.getFullYear() !== year) return;
         const m = d.getMonth() + 1;
-        // Monthly value = totalRepayment + arrears penalty for that loan
-        loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0) + calcArrearsPenalty(loan);
+        loansByMonth[m] = (loansByMonth[m] || 0) + calcLoanOutstanding(loan);
       });
 
-      // ── Fines: fetch ALL fines (not filtered by year) so the Principal
-      //    row shows the all-time totals correctly ─────────────────────────
+      // ── Fines ─────────────────────────────────────────────────────────────
+      // Fetch ALL fines (not year-filtered) so the Principal row shows all-time totals.
       const finesRes = await finesAPI.getAll({});
       const allFines = finesRes.data.fines || [];
 
-      // For the monthly breakdown, only include fines for the selected year
       const savingsByMonth = {};
       const chamaaByMonth  = {};
       allFines.forEach(f => {
@@ -169,7 +180,6 @@ const InvestmentPage = () => {
         }
       });
 
-      // For the Principal row: all-time totals across ALL years
       const principalSavingsFines = allFines
         .filter(f => f.fineType === 'savings_late')
         .reduce((s, f) => s + Number(f.amount || 0), 0);
@@ -196,7 +206,6 @@ const InvestmentPage = () => {
       });
     } catch (err) {
       console.error('Failed to fetch auto data:', err);
-      // Show a visible warning so admins know auto columns may be stale
       setAutoError(true);
     }
   }, [year]);
@@ -212,10 +221,6 @@ const InvestmentPage = () => {
         const saved = rawRows.find(r => r.month === m.num);
         const base  = blankRow(m);
         if (saved) {
-          // Restore ALL 10 columns from DB — auto cols (1-3) are stored as 0
-          // in the DB but displayed from autoData; edit cols (4-10) are the
-          // values the admin actually typed. We restore both so the row
-          // object is complete and any admin can see the edit cols correctly.
           COLS.forEach(i => {
             base[`investment${i}Amount`] = saved[`investment${i}Amount`] ?? '';
           });
@@ -243,9 +248,6 @@ const InvestmentPage = () => {
     }
   }, [year]);
 
-  // Run both fetches whenever year changes or component mounts.
-  // They run in parallel — autoData and rows load independently so
-  // neither blocks the other.
   useEffect(() => {
     fetchAutoData();
     fetchData();
