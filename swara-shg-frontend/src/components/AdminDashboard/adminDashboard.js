@@ -13,6 +13,34 @@ import {
 
 const CURRENT_YEAR = new Date().getFullYear();
 
+// ── Matches InvestmentPage.jsx and Loans.jsx outstanding card exactly ─────────
+// Penalty = 5% × remaining principal × months overdue (capped at 3)
+// Payments clear interest first, then principal.
+const calcArrearsPenalty = (loan) => {
+  if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
+  if (!loan.dueDate) return 0;
+  const principal    = Number(loan.amount || 0);
+  const interestRate = Number(loan.interestRate || 0);
+  const txFee        = Number(loan.transactionFee ?? 108);
+  const amountPaid   = Number(loan.amountPaid || 0);
+  const totalInterest      = Math.round(principal * interestRate / 100) + txFee;
+  const principalPaid      = Math.max(0, amountPaid - totalInterest);
+  const remainingPrincipal = Math.max(0, principal - principalPaid);
+  const now     = new Date();
+  const dueDate = new Date(loan.dueDate);
+  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+  const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+  return Math.round(remainingPrincipal * 0.05 * months);
+};
+
+// Outstanding = totalRepayment + live arrears penalty
+// Matches the "Total Outstanding" card on the loan detail modal.
+const calcLoanOutstanding = (loan) => {
+  return Number(loan.totalRepayment || 0) + calcArrearsPenalty(loan);
+};
+
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isStaff = useIsStaff();
@@ -73,7 +101,6 @@ const AdminDashboard = () => {
           })
           .catch(() => {}),
 
-
         agmFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { agmFeeTotal = r.data.totalThisYear || r.data.total || 0; })
           .catch(() => {}),
@@ -87,7 +114,13 @@ const AdminDashboard = () => {
           .catch(() => {}),
       ]);
 
-      // ── Investment total ──────────────────────────────────────────
+      // ── Investment total (All-time Principal row) ─────────────────
+      // Must match InvestmentPage.jsx Principal row exactly:
+      //   Loans col    = sum of calcLoanOutstanding(loan) for all approved loans
+      //                = totalRepayment + arrears penalty per loan
+      //   Savings fines = all-time savings_late fines
+      //   Chamaa fines  = all-time chamaa_late fines
+      //   Edit cols     = whatever admin typed in the Principal row (cols 4–10)
       try {
         const [invRes, allLoansRes, allFinesRes] = await Promise.all([
           investmentAPI.getAll(CURRENT_YEAR),
@@ -95,6 +128,7 @@ const AdminDashboard = () => {
           finesAPI.getAll({}).catch(() => ({ data: { fines: [] } })),
         ]);
 
+        // Edit cols from the saved Principal row (cols 4–10)
         const invRows      = invRes.data.rows || [];
         const principalRow = invRows.find(r => Number(r.month) === 0);
         const editSum      = principalRow
@@ -103,9 +137,14 @@ const AdminDashboard = () => {
             }, 0)
           : 0;
 
+        // Loans col: sum of outstanding amount per approved loan
+        // = totalRepayment + live arrears penalty (same as investment page)
         const allLoans = (allLoansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
-        const principalLoansTotal = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+        const principalLoansTotal = allLoans.reduce((sum, l) => {
+          return sum + calcLoanOutstanding(l);
+        }, 0);
 
+        // Fines: all-time totals (not year-filtered) for Principal row
         const allFines = allFinesRes.data.fines || [];
         const principalSavingsFines = allFines
           .filter(f => f.fineType === 'savings_late')
@@ -488,7 +527,6 @@ const AdminDashboard = () => {
               </span>
               <h3>{isStaff ? 'View Fines' : 'Manage Fines'}</h3>
               <p>{isStaff ? 'View member fines' : 'View and manage member fines'}</p>
-
             </Link>
 
             <Link to="/admin/agm-fees" className="action-card">
