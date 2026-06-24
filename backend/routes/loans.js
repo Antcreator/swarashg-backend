@@ -16,6 +16,8 @@ router.get ('/:id/guarantor-status',           loanController.getLoanGuarantorSt
 router.get ('/',                               loanController.getAllLoans);
 router.get ('/:id',                            loanController.getLoanById);
 
+router.get('/arrears-stats',                    requireAdminOnly, loanController.getArrearsStats);
+
 router.post('/apply',                          loanController.applyForLoan);
 router.post('/top-up',                         loanController.requestTopUp);
 router.post('/guarantor-requests/:id/respond', loanController.respondToGuarantorRequest);
