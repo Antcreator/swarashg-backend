@@ -218,16 +218,6 @@ const Loans = () => {
     return Math.round(remainingPrincipal * 0.05 * months);
   };
 
-  // ── Total outstanding for a loan ─────────────────────────────────────────
-  // = original loan (principal + interest + fee) + live arrears penalty
-  // This is what the member owes in total, and what feeds into the investments
-  // Loans column.
-  const calcTotalOutstanding = (loan) => {
-    const baseRepayment    = Number(loan.totalRepayment || 0);
-    const liveArrearsPenalty = calcLiveArrearsPenalty(loan);
-    return baseRepayment + liveArrearsPenalty;
-  };
-
   const statusCfg = (loan) => {
     if (loan.approvalStatus === 'pending')  return { bg: '#fff3e0', color: '#e65100', label: 'Pending'   };
     if (loan.approvalStatus === 'rejected') return { bg: '#ffebee', color: '#c62828', label: 'Rejected'  };
@@ -554,7 +544,7 @@ const Loans = () => {
                 )}
 
                 {/* ── Summary cards row ── */}
-                <div style={{ display: 'grid', gridTemplateColumns: isInArrears ? '1fr 1fr 1fr' : '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
 
                   {/* Cash to Member */}
                   <div style={{ background: '#e8f5e9', borderRadius: '10px', padding: '14px', border: '2px solid #a5d6a7' }}>
@@ -580,48 +570,63 @@ const Loans = () => {
                     </div>
                   </div>
 
-                  {/* ── Total Outstanding (only shown when in arrears/default) ── */}
-                  {isInArrears && (
+                  {/* ── Total Outstanding — always shown ── */}
+                  {/* Shows totalRepayment alone when no penalty, totalRepayment + penalty when in arrears/default */}
+                  <div style={{
+                    background: liveArrearsPenalty > 0
+                      ? (selectedLoan.status === 'default' ? '#ffebee' : '#fff8e1')
+                      : '#f3e5f5',
+                    borderRadius: '10px', padding: '14px',
+                    border: `2px solid ${liveArrearsPenalty > 0
+                      ? (selectedLoan.status === 'default' ? '#f44336' : '#ffc107')
+                      : '#ce93d8'}`,
+                    position: 'relative',
+                  }}>
+                    {/* "Investment Loans Column" tag */}
                     <div style={{
-                      background: selectedLoan.status === 'default' ? '#ffebee' : '#fff8e1',
-                      borderRadius: '10px', padding: '14px',
-                      border: `2px solid ${selectedLoan.status === 'default' ? '#f44336' : '#ffc107'}`,
-                      position: 'relative',
+                      position: 'absolute', top: '-1px', right: '10px',
+                      background: '#7b1fa2', color: 'white',
+                      fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em',
+                      padding: '2px 8px', borderRadius: '0 0 6px 6px',
+                      display: 'inline-flex', alignItems: 'center', gap: 3,
                     }}>
-                      {/* "Investment Loans Column" tag */}
-                      <div style={{
-                        position: 'absolute', top: '-1px', right: '10px',
-                        background: '#7b1fa2', color: 'white',
-                        fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em',
-                        padding: '2px 8px', borderRadius: '0 0 6px 6px',
-                        display: 'inline-flex', alignItems: 'center', gap: 3,
-                      }}>
-                        <TrendingUp size={8} /> INVESTMENT LOANS COL
+                      <TrendingUp size={8} /> INVESTMENT LOANS COL
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5, marginTop: '8px' }}>
+                      <TrendingUp size={13} color={liveArrearsPenalty > 0 ? (selectedLoan.status === 'default' ? '#b71c1c' : '#e65100') : '#7b1fa2'} />
+                      Total Outstanding
+                    </div>
+                    <div style={{
+                      fontSize: '24px', fontWeight: 900, marginTop: '4px',
+                      color: liveArrearsPenalty > 0
+                        ? (selectedLoan.status === 'default' ? '#b71c1c' : '#e65100')
+                        : '#7b1fa2',
+                    }}>
+                      {fmt(totalOutstanding)}
+                    </div>
+                    {/* Breakdown */}
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Loan + interest + fee</span>
+                        <span style={{ fontWeight: 600, color: '#555' }}>{fmt(baseRepayment)}</span>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5, marginTop: '8px' }}>
-                        <AlertTriangle size={13} color={selectedLoan.status === 'default' ? '#b71c1c' : '#e65100'} />
-                        Total Outstanding
-                      </div>
-                      <div style={{ fontSize: '24px', fontWeight: 900, color: selectedLoan.status === 'default' ? '#b71c1c' : '#e65100', marginTop: '4px' }}>
-                        {fmt(totalOutstanding)}
-                      </div>
-                      {/* Breakdown */}
-                      <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Loan + interest + fee</span>
-                          <span style={{ fontWeight: 600, color: '#555' }}>{fmt(baseRepayment)}</span>
-                        </div>
+                      {liveArrearsPenalty > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', color: selectedLoan.status === 'default' ? '#b71c1c' : '#e65100' }}>
                           <span>+ Arrears penalty</span>
                           <span style={{ fontWeight: 700 }}>+ {fmt(liveArrearsPenalty)}</span>
                         </div>
-                        <div style={{ borderTop: `1px solid ${selectedLoan.status === 'default' ? '#f44336' : '#ffc107'}`, paddingTop: '3px', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
-                          <span>= Total</span>
-                          <span>{fmt(totalOutstanding)}</span>
-                        </div>
+                      )}
+                      <div style={{
+                        borderTop: `1px solid ${liveArrearsPenalty > 0 ? (selectedLoan.status === 'default' ? '#f44336' : '#ffc107') : '#ce93d8'}`,
+                        paddingTop: '3px', display: 'flex', justifyContent: 'space-between', fontWeight: 700,
+                      }}>
+                        <span>= Total</span>
+                        <span style={{ color: liveArrearsPenalty > 0 ? (selectedLoan.status === 'default' ? '#b71c1c' : '#e65100') : '#7b1fa2' }}>
+                          {fmt(totalOutstanding)}
+                        </span>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
