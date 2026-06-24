@@ -9,7 +9,7 @@ import { useToast, useConfirm, ToastContainer } from '../../useToast';
 import {
   CreditCard, BarChart2, Pencil, Check, X, Trash2, Eye,
   Banknote, RefreshCw, AlertTriangle, CheckCircle, Building2,
-  Users, Wallet, FileText,
+  Users, Wallet, FileText, TrendingUp,
 } from 'lucide-react';
 
 const TRANSACTION_FEE = 108;
@@ -61,13 +61,11 @@ const Loans = () => {
     return nonOffice.length > 0 && nonOffice.every(g => g.approvalStatus === 'rejected');
   };
 
-  // Returns list of guarantors who have accepted
   const getAcceptedGuarantors = (loan) => {
     const guarantors = loan.guarantors || [];
     return guarantors.filter(g => g.approvalStatus === 'accepted' || g.approvalStatus === 'admin_override');
   };
 
-  // Builds a human-readable guarantor name
   const guarantorName = (g) => {
     if (g.guarantorId === -1) return 'The Office (Admin)';
     if (g.guarantor) return `${g.guarantor.firstName} ${g.guarantor.lastName}`;
@@ -79,7 +77,6 @@ const Loans = () => {
     const allRejected = loan && allGuarantorsRejected(loan);
     const isTopUp     = loan?.loanType === 'top_up';
 
-    // Build the accepted-guarantors section
     const acceptedGuarantors = loan ? getAcceptedGuarantors(loan) : [];
     const guarantorSection = acceptedGuarantors.length > 0
       ? `\n\nAccepted Guarantors (${acceptedGuarantors.length}):\n${acceptedGuarantors.map(g => `  • ${guarantorName(g)}`).join('\n')}`
@@ -197,6 +194,40 @@ const Loans = () => {
     : Number(loan.amount);
   const totalWithFee = (loan) => Number(loan.totalRepayment);
 
+  // ── Real-time arrears penalty for a loan ────────────────────────────────
+  // Penalty = 5% × remaining principal per month (payments clear interest first)
+  const calcLiveArrearsPenalty = (loan) => {
+    if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
+    if (!loan.dueDate) return 0;
+
+    const principal    = Number(loan.amount || 0);
+    const interestRate = Number(loan.interestRate || 0);
+    const txFee        = Number(loan.transactionFee ?? TRANSACTION_FEE);
+    const amountPaid   = Number(loan.amountPaid || 0);
+    const totalInterest      = Math.round(principal * interestRate / 100) + txFee;
+    const principalPaid      = Math.max(0, amountPaid - totalInterest);
+    const remainingPrincipal = Math.max(0, principal - principalPaid);
+
+    const now     = new Date();
+    const dueDate = new Date(loan.dueDate);
+    const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+    const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+    const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+
+    return Math.round(remainingPrincipal * 0.05 * months);
+  };
+
+  // ── Total outstanding for a loan ─────────────────────────────────────────
+  // = original loan (principal + interest + fee) + live arrears penalty
+  // This is what the member owes in total, and what feeds into the investments
+  // Loans column.
+  const calcTotalOutstanding = (loan) => {
+    const baseRepayment    = Number(loan.totalRepayment || 0);
+    const liveArrearsPenalty = calcLiveArrearsPenalty(loan);
+    return baseRepayment + liveArrearsPenalty;
+  };
+
   const statusCfg = (loan) => {
     if (loan.approvalStatus === 'pending')  return { bg: '#fff3e0', color: '#e65100', label: 'Pending'   };
     if (loan.approvalStatus === 'rejected') return { bg: '#ffebee', color: '#c62828', label: 'Rejected'  };
@@ -214,24 +245,14 @@ const Loans = () => {
     return <span className="status" style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}` }}>{s.label}</span>;
   };
 
-  // Inline accepted-guarantors pill list shown under the Approve button
   const AcceptedGuarantorPills = ({ loan }) => {
     const accepted = getAcceptedGuarantors(loan);
     if (accepted.length === 0) return null;
     return (
       <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
         {accepted.map((g, i) => (
-          <span
-            key={i}
-            title={`${guarantorName(g)} has accepted to guarantee this loan`}
-            style={{
-              fontSize: '10px', fontWeight: 600,
-              padding: '2px 7px', borderRadius: '10px',
-              background: '#e8f5e9', color: '#2e7d32',
-              border: '1px solid #a5d6a7',
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-            }}
-          >
+          <span key={i} title={`${guarantorName(g)} has accepted to guarantee this loan`}
+            style={{ fontSize: '10px', fontWeight: 600, padding: '2px 7px', borderRadius: '10px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             <CheckCircle size={9} /> {guarantorName(g)}
           </span>
         ))}
@@ -262,8 +283,6 @@ const Loans = () => {
             <button className={`btn-${activeTab === 'all'      ? 'primary' : 'secondary'}`} onClick={() => setActiveTab('all')}>All ({loans.length})</button>
           </div>
         </div>
-
-        
 
         {loading ? <div className="loading">Loading loans...</div> : (
           <>
@@ -340,9 +359,7 @@ const Loans = () => {
                                 <div>
                                   <div style={{ fontWeight: 600, fontSize: '13px', color: loan.approvalStatus === 'rejected' ? '#c62828' : '#1976d2' }}>{loan.approvedByName}</div>
                                   <div style={{ fontSize: '11px', color: '#888', marginTop: '2px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    {loan.approvalStatus === 'approved'
-                                      ? <><Check size={10} /> Approved</>
-                                      : <><X size={10} /> Rejected</>}
+                                    {loan.approvalStatus === 'approved' ? <><Check size={10} /> Approved</> : <><X size={10} /> Rejected</>}
                                     {loan.approvedAt && ` · ${fd(loan.approvedAt)}`}
                                   </div>
                                 </div>
@@ -365,16 +382,9 @@ const Loans = () => {
                                       <Pencil size={11} /> Edit
                                     </button>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <button
-                                        className="btn-primary"
-                                        onClick={() => handleApproveLoan(loan.id)}
-                                        style={{ fontSize: '11px', padding: '4px 8px', background: danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                      >
-                                        {danger
-                                          ? <><AlertTriangle size={11} /> Approve</>
-                                          : isTopUp
-                                            ? <><RefreshCw size={11} /> Approve Top-Up</>
-                                            : <><Check size={11} /> Approve</>}
+                                      <button className="btn-primary" onClick={() => handleApproveLoan(loan.id)}
+                                        style={{ fontSize: '11px', padding: '4px 8px', background: danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        {danger ? <><AlertTriangle size={11} /> Approve</> : isTopUp ? <><RefreshCw size={11} /> Approve Top-Up</> : <><Check size={11} /> Approve</>}
                                       </button>
                                       <AcceptedGuarantorPills loan={loan} />
                                     </div>
@@ -490,170 +500,230 @@ const Loans = () => {
         )}
 
         {/* ── Detail Modal ── */}
-        {showDetailModal && selectedLoan && (
-          <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div>
-                  <h2 style={{ margin: 0, color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <FileText size={20} /> Loan #{selectedLoan.id}
-                    {selectedLoan.loanType === 'top_up' && (
-                      <span style={{ marginLeft: '10px', padding: '3px 10px', background: '#f3e5f5', color: '#7b1fa2', borderRadius: '12px', fontSize: '13px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <RefreshCw size={12} /> Top-Up
-                      </span>
-                    )}
-                  </h2>
-                  <p style={{ margin: '4px 0 0', color: '#888', fontSize: '13px' }}>{selectedLoan.member?.firstName} {selectedLoan.member?.lastName}</p>
-                </div>
-                {(() => { const s = statusCfg(selectedLoan); return <span style={{ padding: '5px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 700, background: s.bg, color: s.color }}>{s.label}</span>; })()}
-              </div>
+        {showDetailModal && selectedLoan && (() => {
+          const liveArrearsPenalty = calcLiveArrearsPenalty(selectedLoan);
+          const baseRepayment      = Number(selectedLoan.totalRepayment || 0);
+          const totalOutstanding   = baseRepayment + liveArrearsPenalty;
+          const isInArrears        = selectedLoan.status === 'arrears' || selectedLoan.status === 'default';
 
-              {allGuarantorsRejected(selectedLoan) && (
-                <div style={{ background: '#ffebee', border: '2px solid #f44336', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <AlertTriangle size={20} color="#c62828" />
+          return (
+            <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                   <div>
-                    <strong style={{ color: '#c62828' }}>All guarantors have rejected this loan</strong>
-                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#c62828' }}>If approved, full liability will be assigned to The Office (Admin).</p>
-                  </div>
-                </div>
-              )}
-
-              {selectedLoan.loanType === 'top_up' && selectedLoan.previousBalance > 0 && (
-                <div style={{ background: '#f3e5f5', border: '2px solid #ce93d8', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px' }}>
-                  <strong style={{ color: '#7b1fa2', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <RefreshCw size={14} /> Top-Up Loan Breakdown
-                  </strong>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px', fontSize: '13px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#555' }}>New Loan Amount (Principal):</span><strong>{fmt(selectedLoan.amount)}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e65100' }}><span>+ Interest ({selectedLoan.interestRate}%):</span><strong>+ {fmt(Number(selectedLoan.amount) * Number(selectedLoan.interestRate) / 100)}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f57f17' }}><span>+ Transaction Fee:</span><strong>+ {fmt(txFee(selectedLoan))}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #7b1fa2', paddingTop: '6px', fontWeight: 700, color: '#1565c0' }}><span>= New Loan Balance (Total Repayment):</span><strong style={{ fontSize: '15px' }}>{fmt(selectedLoan.totalRepayment)}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #ce93d8', paddingTop: '6px', color: '#555' }}><span>Old Balance Cleared (on approval):</span><strong style={{ color: '#c62828' }}>− {fmt(selectedLoan.previousBalance)}</strong></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2e7d32', fontWeight: 700 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Banknote size={13} /> Cash Disbursed to Member:</span>
-                      <strong style={{ fontSize: '15px' }}>{fmt(Math.max(0, Number(selectedLoan.amount) - Number(selectedLoan.previousBalance)))}</strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-                <div style={{ background: '#e8f5e9', borderRadius: '10px', padding: '14px', border: '2px solid #a5d6a7' }}>
-                  <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Banknote size={13} /> Cash to Member
-                  </div>
-                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#2e7d32', marginTop: '4px' }}>
-                    {selectedLoan.loanType === 'top_up' && selectedLoan.previousBalance > 0
-                      ? fmt(Math.max(0, Number(selectedLoan.amount) - Number(selectedLoan.previousBalance)))
-                      : fmt(Number(selectedLoan.amount))
-                    }
-                  </div>
-                </div>
-                <div style={{ background: '#e3f2fd', borderRadius: '10px', padding: '14px', border: '2px solid #90caf9' }}>
-                  <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Wallet size={13} /> Total Repayment
-                  </div>
-                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#1565c0', marginTop: '4px' }}>{fmt(selectedLoan.totalRepayment)}</div>
-                </div>
-              </div>
-
-              <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                {[
-                  ['Interest Rate',    `${selectedLoan.interestRate}%`],
-                  ['Duration',         `${selectedLoan.durationMonths} month(s)`],
-                  ['Transaction Fee',  fmt(txFee(selectedLoan))],
-                  ['Applied On',       fd(selectedLoan.createdAt)],
-                  ...(selectedLoan.approvalStatus === 'approved' ? [
-                    ['Disbursed On',      fd(selectedLoan.disbursementDate)],
-                    ['Due Date',          fd(selectedLoan.dueDate)],
-                    ['Amount Paid',       fmt(selectedLoan.amountPaid)],
-                    ['Remaining Balance', fmt(selectedLoan.remainingBalance)],
-                    ...(selectedLoan.penaltyInterest > 0 ? [['Penalty Interest', fmt(selectedLoan.penaltyInterest)]] : []),
-                  ] : []),
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', fontWeight: 600 }}>{label}</div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e', marginTop: '2px' }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {selectedLoan.guarantors?.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Users size={14} /> Guarantors
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {selectedLoan.guarantors.map((g, gi) => {
-                      const name = g.guarantorId === -1 ? 'The Office' : g.guarantor ? `${g.guarantor.firstName} ${g.guarantor.lastName}` : `Guarantor #${gi + 1}`;
-                      const sc = { accepted: { bg: '#e8f5e9', color: '#2e7d32' }, pending: { bg: '#fff8e1', color: '#e65100' }, rejected: { bg: '#ffebee', color: '#c62828' }, admin_override: { bg: '#e3f2fd', color: '#1565c0' } }[g.approvalStatus] || { bg: '#f5f5f5', color: '#777' };
-                      return (
-                        <span key={gi} style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: sc.bg, color: sc.color, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                          {g.guarantorId === -1 ? <Building2 size={11} /> : <Users size={11} />} {name} · {g.approvalStatus}
+                    <h2 style={{ margin: 0, color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <FileText size={20} /> Loan #{selectedLoan.id}
+                      {selectedLoan.loanType === 'top_up' && (
+                        <span style={{ marginLeft: '10px', padding: '3px 10px', background: '#f3e5f5', color: '#7b1fa2', borderRadius: '12px', fontSize: '13px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <RefreshCw size={12} /> Top-Up
                         </span>
-                      );
-                    })}
+                      )}
+                    </h2>
+                    <p style={{ margin: '4px 0 0', color: '#888', fontSize: '13px' }}>{selectedLoan.member?.firstName} {selectedLoan.member?.lastName}</p>
                   </div>
+                  {(() => { const s = statusCfg(selectedLoan); return <span style={{ padding: '5px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 700, background: s.bg, color: s.color }}>{s.label}</span>; })()}
                 </div>
-              )}
 
-              {selectedLoan.payments?.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <CreditCard size={14} /> Payment History ({selectedLoan.payments.length})
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                    <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Total Paid</div>
-                      <div style={{ fontSize: '16px', fontWeight: 800, color: '#2e7d32', marginTop: '2px' }}>{fmt(selectedLoan.payments.reduce((s, p) => s + Number(p.amount || 0), 0))}</div>
-                    </div>
-                    <div style={{ background: '#e3f2fd', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Remaining</div>
-                      <div style={{ fontSize: '16px', fontWeight: 800, color: '#1565c0', marginTop: '2px' }}>{fmt(selectedLoan.remainingBalance)}</div>
-                    </div>
-                    <div style={{ background: '#f3e5f5', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Payments</div>
-                      <div style={{ fontSize: '16px', fontWeight: 800, color: '#7b1fa2', marginTop: '2px' }}>{selectedLoan.payments.length}</div>
+                {allGuarantorsRejected(selectedLoan) && (
+                  <div style={{ background: '#ffebee', border: '2px solid #f44336', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <AlertTriangle size={20} color="#c62828" />
+                    <div>
+                      <strong style={{ color: '#c62828' }}>All guarantors have rejected this loan</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#c62828' }}>If approved, full liability will be assigned to The Office (Admin).</p>
                     </div>
                   </div>
-                  <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr 2fr', background: '#f3f4f6', padding: '8px 14px' }}>
-                      {['Date', 'Amount', 'Method', 'Notes'].map(h => (
-                        <div key={h} style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: '#6b7280' }}>{h}</div>
-                      ))}
+                )}
+
+                {selectedLoan.loanType === 'top_up' && selectedLoan.previousBalance > 0 && (
+                  <div style={{ background: '#f3e5f5', border: '2px solid #ce93d8', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px' }}>
+                    <strong style={{ color: '#7b1fa2', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <RefreshCw size={14} /> Top-Up Loan Breakdown
+                    </strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px', fontSize: '13px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#555' }}>New Loan Amount (Principal):</span><strong>{fmt(selectedLoan.amount)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e65100' }}><span>+ Interest ({selectedLoan.interestRate}%):</span><strong>+ {fmt(Number(selectedLoan.amount) * Number(selectedLoan.interestRate) / 100)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f57f17' }}><span>+ Transaction Fee:</span><strong>+ {fmt(txFee(selectedLoan))}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #7b1fa2', paddingTop: '6px', fontWeight: 700, color: '#1565c0' }}><span>= New Loan Balance (Total Repayment):</span><strong style={{ fontSize: '15px' }}>{fmt(selectedLoan.totalRepayment)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #ce93d8', paddingTop: '6px', color: '#555' }}><span>Old Balance Cleared (on approval):</span><strong style={{ color: '#c62828' }}>− {fmt(selectedLoan.previousBalance)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2e7d32', fontWeight: 700 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Banknote size={13} /> Cash Disbursed to Member:</span>
+                        <strong style={{ fontSize: '15px' }}>{fmt(Math.max(0, Number(selectedLoan.amount) - Number(selectedLoan.previousBalance)))}</strong>
+                      </div>
                     </div>
-                    {selectedLoan.payments
-                      .slice().sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
-                      .map((p, pi) => (
-                        <div key={pi} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr 2fr', padding: '10px 14px', alignItems: 'center', borderTop: '1px solid #f0f0f0', background: p.paymentMethod === 'top_up_clearance' ? '#f3e5f5' : pi % 2 === 0 ? 'white' : '#fafafa' }}>
-                          <div style={{ fontSize: '13px', color: '#374151', fontWeight: 600 }}>{fd(p.paymentDate)}</div>
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: p.paymentMethod === 'top_up_clearance' ? '#7b1fa2' : '#2e7d32' }}>{fmt(p.amount)}</div>
-                          <div>
-                            <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'capitalize', padding: '2px 8px', borderRadius: '10px', background: p.paymentMethod === 'top_up_clearance' ? '#f3e5f5' : p.paymentMethod === 'mpesa' ? '#e8f5e9' : '#e3f2fd', color: p.paymentMethod === 'top_up_clearance' ? '#7b1fa2' : p.paymentMethod === 'mpesa' ? '#2e7d32' : '#1565c0', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              {p.paymentMethod === 'top_up_clearance' ? <><RefreshCw size={10} /> Top-Up</> : (p.paymentMethod || 'Cash')}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#888', fontStyle: p.notes ? 'normal' : 'italic' }}>{p.notes || '—'}</div>
+                  </div>
+                )}
+
+                {/* ── Summary cards row ── */}
+                <div style={{ display: 'grid', gridTemplateColumns: isInArrears ? '1fr 1fr 1fr' : '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+
+                  {/* Cash to Member */}
+                  <div style={{ background: '#e8f5e9', borderRadius: '10px', padding: '14px', border: '2px solid #a5d6a7' }}>
+                    <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Banknote size={13} /> Cash to Member
+                    </div>
+                    <div style={{ fontSize: '24px', fontWeight: 800, color: '#2e7d32', marginTop: '4px' }}>
+                      {selectedLoan.loanType === 'top_up' && selectedLoan.previousBalance > 0
+                        ? fmt(Math.max(0, Number(selectedLoan.amount) - Number(selectedLoan.previousBalance)))
+                        : fmt(Number(selectedLoan.amount))
+                      }
+                    </div>
+                  </div>
+
+                  {/* Total Repayment */}
+                  <div style={{ background: '#e3f2fd', borderRadius: '10px', padding: '14px', border: '2px solid #90caf9' }}>
+                    <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Wallet size={13} /> Total Repayment
+                    </div>
+                    <div style={{ fontSize: '24px', fontWeight: 800, color: '#1565c0', marginTop: '4px' }}>{fmt(baseRepayment)}</div>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
+                      Principal + {selectedLoan.interestRate}% interest + fee
+                    </div>
+                  </div>
+
+                  {/* ── Total Outstanding (only shown when in arrears/default) ── */}
+                  {isInArrears && (
+                    <div style={{
+                      background: selectedLoan.status === 'default' ? '#ffebee' : '#fff8e1',
+                      borderRadius: '10px', padding: '14px',
+                      border: `2px solid ${selectedLoan.status === 'default' ? '#f44336' : '#ffc107'}`,
+                      position: 'relative',
+                    }}>
+                      {/* "Investment Loans Column" tag */}
+                      <div style={{
+                        position: 'absolute', top: '-1px', right: '10px',
+                        background: '#7b1fa2', color: 'white',
+                        fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em',
+                        padding: '2px 8px', borderRadius: '0 0 6px 6px',
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                      }}>
+                        <TrendingUp size={8} /> INVESTMENT LOANS COL
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5, marginTop: '8px' }}>
+                        <AlertTriangle size={13} color={selectedLoan.status === 'default' ? '#b71c1c' : '#e65100'} />
+                        Total Outstanding
+                      </div>
+                      <div style={{ fontSize: '24px', fontWeight: 900, color: selectedLoan.status === 'default' ? '#b71c1c' : '#e65100', marginTop: '4px' }}>
+                        {fmt(totalOutstanding)}
+                      </div>
+                      {/* Breakdown */}
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Loan + interest + fee</span>
+                          <span style={{ fontWeight: 600, color: '#555' }}>{fmt(baseRepayment)}</span>
                         </div>
-                      ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: selectedLoan.status === 'default' ? '#b71c1c' : '#e65100' }}>
+                          <span>+ Arrears penalty</span>
+                          <span style={{ fontWeight: 700 }}>+ {fmt(liveArrearsPenalty)}</span>
+                        </div>
+                        <div style={{ borderTop: `1px solid ${selectedLoan.status === 'default' ? '#f44336' : '#ffc107'}`, paddingTop: '3px', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                          <span>= Total</span>
+                          <span>{fmt(totalOutstanding)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  {[
+                    ['Interest Rate',    `${selectedLoan.interestRate}%`],
+                    ['Duration',         `${selectedLoan.durationMonths} month(s)`],
+                    ['Transaction Fee',  fmt(txFee(selectedLoan))],
+                    ['Applied On',       fd(selectedLoan.createdAt)],
+                    ...(selectedLoan.approvalStatus === 'approved' ? [
+                      ['Disbursed On',      fd(selectedLoan.disbursementDate)],
+                      ['Due Date',          fd(selectedLoan.dueDate)],
+                      ['Amount Paid',       fmt(selectedLoan.amountPaid)],
+                      ['Remaining Balance', fmt(selectedLoan.remainingBalance)],
+                      ...(selectedLoan.penaltyInterest > 0 ? [['Penalty Interest', fmt(selectedLoan.penaltyInterest)]] : []),
+                      ...(isInArrears && liveArrearsPenalty > 0 ? [['Live Arrears Penalty', fmt(liveArrearsPenalty)]] : []),
+                      ...(isInArrears ? [['Total Outstanding', fmt(totalOutstanding)]] : []),
+                    ] : []),
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', fontWeight: 600 }}>{label}</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: label === 'Total Outstanding' ? '#b71c1c' : label === 'Live Arrears Penalty' ? '#e65100' : '#1a1a2e', marginTop: '2px' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedLoan.guarantors?.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Users size={14} /> Guarantors
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedLoan.guarantors.map((g, gi) => {
+                        const name = g.guarantorId === -1 ? 'The Office' : g.guarantor ? `${g.guarantor.firstName} ${g.guarantor.lastName}` : `Guarantor #${gi + 1}`;
+                        const sc = { accepted: { bg: '#e8f5e9', color: '#2e7d32' }, pending: { bg: '#fff8e1', color: '#e65100' }, rejected: { bg: '#ffebee', color: '#c62828' }, admin_override: { bg: '#e3f2fd', color: '#1565c0' } }[g.approvalStatus] || { bg: '#f5f5f5', color: '#777' };
+                        return (
+                          <span key={gi} style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: sc.bg, color: sc.color, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            {g.guarantorId === -1 ? <Building2 size={11} /> : <Users size={11} />} {name} · {g.approvalStatus}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {selectedLoan.approvalStatus === 'approved' && (!selectedLoan.payments || selectedLoan.payments.length === 0) && (
-                <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '16px', textAlign: 'center', color: '#888', marginBottom: '20px', border: '1px dashed #e5e7eb' }}>
-                  <CreditCard size={24} style={{ marginBottom: 6, color: '#bbb' }} />
-                  <div style={{ fontWeight: 600, color: '#555' }}>No payments recorded yet</div>
-                  <div style={{ fontSize: '13px', marginTop: '4px' }}>Payments will appear here once recorded.</div>
-                </div>
-              )}
+                {selectedLoan.payments?.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <CreditCard size={14} /> Payment History ({selectedLoan.payments.length})
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                      <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Total Paid</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: '#2e7d32', marginTop: '2px' }}>{fmt(selectedLoan.payments.reduce((s, p) => s + Number(p.amount || 0), 0))}</div>
+                      </div>
+                      <div style={{ background: '#e3f2fd', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Remaining</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: '#1565c0', marginTop: '2px' }}>{fmt(selectedLoan.remainingBalance)}</div>
+                      </div>
+                      <div style={{ background: '#f3e5f5', borderRadius: '8px', padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '10px', color: '#555', fontWeight: 600, textTransform: 'uppercase' }}>Payments</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: '#7b1fa2', marginTop: '2px' }}>{selectedLoan.payments.length}</div>
+                      </div>
+                    </div>
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr 2fr', background: '#f3f4f6', padding: '8px 14px' }}>
+                        {['Date', 'Amount', 'Method', 'Notes'].map(h => (
+                          <div key={h} style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: '#6b7280' }}>{h}</div>
+                        ))}
+                      </div>
+                      {selectedLoan.payments
+                        .slice().sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
+                        .map((p, pi) => (
+                          <div key={pi} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr 2fr', padding: '10px 14px', alignItems: 'center', borderTop: '1px solid #f0f0f0', background: p.paymentMethod === 'top_up_clearance' ? '#f3e5f5' : pi % 2 === 0 ? 'white' : '#fafafa' }}>
+                            <div style={{ fontSize: '13px', color: '#374151', fontWeight: 600 }}>{fd(p.paymentDate)}</div>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: p.paymentMethod === 'top_up_clearance' ? '#7b1fa2' : '#2e7d32' }}>{fmt(p.amount)}</div>
+                            <div>
+                              <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'capitalize', padding: '2px 8px', borderRadius: '10px', background: p.paymentMethod === 'top_up_clearance' ? '#f3e5f5' : p.paymentMethod === 'mpesa' ? '#e8f5e9' : '#e3f2fd', color: p.paymentMethod === 'top_up_clearance' ? '#7b1fa2' : p.paymentMethod === 'mpesa' ? '#2e7d32' : '#1565c0', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {p.paymentMethod === 'top_up_clearance' ? <><RefreshCw size={10} /> Top-Up</> : (p.paymentMethod || 'Cash')}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#888', fontStyle: p.notes ? 'normal' : 'italic' }}>{p.notes || '—'}</div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
 
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setShowDetailModal(false)}>Close</button>
+                {selectedLoan.approvalStatus === 'approved' && (!selectedLoan.payments || selectedLoan.payments.length === 0) && (
+                  <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '16px', textAlign: 'center', color: '#888', marginBottom: '20px', border: '1px dashed #e5e7eb' }}>
+                    <CreditCard size={24} style={{ marginBottom: 6, color: '#bbb' }} />
+                    <div style={{ fontWeight: 600, color: '#555' }}>No payments recorded yet</div>
+                    <div style={{ fontSize: '13px', marginTop: '4px' }}>Payments will appear here once recorded.</div>
+                  </div>
+                )}
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowDetailModal(false)}>Close</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </>
   );

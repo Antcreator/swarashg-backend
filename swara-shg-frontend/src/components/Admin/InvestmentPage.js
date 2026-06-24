@@ -113,7 +113,33 @@ const InvestmentPage = () => {
       const loansRes = await loansAPI.getAll({ _nocache: Date.now() });
       const allLoans = (loansRes.data.loans || []).filter(l => l.approvalStatus === 'approved');
 
-      const principalLoansTotal = allLoans.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+      // ── Principal row: sum of all-time totalRepayment + live arrears penalty ──
+      // For loans in arrears/default, we add the real-time arrears penalty
+      // (5% × remaining principal × months overdue) so the Investment Loans
+      // column always reflects the true total owed including penalties.
+      const calcArrearsPenalty = (loan) => {
+        if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
+        if (!loan.dueDate) return 0;
+        const principal      = Number(loan.amount || 0);
+        const interestRate   = Number(loan.interestRate || 0);
+        const txFee          = Number(loan.transactionFee ?? 108);
+        const amountPaid     = Number(loan.amountPaid || 0);
+        const totalInterest      = Math.round(principal * interestRate / 100) + txFee;
+        const principalPaid      = Math.max(0, amountPaid - totalInterest);
+        const remainingPrincipal = Math.max(0, principal - principalPaid);
+        const now     = new Date();
+        const dueDate = new Date(loan.dueDate);
+        const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+        const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+        const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+        return Math.round(remainingPrincipal * 0.05 * months);
+      };
+
+      // Principal row = sum of all approved loans' totalRepayment + arrears penalties
+      const principalLoansTotal = allLoans.reduce((sum, l) => {
+        return sum + Number(l.totalRepayment || 0) + calcArrearsPenalty(l);
+      }, 0);
 
       const loansByMonth = {};
       allLoans.forEach(loan => {
@@ -121,7 +147,8 @@ const InvestmentPage = () => {
         const d = new Date(loan.disbursementDate);
         if (d.getFullYear() !== year) return;
         const m = d.getMonth() + 1;
-        loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0);
+        // Monthly value = totalRepayment + arrears penalty for that loan
+        loansByMonth[m] = (loansByMonth[m] || 0) + Number(loan.totalRepayment || 0) + calcArrearsPenalty(loan);
       });
 
       // ── Fines: fetch ALL fines (not filtered by year) so the Principal
@@ -361,7 +388,7 @@ const InvestmentPage = () => {
       <h1>Investment Records — ${year}</h1>
       <p style="color:#666;margin:0 0 14px">Generated: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} · Grand Total: ${fmtNum(grandTotal)}</p>
       <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
-      <script>window.onload=()=>{window.print();}<script>
+      <script>window.onload=()=>{window.print();}<\/script>
     </body></html>`);
     win.document.close();
   };
