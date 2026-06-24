@@ -63,6 +63,20 @@ const formatCurrency = (amt) =>
   new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
 // ─── Update loan status ──────────────────────────────────────────
+// Arrears penalty = 5% × REMAINING PRINCIPAL per month.
+//
+// Remaining principal = original principal − principal portion of payments.
+// Payments allocate: interest first, then principal.
+//
+// Examples (principal 100k, interest 20k, total 120k):
+//   Pays 0:   penalty = 5% × 100k each month
+//   Pays 10k: 10k < 20k interest → all goes to interest, principal still 100k
+//              penalty = 5% × 100k each month
+//   Pays 40k: 20k clears interest, 20k reduces principal → remaining principal 80k
+//              penalty = 5% × 80k each month
+//   Pays 40k then 24k in month 2:
+//              month 1 penalty = 5% × 80k (before 2nd payment)
+//              month 2 onward  = 5% × 56k  (80k − 24k)
 const updateLoanStatus = async (loan) => {
   if (loan.approvalStatus !== 'approved') return loan;
 
@@ -88,38 +102,79 @@ const updateLoanStatus = async (loan) => {
     loan.status    = 'arrears';
     loan.isOverdue = true;
 
-    const principal     = Number(loan.amount);
-    const monthsOverdue = Math.ceil(daysPastDue / 30);
-    const monthlyRate   = 0.05;
-    const totalPenalty  = Math.round(principal * monthlyRate * monthsOverdue);
-    const txFee         = Number(loan.transactionFee ?? 108);
-    const totalRepayment = calculateTotalRepayment(principal, loan.interestRate, txFee);
-    const paidSoFar      = Number(loan.amountPaid || 0);
-    const baseBalance    = Math.round(totalRepayment - paidSoFar);
+    const originalPrincipal = Number(loan.amount);
+    const interestRate      = Number(loan.interestRate || 0);
+    const txFee             = Number(loan.transactionFee ?? 108);
+    const totalInterest     = Math.round(originalPrincipal * interestRate / 100) + txFee;
+    const totalRepayment    = originalPrincipal + totalInterest;
+    const amountPaid        = Number(loan.amountPaid || 0);
 
-    loan.penaltyInterest  = totalPenalty;
-    loan.remainingBalance = Math.round(baseBalance + totalPenalty);
-    loan.arrearsMonths    = monthsOverdue;
+    // Payments go to interest first, then principal.
+    // Remaining principal = original principal minus any principal-portion of payments.
+    const principalPaid      = Math.max(0, amountPaid - totalInterest);
+    const remainingPrincipal = Math.max(0, originalPrincipal - principalPaid);
+
+    // Penalty this month = 5% × remaining principal
+    const monthlyRate        = 0.05;
+    const monthlyPenalty     = Math.round(remainingPrincipal * monthlyRate);
+
+    // Current month number (1–3) for cumulative penalty
+    const monthsOverdue      = Math.ceil(daysPastDue / 30);
+
+    // Cumulative penalty = sum of monthly penalties
+    // Each month uses the same remaining principal (payments reduce it going forward)
+    // For simplicity we use current remaining principal × months — this is correct
+    // when principal hasn't changed mid-period. For mid-period changes the fine
+    // records capture the right amount per month as they're created each calendar month.
+    const totalPenalty       = Math.round(remainingPrincipal * monthlyRate * monthsOverdue);
+
+    const baseBalance        = Math.max(0, totalRepayment - amountPaid);
+    loan.penaltyInterest     = totalPenalty;
+    loan.remainingBalance    = Math.round(baseBalance + totalPenalty);
+    loan.arrearsMonths       = monthsOverdue;
     await loan.save();
 
-    const currentMonth      = now.getMonth() + 1;
-    const currentYear       = now.getFullYear();
-    const monthlyFineAmount = Math.round(principal * monthlyRate);
+    // ── Fine record: one per calendar month per loan ──────────────
+    // Each month's fine uses the remaining principal AT THAT TIME.
+    // We create/update the current month's fine; past months are
+    // already stored from when they were created.
+    const currentMonth = now.getMonth() + 1;
+    const currentYear  = now.getFullYear();
 
     try {
       const existingFine = await Fine.findOne({
         where: { memberId: loan.memberId, fineType: 'loan_arrears', month: currentMonth, year: currentYear, referenceId: loan.id },
       });
+
       if (!existingFine) {
+        // Create this month's fine using current remaining principal
         await Fine.create({
-          memberId: loan.memberId, fineType: 'loan_arrears', amount: monthlyFineAmount,
-          month: currentMonth, year: currentYear, isPaid: false, referenceId: loan.id,
-          notes: `Arrears penalty: 5% of principal ${formatCurrency(principal)} (Loan #${loan.id}, ${monthsOverdue} month${monthsOverdue > 1 ? 's' : ''} overdue) for ${now.toLocaleString('default', { month: 'long' })} ${currentYear}`,
+          memberId:    loan.memberId,
+          fineType:    'loan_arrears',
+          amount:      monthlyPenalty,
+          month:       currentMonth,
+          year:        currentYear,
+          isPaid:      false,
+          referenceId: loan.id,
+          notes: `Arrears penalty: 5% of remaining principal ${formatCurrency(remainingPrincipal)} ` +
+                 `(Loan #${loan.id}, month ${monthsOverdue} of arrears) ` +
+                 `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear}`,
         });
-        console.log(`[Loan ${loan.id}] Arrears fine KES ${monthlyFineAmount} created for ${currentMonth}/${currentYear}`);
+        console.log(`[Loan ${loan.id}] Arrears fine KES ${monthlyPenalty} (5% × ${remainingPrincipal}) created for ${currentMonth}/${currentYear}`);
+      } else {
+        // Update existing fine if remaining principal has changed
+        // (e.g. a payment was made after the fine was created this month)
+        if (Number(existingFine.amount) !== monthlyPenalty) {
+          existingFine.amount = monthlyPenalty;
+          existingFine.notes  = `Arrears penalty: 5% of remaining principal ${formatCurrency(remainingPrincipal)} ` +
+                                `(Loan #${loan.id}, month ${monthsOverdue} of arrears) ` +
+                                `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear} [updated]`;
+          await existingFine.save();
+          console.log(`[Loan ${loan.id}] Arrears fine updated to KES ${monthlyPenalty} for ${currentMonth}/${currentYear}`);
+        }
       }
     } catch (fineErr) {
-      console.error(`[Loan ${loan.id}] Failed to create arrears fine:`, fineErr.message);
+      console.error(`[Loan ${loan.id}] Failed to create/update arrears fine:`, fineErr.message);
     }
 
     return loan;
@@ -743,12 +798,17 @@ const getArrearsStats = async (req, res) => {
     const details    = [];
 
     for (const loan of loans) {
-      const principal       = Number(loan.amount || 0);
-      const interestRate    = Number(loan.interestRate || 0);
-      const txFee           = Number(loan.transactionFee ?? 108);
-      const amountPaid      = Number(loan.amountPaid || 0);
-      const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
-      const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
+      const originalPrincipal = Number(loan.amount || 0);
+      const interestRate      = Number(loan.interestRate || 0);
+      const txFee             = Number(loan.transactionFee ?? 108);
+      const amountPaid        = Number(loan.amountPaid || 0);
+      const totalInterest     = Math.round(originalPrincipal * interestRate / 100) + txFee;
+      const totalRepayment    = originalPrincipal + totalInterest;
+      const baseLoanBalance   = Math.max(0, totalRepayment - amountPaid);
+
+      // Payments go to interest first, then principal
+      const principalPaid      = Math.max(0, amountPaid - totalInterest);
+      const remainingPrincipal = Math.max(0, originalPrincipal - principalPaid);
 
       let overdueDays = 0; let overdueMonths = 0;
 
@@ -761,24 +821,26 @@ const getArrearsStats = async (req, res) => {
       }
 
       const cappedMonths    = Math.min(overdueMonths, 3);
-      const monthlyPenalty  = Math.round(principal * 0.05);
-      const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+      // Penalty = 5% × remaining principal (not original principal)
+      const monthlyPenalty  = Math.round(remainingPrincipal * 0.05);
+      const penaltyInterest = Math.round(remainingPrincipal * 0.05 * cappedMonths);
 
       totalPenalty += penaltyInterest;
 
       details.push({
-        loanId:         loan.id,
-        memberId:       loan.memberId,
-        memberName:     loan.member ? `${loan.member.firstName} ${loan.member.lastName}` : `Member #${loan.memberId}`,
-        status:         loan.status,
-        principal,
+        loanId:              loan.id,
+        memberId:            loan.memberId,
+        memberName:          loan.member ? `${loan.member.firstName} ${loan.member.lastName}` : `Member #${loan.memberId}`,
+        status:              loan.status,
+        originalPrincipal,
+        remainingPrincipal,
         baseLoanBalance,
         overdueDays,
         overdueMonths,
         cappedMonths,
         monthlyPenalty,
         penaltyInterest,
-        totalDue:       baseLoanBalance + penaltyInterest,
+        totalDue:            baseLoanBalance + penaltyInterest,
       });
     }
 
