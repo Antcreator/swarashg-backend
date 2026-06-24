@@ -388,7 +388,7 @@ const InvestmentPage = () => {
       <h1>Investment Records — ${year}</h1>
       <p style="color:#666;margin:0 0 14px">Generated: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} · Grand Total: ${fmtNum(grandTotal)}</p>
       <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
-      <script>window.onload=()=>{window.print();}<\/script>
+      <script>window.onload=()=>{window.print();}<script>
     </body></html>`);
     win.document.close();
   };
