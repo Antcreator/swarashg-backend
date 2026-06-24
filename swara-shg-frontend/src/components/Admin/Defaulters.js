@@ -195,7 +195,7 @@ const Defaulters = () => {
         {/* Summary cards */}
         <div className="summary-cards">
           <div className="summary-card danger">
-            <h3>Total Defaulters</h3>
+            <h3>Total</h3>
             <p className="count">{defaulters.length}</p>
           </div>
           <div className="summary-card danger">

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import Navbar from '../Navbar/navbar';
-import { finesAPI, loansAPI } from '../../Service/Api';
+import { finesAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import '../MembersManagementAdmin/Members.css';
 import {
   AlertTriangle, PiggyBank, RefreshCw, Check, X, Trash2,
-  CheckCircle, ArrowLeft, Banknote, ChevronDown, ChevronUp,
+  CheckCircle, ArrowLeft, Banknote,
 } from 'lucide-react';
 
 const POLL_INTERVAL_MS = 15_000;
@@ -23,13 +23,8 @@ const FinesPage = () => {
   const [search, setSearch]       = useState('');
   const [stats, setStats]         = useState({
     savingsFineTotal: 0, chamaaFineTotal: 0,
-    arrearsTotal: 0, unpaidFinesCount: 0,
+    unpaidFinesCount: 0,
   });
-
-  // Real-time arrears from loansAPI.getArrearsStats()
-  const [arrearsDetails, setArrearsDetails]         = useState([]);
-  const [arrearsRealTotal, setArrearsRealTotal]     = useState(0);
-  const [showArrearsBreakdown, setShowArrearsBreakdown] = useState(false);
 
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing]   = useState(false);
@@ -60,19 +55,8 @@ const FinesPage = () => {
     }
   };
 
-  // Fetch real-time arrears from loans endpoint
-  const fetchArrearsStats = async () => {
-    try {
-      const res = await loansAPI.getArrearsStats();
-      setArrearsDetails(res.data.details || []);
-      setArrearsRealTotal(res.data.totalPenalty || 0);
-    } catch (err) {
-      console.error('Failed to fetch arrears stats:', err);
-    }
-  };
-
   const refreshAll = async (silent = false) => {
-    await Promise.all([fetchFines(silent), fetchStats(), fetchArrearsStats()]);
+    await Promise.all([fetchFines(silent), fetchStats()]);
   };
 
   useEffect(() => {
@@ -185,154 +169,7 @@ const FinesPage = () => {
             <p style={{ margin:0, fontSize:'22px', fontWeight:'bold', color:'#880e4f' }}>{fmt(stats.chamaaFineTotal)}</p>
           </div>
 
-          {/* Arrears Penalties — real-time with member breakdown */}
-          <div style={{
-            background:'#fff8e1', border:'2px solid #ffc107', borderRadius:'10px', padding:'18px',
-            gridColumn: arrearsDetails.length > 0 ? 'span 2' : 'span 1',
-          }}>
-            {/* Header row */}
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'4px' }}>
-              <p style={{ margin:0, color:'#555', fontSize:'13px' }}>
-                Arrears Penalties
-                <span style={{
-                  marginLeft:'8px', fontSize:'11px', fontWeight:600,
-                  background:'#ffe082', color:'#e65100', borderRadius:'10px', padding:'1px 7px',
-                }}>
-                  Real-time · 5% / month
-                </span>
-              </p>
-              {arrearsDetails.length > 0 && (
-                <button
-                  onClick={() => setShowArrearsBreakdown(p => !p)}
-                  style={{ background:'none', border:'none', cursor:'pointer', color:'#e65100', display:'inline-flex', alignItems:'center', gap:3, fontSize:'12px', fontWeight:600, padding:'2px 6px' }}
-                >
-                  {showArrearsBreakdown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  {showArrearsBreakdown ? 'Hide' : 'Show'} breakdown
-                </button>
-              )}
-            </div>
 
-            {/* Total */}
-            <p style={{ margin:'0 0 0', fontSize:'26px', fontWeight:'900', color:'#e65100' }}>
-              {fmt(arrearsRealTotal)}
-            </p>
-            <p style={{ margin:'2px 0 0', fontSize:'12px', color:'#888' }}>
-              {arrearsDetails.length} loan{arrearsDetails.length !== 1 ? 's' : ''} in arrears/default
-            </p>
-
-            {/* Member breakdown — shown when toggled */}
-            {showArrearsBreakdown && arrearsDetails.length > 0 && (
-              <div style={{ marginTop:'14px', borderTop:'1px solid #ffe082', paddingTop:'12px' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'13px' }}>
-                  <thead>
-                    <tr style={{ background:'#fff8e1' }}>
-                      <th style={{ textAlign:'left', padding:'6px 8px', color:'#888', fontWeight:600 }}>Member</th>
-                      <th style={{ textAlign:'right', padding:'6px 8px', color:'#888', fontWeight:600 }}>Orig. Principal</th>
-                      <th style={{ textAlign:'right', padding:'6px 8px', color:'#888', fontWeight:600 }}>Rem. Principal</th>
-                      <th style={{ textAlign:'center', padding:'6px 8px', color:'#888', fontWeight:600 }}>Months</th>
-                      <th style={{ textAlign:'right', padding:'6px 8px', color:'#888', fontWeight:600 }}>Monthly Fine</th>
-                      <th style={{ textAlign:'right', padding:'6px 8px', color:'#888', fontWeight:600 }}>Total Penalty</th>
-                      <th style={{ textAlign:'right', padding:'6px 8px', color:'#888', fontWeight:600 }}>Total Due</th>
-                      <th style={{ textAlign:'center', padding:'6px 8px', color:'#888', fontWeight:600 }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {arrearsDetails.map((d, i) => (
-                      <tr key={d.loanId} style={{ borderTop:'1px solid #fff3cd', background: i % 2 === 0 ? 'white' : '#fffef5' }}>
-                        {/* Member name */}
-                        <td style={{ padding:'8px 8px', fontWeight:700 }}>
-                          {d.memberName}
-                          <div style={{ fontSize:'11px', color:'#aaa', fontWeight:400 }}>Loan #{d.loanId}</div>
-                        </td>
-
-                        {/* Original principal */}
-                        <td style={{ padding:'8px 8px', textAlign:'right', color:'#888', textDecoration:'line-through', fontSize:'12px' }}>
-                          {fmt(d.originalPrincipal)}
-                        </td>
-
-                        {/* Remaining principal */}
-                        <td style={{ padding:'8px 8px', textAlign:'right', fontWeight:700, color: d.remainingPrincipal < d.originalPrincipal ? '#2e7d32' : '#1a1a2e' }}>
-                          {fmt(d.remainingPrincipal)}
-                          {d.remainingPrincipal < d.originalPrincipal && (
-                            <div style={{ fontSize:'10px', color:'#2e7d32', fontWeight:400 }}>
-                              {fmt(d.originalPrincipal - d.remainingPrincipal)} paid off
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Months overdue */}
-                        <td style={{ padding:'8px 8px', textAlign:'center' }}>
-                          <span style={{
-                            background: d.cappedMonths >= 3 ? '#ffebee' : '#fff8e1',
-                            color:      d.cappedMonths >= 3 ? '#c62828' : '#e65100',
-                            padding:'2px 10px', borderRadius:'10px', fontWeight:700, fontSize:'12px',
-                          }}>
-                            {d.cappedMonths}mo
-                          </span>
-                          <div style={{ fontSize:'10px', color:'#aaa', marginTop:2 }}>{d.overdueDays}d</div>
-                        </td>
-
-                        {/* Monthly fine */}
-                        <td style={{ padding:'8px 8px', textAlign:'right', color:'#e65100', fontWeight:600 }}>
-                          {fmt(d.monthlyPenalty)}
-                          <div style={{ fontSize:'10px', color:'#aaa' }}>5% × {fmt(d.remainingPrincipal)}</div>
-                        </td>
-
-                        {/* Total penalty */}
-                        <td style={{ padding:'8px 8px', textAlign:'right', color:'#c62828', fontWeight:700 }}>
-                          {fmt(d.penaltyInterest)}
-                          <div style={{ fontSize:'10px', color:'#aaa' }}>{fmt(d.monthlyPenalty)} × {d.cappedMonths}</div>
-                        </td>
-
-                        {/* Total due */}
-                        <td style={{ padding:'8px 8px', textAlign:'right', fontWeight:900, color:'#b71c1c', fontSize:'14px' }}>
-                          {fmt(d.totalDue)}
-                          <div style={{ fontSize:'10px', color:'#aaa', fontWeight:400 }}>
-                            {fmt(d.baseLoanBalance)} + {fmt(d.penaltyInterest)}
-                          </div>
-                        </td>
-
-                        {/* Status badge */}
-                        <td style={{ padding:'8px 8px', textAlign:'center' }}>
-                          <span style={{
-                            padding:'3px 8px', borderRadius:'10px', fontSize:'11px', fontWeight:700,
-                            background: d.status === 'default' ? '#ffebee' : '#fff8e1',
-                            color:      d.status === 'default' ? '#b71c1c' : '#e65100',
-                            border:     `1px solid ${d.status === 'default' ? '#f44336' : '#ffc107'}`,
-                          }}>
-                            {d.status === 'default' ? '🚨 Default' : '⚠️ Arrears'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {/* Totals footer */}
-                  <tfoot>
-                    <tr style={{ borderTop:'2px solid #ffc107', background:'#fff8e1', fontWeight:700 }}>
-                      <td style={{ padding:'8px 8px', color:'#555' }}>
-                        TOTAL ({arrearsDetails.length} loans)
-                      </td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                      <td style={{ padding:'8px 8px', textAlign:'right', color:'#c62828', fontSize:'14px' }}>
-                        {fmt(arrearsDetails.reduce((s, d) => s + d.penaltyInterest, 0))}
-                      </td>
-                      <td style={{ padding:'8px 8px', textAlign:'right', color:'#b71c1c', fontSize:'15px' }}>
-                        {fmt(arrearsDetails.reduce((s, d) => s + d.totalDue, 0))}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-
-                <p style={{ margin:'10px 0 0', fontSize:'11px', color:'#aaa', fontStyle:'italic' }}>
-                  Penalty = 5% × remaining principal per month · payments clear interest first, then principal
-                </p>
-              </div>
-            )}
-          </div>
 
           {/* Unpaid Fines */}
           <div style={{ background:'#ffebee', border:'2px solid #f44336', borderRadius:'10px', padding:'18px' }}>

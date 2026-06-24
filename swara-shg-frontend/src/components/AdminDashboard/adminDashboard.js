@@ -27,7 +27,6 @@ const AdminDashboard = () => {
     pendingDeposits:    0,
     savingsFineTotal:   0,
     chamaaFineTotal:    0,
-    arrearsTotal:       0,   // ← arrears penalties (5% per month on principal)
     agmFeeTotal:        0,
     registrationTotal:  0,
     investmentTotal:    0,
@@ -53,7 +52,6 @@ const AdminDashboard = () => {
       let totalSeedCapital     = 0;
       let savingsFineTotal     = 0;
       let chamaaFineTotal      = 0;
-      let arrearsTotal         = 0;
       let agmFeeTotal          = 0;
       let registrationTotal    = 0;
       let investmentTotal      = 0;
@@ -75,29 +73,6 @@ const AdminDashboard = () => {
           })
           .catch(() => {}),
 
-        // ── Real-time arrears: calculated live from overdue loans ──
-        // Does NOT rely on the fines table so it's always current
-        // regardless of whether updateLoanStatus has been triggered.
-        loansAPI.getArrearsStats()
-          .then(r => { arrearsTotal = r.data.totalPenalty || 0; })
-          .catch(() => {
-            // Fallback: calculate from loans directly if endpoint not yet deployed
-            loansAPI.getAll({ status: 'arrears' })
-              .then(r => {
-                const now = new Date();
-                arrearsTotal = (r.data.loans || []).reduce((sum, loan) => {
-                  if (!loan.dueDate) return sum;
-                  const principal = Number(loan.amount || 0);
-                  const dueDate   = new Date(loan.dueDate);
-                  const todayMs   = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-                  const dueMs     = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-                  const days      = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-                  const months    = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
-                  return sum + Math.round(principal * 0.05 * months);
-                }, 0);
-              })
-              .catch(() => {});
-          }),
 
         agmFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { agmFeeTotal = r.data.totalThisYear || r.data.total || 0; })
@@ -170,7 +145,6 @@ const AdminDashboard = () => {
         pendingDeposits:   pendingDepositsCount,
         savingsFineTotal,
         chamaaFineTotal,
-        arrearsTotal,
         agmFeeTotal,
         registrationTotal,
         investmentTotal,
@@ -361,36 +335,6 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* ── Arrears Penalties — NEW ── */}
-          <Link
-            to="/admin/fines?type=loan_arrears"
-            className="stat-card clickable"
-            style={{ textDecoration: 'none', color: 'inherit', position: 'relative' }}
-          >
-            <div className="stat-icon" style={{ background: '#fff8e1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Banknote size={28} color="#e65100" />
-            </div>
-            <div className="stat-content">
-              <h3>Arrears Penalties <YearBadge /></h3>
-              <p className="stat-value" style={{ color: '#e65100' }}>
-                {stats.arrearsTotal > 0 ? fmt(stats.arrearsTotal) : 'KES 0'}
-              </p>
-              <span className="stat-link" style={{ color: '#e65100' }}>
-                5% per month on principal →
-              </span>
-            </div>
-            {stats.arrearsTotal > 0 && (
-              <div style={{
-                position:'absolute', top:'-8px', right:'-8px',
-                background:'#e65100', color:'white', borderRadius:'50%',
-                width:'24px', height:'24px',
-                display:'flex', alignItems:'center', justifyContent:'center',
-                fontSize:'14px', fontWeight:900,
-                boxShadow:'0 2px 6px rgba(230,81,0,0.5)',
-              }}>!</div>
-            )}
-          </Link>
-
           {/* AGM Fees */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#ede7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -544,11 +488,7 @@ const AdminDashboard = () => {
               </span>
               <h3>{isStaff ? 'View Fines' : 'Manage Fines'}</h3>
               <p>{isStaff ? 'View member fines' : 'View and manage member fines'}</p>
-              {stats.arrearsTotal > 0 && (
-                <span className="action-badge" style={{ background: '#e65100' }}>
-                  Arrears: {fmt(stats.arrearsTotal)}
-                </span>
-              )}
+
             </Link>
 
             <Link to="/admin/agm-fees" className="action-card">
