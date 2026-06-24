@@ -90,6 +90,7 @@ export const loansAPI = {
   checkEligibility:          (memberId)                      => api.get(`/loans/eligibility/${memberId}`),
   requestTopUp:              (topUpData)                     => api.post('/loans/top-up', topUpData),
   getMaxLoan:                (memberId)                      => api.get(`/loans/max-loan/${memberId}`),
+  getArrearsStats: ()                                        => api.get('/loans/arrears-stats'),
 };
 
 // Notifications API

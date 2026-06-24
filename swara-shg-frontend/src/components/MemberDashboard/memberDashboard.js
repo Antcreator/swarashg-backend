@@ -7,7 +7,7 @@ import DepositCard from './DepositCard';
 import './memberDashboard.css';
 import {
   Coins, ClipboardList, AlertTriangle, Sprout, Package,
-  Handshake, FileText, Eye, EyeOff,
+  Handshake, FileText, Eye, EyeOff, Banknote,
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -15,7 +15,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 const TRANSACTION_FEE = 108;
 const ONE_SHARE_DIVISOR = 3;
 
-// ── Eye toggle button — defined OUTSIDE MemberDashboard to prevent remounting ──
+// ── Eye toggle button ─────────────────────────────────────────────
 const EyeToggleButton = ({ valuesHidden, onToggle }) => (
   <button
     onClick={onToggle}
@@ -28,10 +28,145 @@ const EyeToggleButton = ({ valuesHidden, onToggle }) => (
   </button>
 );
 
-// ── Year badge — defined OUTSIDE to prevent remounting ──
+// ── Year badge ────────────────────────────────────────────────────
 const YearBadge = () => (
   <span className="year-badge">{CURRENT_YEAR}</span>
 );
+
+// ── Arrears / Default Fine Banner ─────────────────────────────────
+// Shown when the member has a loan in arrears or default.
+// Uses pre-calculated values from fetchActiveLoan (real-time,
+// same formula as loanController.js: 5% × principal × months).
+const ArrearsBanner = ({ activeLoan }) => {
+  if (!activeLoan) return null;
+  if (activeLoan.status !== 'arrears' && activeLoan.status !== 'default') return null;
+
+  // These are all pre-calculated in fetchActiveLoan
+  const {
+    baseLoanBalance = 0,
+    overdueDays     = 0,
+    overdueMonths   = 0,
+    cappedMonths    = 0,
+    monthlyPenalty  = 0,
+    penaltyInterest = 0,
+    totalDue        = 0,
+  } = activeLoan;
+
+  const amountPaid = Number(activeLoan.amountPaid || 0);
+
+  const principal = Number(activeLoan.amount || 0);
+  const isDefault = activeLoan.status === 'default';
+
+  const fc = (v) => new Intl.NumberFormat('en-KE', {
+    style: 'currency', currency: 'KES', minimumFractionDigits: 0,
+  }).format(v || 0);
+
+  return (
+    <div style={{
+      background:    isDefault ? '#ffebee' : '#fff8e1',
+      border:        `2px solid ${isDefault ? '#f44336' : '#ff9800'}`,
+      borderRadius:  '12px',
+      padding:       '16px 20px',
+      marginBottom:  '20px',
+    }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'14px' }}>
+        <span style={{ fontSize:'22px' }}>{isDefault ? '🚨' : '⚠️'}</span>
+        <div>
+          <strong style={{ fontSize:'15px', color: isDefault ? '#b71c1c' : '#e65100' }}>
+            {isDefault ? 'Loan in Default' : 'Loan in Arrears'}
+          </strong>
+          <div style={{ fontSize:'12px', color:'#888', marginTop:'2px' }}>
+            {overdueDays} day{overdueDays !== 1 ? 's' : ''} overdue
+            {overdueMonths > 0 && ` · ${cappedMonths} month${cappedMonths !== 1 ? 's' : ''} penalty applied`}
+          </div>
+        </div>
+      </div>
+
+      {/* Breakdown grid */}
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'repeat(auto-fit, minmax(130px, 1fr))',
+        gap:'10px',
+        marginBottom:'14px',
+      }}>
+        {/* Loan Balance */}
+        <div style={{ background:'white', borderRadius:'8px', padding:'10px 12px', border:'1px solid #e0e0e0' }}>
+          <div style={{ fontSize:'10px', color:'#888', fontWeight:600, textTransform:'uppercase', marginBottom:'4px' }}>
+            Loan Balance
+          </div>
+          <div style={{ fontSize:'16px', fontWeight:800, color:'#1a1a2e' }}>
+            {fc(baseLoanBalance)}
+          </div>
+          <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px' }}>
+            Paid: {fc(amountPaid)}
+          </div>
+        </div>
+
+        {/* Monthly Penalty */}
+        <div style={{
+          background:'white', borderRadius:'8px', padding:'10px 12px',
+          border:`1px solid ${isDefault ? '#f44336' : '#ff9800'}`,
+        }}>
+          <div style={{ fontSize:'10px', color:'#888', fontWeight:600, textTransform:'uppercase', marginBottom:'4px' }}>
+            Monthly Penalty
+          </div>
+          <div style={{ fontSize:'16px', fontWeight:800, color: isDefault ? '#b71c1c' : '#e65100' }}>
+            {fc(monthlyPenalty)}
+          </div>
+          <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px' }}>
+            5% of {fc(principal)}
+          </div>
+        </div>
+
+        {/* Total Penalty */}
+        <div style={{
+          background:'white', borderRadius:'8px', padding:'10px 12px',
+          border:`1px solid ${isDefault ? '#f44336' : '#ff9800'}`,
+        }}>
+          <div style={{ fontSize:'10px', color:'#888', fontWeight:600, textTransform:'uppercase', marginBottom:'4px' }}>
+            Total Penalty
+          </div>
+          <div style={{ fontSize:'16px', fontWeight:800, color: isDefault ? '#b71c1c' : '#e65100' }}>
+            {fc(penaltyInterest)}
+          </div>
+          <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px' }}>
+            {fc(monthlyPenalty)} × {cappedMonths} month{cappedMonths !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Total Due */}
+        <div style={{
+          background: isDefault ? '#ffebee' : '#fff8e1',
+          borderRadius:'8px', padding:'10px 12px',
+          border:`2px solid ${isDefault ? '#f44336' : '#ff9800'}`,
+        }}>
+          <div style={{ fontSize:'10px', color:'#888', fontWeight:600, textTransform:'uppercase', marginBottom:'4px' }}>
+            Total Amount Due
+          </div>
+          <div style={{ fontSize:'20px', fontWeight:900, color: isDefault ? '#b71c1c' : '#e65100' }}>
+            {fc(totalDue)}
+          </div>
+          <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px' }}>
+            {fc(baseLoanBalance)} + {fc(penaltyInterest)} penalty
+          </div>
+        </div>
+      </div>
+
+      {/* Warning message */}
+      <p style={{
+        margin:0, fontSize:'12px', fontWeight:600,
+        color: isDefault ? '#b71c1c' : '#e65100',
+        display:'flex', alignItems:'center', gap:'6px',
+      }}>
+        <AlertTriangle size={13} />
+        {isDefault
+          ? 'Your loan has defaulted. Please contact the admin immediately to resolve this.'
+          : `Please clear your outstanding balance of ${fc(totalDue)} as soon as possible to avoid further penalties.`}
+      </p>
+    </div>
+  );
+};
 
 const MemberDashboard = () => {
   const { id } = useParams();
@@ -41,7 +176,10 @@ const MemberDashboard = () => {
   const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
-  // ── Eye toggle — persisted per member in localStorage ────────
+  // ── Active loan in arrears/default for the banner ─────────────
+  const [activeLoan, setActiveLoan] = useState(null);
+
+  // ── Eye toggle — persisted per member in localStorage ─────────
   const STORAGE_KEY = `valuesHidden_${id}`;
   const [valuesHidden, setValuesHidden] = useState(
     () => localStorage.getItem(STORAGE_KEY) === 'true'
@@ -55,7 +193,7 @@ const MemberDashboard = () => {
     });
   };
 
-  // ── Year-scoped values (reset each January) ───────────────────
+  // ── Year-scoped values ────────────────────────────────────────
   const [yearlySavings, setYearlySavings] = useState(0);
   const [yearlyFines, setYearlyFines]     = useState([]);
 
@@ -70,11 +208,11 @@ const MemberDashboard = () => {
     fetchYearlySavings();
     fetchYearlyFines();
     fetchMemberSeedCapital();
+    fetchActiveLoan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // ── Fallback: if yearly savings API returned 0 but dashboard has
-  //    savings data, derive the yearly total from dashboard savings ──
+  // ── Fallback: derive yearly savings from dashboard data ────────
   useEffect(() => {
     if (yearlySavings === 0 && dashboardData?.savings?.length > 0) {
       const derived = dashboardData.savings
@@ -130,9 +268,6 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
-  // ── Fetch seed capital added directly via the admin Seed Capital page ──
-  // getByMember filters the getAll response client-side, so it always reflects
-  // whatever the admin has added / edited, with no extra backend route needed.
   const fetchMemberSeedCapital = async () => {
     try {
       const res = await seedCapitalAPI.getByMember(id);
@@ -164,7 +299,66 @@ const MemberDashboard = () => {
     }
   };
 
-  // ── Max loan: 3× yearly savings minus all statutory deductions ──
+  // ── Fetch the member's active/arrears/default loan ─────────────
+  // The loan data already includes dueDate, amount, amountPaid etc.
+  // so we can calculate the real-time penalty here without a
+  // separate API call — same formula as loanController.js and
+  // Defaulters.jsx: 5% × principal × months overdue (capped at 3).
+  const fetchActiveLoan = async () => {
+    try {
+      const res   = await loansAPI.getAll({ memberId: id });
+      const loans = res.data.loans || [];
+
+      // Find loan in arrears or default
+      const overdueLoan = loans.find(l =>
+        l.approvalStatus === 'approved' &&
+        (l.status === 'arrears' || l.status === 'default')
+      );
+
+      if (overdueLoan) {
+        // Enrich with real-time penalty calculation
+        const principal    = Number(overdueLoan.amount || 0);
+        const interestRate = Number(overdueLoan.interestRate || 0);
+        const txFee        = Number(overdueLoan.transactionFee ?? TRANSACTION_FEE);
+        const amountPaid   = Number(overdueLoan.amountPaid || 0);
+        const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
+        const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
+
+        let overdueDays   = 0;
+        let overdueMonths = 0;
+        if (overdueLoan.dueDate) {
+          const now     = new Date();
+          const dueDate = new Date(overdueLoan.dueDate);
+          const todayMs = Date.UTC(now.getFullYear(),     now.getMonth(),     now.getDate());
+          const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+          overdueDays   = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+          overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
+        }
+
+        const cappedMonths    = Math.min(overdueMonths, 3);
+        const monthlyPenalty  = Math.round(principal * 0.05);
+        const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+
+        setActiveLoan({
+          ...overdueLoan,
+          baseLoanBalance,
+          overdueDays,
+          overdueMonths,
+          cappedMonths,
+          monthlyPenalty,
+          penaltyInterest,
+          totalDue: baseLoanBalance + penaltyInterest,
+        });
+      } else {
+        setActiveLoan(null);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active loan:', err);
+      setActiveLoan(null);
+    }
+  };
+
+  // ── Max loan: 3× yearly savings minus statutory deductions ─────
   const grossLoanAmount          = yearlySavings > 0 ? yearlySavings * 3 : 0;
   const totalStatutoryDeductions = statutory.statutoryFee + statutory.guarantorDeduction + statutory.other;
   const maxLoanAmount            = Math.max(0, grossLoanAmount - totalStatutoryDeductions);
@@ -268,6 +462,11 @@ const MemberDashboard = () => {
           </div>
         </div>
 
+        {/* ── Arrears / Default Banner ── */}
+        {/* Shows when the member has a loan in arrears or default.
+            Displays the penalty breakdown: 5% per month on principal. */}
+        <ArrearsBanner activeLoan={activeLoan} />
+
         {/* ── ROW 1: Hero cards ── */}
         <div className="cards-row hero-row">
 
@@ -327,7 +526,7 @@ const MemberDashboard = () => {
 
           <DepositCard memberId={id} small />
 
-          {/* ── Seed Capital card: shows total from direct admin entries ── */}
+          {/* Seed Capital */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#e8f5e9', color: '#2e7d32' }}>
               <Sprout size={18} />
@@ -340,6 +539,7 @@ const MemberDashboard = () => {
             </div>
           </div>
 
+          {/* Others */}
           <div className="stat-card small-card">
             <span className="small-icon" style={{ background: '#f3e5f5', color: '#6a1b9a' }}>
               <Package size={18} />
@@ -349,6 +549,49 @@ const MemberDashboard = () => {
               <span className="small-value" style={{ color: '#6a1b9a' }}>{fc(depositSummary.othersTotal)}</span>
             </div>
           </div>
+
+          {/* Arrears fine small card — only shown when in arrears/default */}
+          {activeLoan && (activeLoan.status === 'arrears' || activeLoan.status === 'default') && (() => {
+            const principal      = Number(activeLoan.amount || 0);
+            const cappedMonths   = Math.min(
+              (() => {
+                if (!activeLoan.dueDate) return 0;
+                const now     = new Date();
+                const dueDate = new Date(activeLoan.dueDate);
+                const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+                const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+                const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+                return days > 0 ? Math.ceil(days / 30) : 0;
+              })(), 3
+            );
+            const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+            return penaltyInterest > 0 ? (
+              <div
+                className="stat-card small-card"
+                style={{ borderTopColor: activeLoan.status === 'default' ? '#f44336' : '#ff9800' }}
+              >
+                <span className="small-icon" style={{
+                  background: activeLoan.status === 'default' ? '#ffebee' : '#fff8e1',
+                  color:      activeLoan.status === 'default' ? '#b71c1c' : '#e65100',
+                }}>
+                  <Banknote size={18} />
+                </span>
+                <div className="small-body">
+                  <span className="small-label">
+                    Arrears Penalty
+                  </span>
+                  <span className="small-value" style={{
+                    color: activeLoan.status === 'default' ? '#b71c1c' : '#e65100',
+                  }}>
+                    {fc(penaltyInterest)}
+                  </span>
+                  <span className="small-sub">
+                    5% × {cappedMonths} month{cappedMonths !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {statutory.guarantorDeduction > 0 && (
             <div className="stat-card small-card">
@@ -419,24 +662,49 @@ const MemberDashboard = () => {
                 <table>
                   <thead>
                     <tr>
-                      <th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Status</th>
+                      <th>Amount</th><th>Disbursed</th><th>Due Date</th><th>Paid</th><th>Balance</th><th>Penalty</th><th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {loans.map(loan => (
-                      <tr key={loan.id}>
-                        <td>{fc(loan.amount)}</td>
-                        <td>{fd(loan.disbursementDate)}</td>
-                        <td>{resolveDueDate(loan)}</td>
-                        <td>{fc(loan.total_paid)}</td>
-                        <td>{fc(loan.remainingBalance)}</td>
-                        <td>
-                          <span className={`status ${loan.isOverdue ? 'overdue' : 'active'}`}>
-                            {loan.isOverdue ? 'Overdue' : 'Active'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {loans.map(loan => {
+                      const isOverdue = loan.status === 'arrears' || loan.status === 'default';
+                      const principal = Number(loan.amount || 0);
+                      let penalty = 0;
+                      if (isOverdue && loan.dueDate) {
+                        const now     = new Date();
+                        const dueDate = new Date(loan.dueDate);
+                        const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+                        const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+                        const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+                        const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+                        penalty       = Math.round(principal * 0.05 * months);
+                      }
+                      return (
+                        <tr key={loan.id}>
+                          <td>{fc(loan.amount)}</td>
+                          <td>{fd(loan.disbursementDate)}</td>
+                          <td>{resolveDueDate(loan)}</td>
+                          <td>{fc(loan.total_paid)}</td>
+                          <td>{fc(loan.remainingBalance)}</td>
+                          <td style={{ color: penalty > 0 ? '#e65100' : '#aaa', fontWeight: penalty > 0 ? 700 : 400 }}>
+                            {penalty > 0 ? fc(penalty) : '—'}
+                          </td>
+                          <td>
+                            <span className={`status ${
+                              loan.status === 'arrears' ? 'late'
+                              : loan.status === 'default' ? 'overdue'
+                              : loan.isOverdue ? 'overdue'
+                              : 'active'
+                            }`}>
+                              {loan.status === 'arrears' ? 'Arrears'
+                               : loan.status === 'default' ? 'Default'
+                               : loan.isOverdue ? 'Overdue'
+                               : 'Active'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -548,10 +816,27 @@ const MemberDashboard = () => {
                   <tbody>
                     {yearlyFines.map(f => (
                       <tr key={f.id}>
-                        <td>{f.fineType ? f.fineType.replace('_', ' ') : 'N/A'}</td>
+                        <td>
+                          <span style={{
+                            padding:'2px 8px', borderRadius:'10px', fontSize:'12px', fontWeight:600,
+                            background: f.fineType === 'savings_late' ? '#fff3e0'
+                              : f.fineType === 'chamaa_late' ? '#fce4ec'
+                              : f.fineType === 'loan_arrears' ? '#fff8e1'
+                              : '#f5f5f5',
+                            color: f.fineType === 'savings_late' ? '#e65100'
+                              : f.fineType === 'chamaa_late' ? '#880e4f'
+                              : f.fineType === 'loan_arrears' ? '#e65100'
+                              : '#555',
+                          }}>
+                            {f.fineType === 'savings_late' ? 'Savings Fine'
+                              : f.fineType === 'chamaa_late' ? 'Chamaa Fine'
+                              : f.fineType === 'loan_arrears' ? 'Arrears Penalty'
+                              : f.fineType?.replace('_', ' ') || 'Fine'}
+                          </span>
+                        </td>
                         <td>{monthName(f.month)} {f.year}</td>
-                        <td>{fc(f.amount)}</td>
-                        <td>{f.notes || '—'}</td>
+                        <td style={{ fontWeight:700, color:'#c62828' }}>{fc(f.amount)}</td>
+                        <td style={{ fontSize:'12px', color:'#666' }}>{f.notes || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

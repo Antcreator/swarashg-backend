@@ -22,11 +22,12 @@ const AdminDashboard = () => {
     totalSeedCapital:   0,
     totalSavings:       0,
     activeLoans:        0,
-    pendingLoans:       0,   // ← NEW
+    pendingLoans:       0,
     totalDisbursed:     0,
     pendingDeposits:    0,
     savingsFineTotal:   0,
     chamaaFineTotal:    0,
+    arrearsTotal:       0,   // ← arrears penalties (5% per month on principal)
     agmFeeTotal:        0,
     registrationTotal:  0,
     investmentTotal:    0,
@@ -52,10 +53,11 @@ const AdminDashboard = () => {
       let totalSeedCapital     = 0;
       let savingsFineTotal     = 0;
       let chamaaFineTotal      = 0;
+      let arrearsTotal         = 0;
       let agmFeeTotal          = 0;
       let registrationTotal    = 0;
       let investmentTotal      = 0;
-      let pendingLoans         = 0;   // ← NEW
+      let pendingLoans         = 0;
 
       await Promise.allSettled([
         depositsAPI.getPending({ year: CURRENT_YEAR })
@@ -73,6 +75,30 @@ const AdminDashboard = () => {
           })
           .catch(() => {}),
 
+        // ── Real-time arrears: calculated live from overdue loans ──
+        // Does NOT rely on the fines table so it's always current
+        // regardless of whether updateLoanStatus has been triggered.
+        loansAPI.getArrearsStats()
+          .then(r => { arrearsTotal = r.data.totalPenalty || 0; })
+          .catch(() => {
+            // Fallback: calculate from loans directly if endpoint not yet deployed
+            loansAPI.getAll({ status: 'arrears' })
+              .then(r => {
+                const now = new Date();
+                arrearsTotal = (r.data.loans || []).reduce((sum, loan) => {
+                  if (!loan.dueDate) return sum;
+                  const principal = Number(loan.amount || 0);
+                  const dueDate   = new Date(loan.dueDate);
+                  const todayMs   = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+                  const dueMs     = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+                  const days      = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+                  const months    = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
+                  return sum + Math.round(principal * 0.05 * months);
+                }, 0);
+              })
+              .catch(() => {});
+          }),
+
         agmFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { agmFeeTotal = r.data.totalThisYear || r.data.total || 0; })
           .catch(() => {}),
@@ -81,8 +107,6 @@ const AdminDashboard = () => {
           .then(r => { registrationTotal = r.data.registrationTotal || r.data.total || 0; })
           .catch(() => {}),
 
-        // ── NEW: fetch pending (applied but not yet approved) loans ──
-        // These are loans with approvalStatus = 'pending'
         loansAPI.getAll({ approvalStatus: 'pending' })
           .then(r => { pendingLoans = (r.data.loans || []).length; })
           .catch(() => {}),
@@ -120,7 +144,7 @@ const AdminDashboard = () => {
         investmentTotal = 0;
       }
 
-      // ── Withdrawals from localStorage ─────────────────────────────
+      // ── Withdrawals expense ───────────────────────────────────────
       let withdrawalsExpense = 0;
       try {
         const saved = localStorage.getItem('swara_withdrawals');
@@ -141,11 +165,12 @@ const AdminDashboard = () => {
         totalSeedCapital,
         totalSavings,
         activeLoans:       loanStats.active_loans || 0,
-        pendingLoans,                                    // ← NEW
+        pendingLoans,
         totalDisbursed:    parseFloat(loanStats.total_disbursed || 0),
         pendingDeposits:   pendingDepositsCount,
         savingsFineTotal,
         chamaaFineTotal,
+        arrearsTotal,
         agmFeeTotal,
         registrationTotal,
         investmentTotal,
@@ -211,6 +236,7 @@ const AdminDashboard = () => {
         {/* Stats grid */}
         <div className="stats-grid">
 
+          {/* Total Members */}
           <div className="stat-card">
             <div className="stat-icon members" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Users size={28} />
@@ -224,6 +250,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Seed Capital */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#e8f5e9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sprout size={28} color="#2e7d32" />
@@ -235,6 +262,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Savings */}
           <div className="stat-card">
             <div className="stat-icon savings" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <PiggyBank size={28} />
@@ -246,9 +274,9 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* ── Active Loans card with pending notification ── */}
+          {/* Active Loans + pending badge */}
           <Link
-            to="/admin/loans?tab=pending"
+            to={stats.pendingLoans > 0 ? '/admin/loans?tab=pending' : '/admin/loans?tab=approved'}
             className="stat-card clickable"
             style={{ textDecoration: 'none', color: 'inherit', position: 'relative' }}
           >
@@ -258,13 +286,8 @@ const AdminDashboard = () => {
             <div className="stat-content">
               <h3>Active Loans <YearBadge /></h3>
               <p className="stat-value">{stats.activeLoans}</p>
-
-              {/* Pending loans notice */}
               {stats.pendingLoans > 0 ? (
-                <span className="stat-link" style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '5px',
-                  color: '#e65100', fontWeight: 700,
-                }}>
+                <span className="stat-link" style={{ display:'inline-flex', alignItems:'center', gap:'5px', color:'#e65100', fontWeight:700 }}>
                   <Clock size={12} />
                   {stats.pendingLoans} loan{stats.pendingLoans > 1 ? 's' : ''} pending approval →
                 </span>
@@ -272,32 +295,22 @@ const AdminDashboard = () => {
                 <span className="stat-link">View Approved Loans →</span>
               )}
             </div>
-
-            {/* Red notification badge for pending loans */}
             {stats.pendingLoans > 0 && (
               <div style={{
-                position:     'absolute',
-                top:          '-8px',
-                right:        '-8px',
-                background:   '#e53935',
-                color:        'white',
-                borderRadius: '50%',
-                minWidth:     '24px',
-                height:       '24px',
-                display:      'flex',
-                alignItems:   'center',
-                justifyContent: 'center',
-                fontSize:     '12px',
-                fontWeight:   800,
-                boxShadow:    '0 2px 6px rgba(229,57,53,0.5)',
-                padding:      '0 4px',
-                zIndex:        1,
+                position:'absolute', top:'-8px', right:'-8px',
+                background:'#e53935', color:'white', borderRadius:'50%',
+                minWidth:'24px', height:'24px',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:'12px', fontWeight:800,
+                boxShadow:'0 2px 6px rgba(229,57,53,0.5)',
+                padding:'0 4px', zIndex:1,
               }}>
                 {stats.pendingLoans}
               </div>
             )}
           </Link>
 
+          {/* Total Disbursed */}
           <div className="stat-card">
             <div className="stat-icon disbursed" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Banknote size={28} />
@@ -309,6 +322,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Pending Deposits */}
           <Link to="/admin/deposits" className="stat-card deposits-card clickable">
             <div className="stat-icon deposits" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CreditCard size={28} />
@@ -323,6 +337,7 @@ const AdminDashboard = () => {
             {stats.pendingDeposits > 0 && <div className="notification-badge">{stats.pendingDeposits}</div>}
           </Link>
 
+          {/* Savings Fines */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#fff3e0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <AlertTriangle size={28} color="#e65100" />
@@ -334,6 +349,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Chamaa Fines */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#fce4ec', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bell size={28} color="#c62828" />
@@ -345,6 +361,37 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* ── Arrears Penalties — NEW ── */}
+          <Link
+            to="/admin/fines?type=loan_arrears"
+            className="stat-card clickable"
+            style={{ textDecoration: 'none', color: 'inherit', position: 'relative' }}
+          >
+            <div className="stat-icon" style={{ background: '#fff8e1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Banknote size={28} color="#e65100" />
+            </div>
+            <div className="stat-content">
+              <h3>Arrears Penalties <YearBadge /></h3>
+              <p className="stat-value" style={{ color: '#e65100' }}>
+                {stats.arrearsTotal > 0 ? fmt(stats.arrearsTotal) : 'KES 0'}
+              </p>
+              <span className="stat-link" style={{ color: '#e65100' }}>
+                5% per month on principal →
+              </span>
+            </div>
+            {stats.arrearsTotal > 0 && (
+              <div style={{
+                position:'absolute', top:'-8px', right:'-8px',
+                background:'#e65100', color:'white', borderRadius:'50%',
+                width:'24px', height:'24px',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:'14px', fontWeight:900,
+                boxShadow:'0 2px 6px rgba(230,81,0,0.5)',
+              }}>!</div>
+            )}
+          </Link>
+
+          {/* AGM Fees */}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#ede7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ClipboardList size={28} color="#7b1fa2" />
@@ -356,6 +403,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Statutory */}
           <Link to="/admin/statutory" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#ede7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ScrollText size={28} color="#7b1fa2" />
@@ -369,6 +417,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
+          {/* Registration Fees */}
           <Link to="/admin/registration-fees" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FilePen size={28} color="#1976d2" />
@@ -380,6 +429,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
+          {/* Investment */}
           <Link to="/admin/investments" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={28} color="#7b1fa2" />
@@ -405,6 +455,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
+          {/* Withdrawals */}
           <Link to="/admin/withdrawals" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="stat-icon" style={{ background: '#fff1f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingDown size={28} color="#be123c" />
@@ -420,6 +471,7 @@ const AdminDashboard = () => {
             </div>
           </Link>
 
+          {/* Admin Accounts */}
           {!isStaff && (
             <Link to="/admin/admins" className="stat-card clickable" style={{ textDecoration: 'none', color: 'inherit' }}>
               <div className="stat-icon" style={{ background: '#e8eaf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -456,7 +508,6 @@ const AdminDashboard = () => {
               <p>{isStaff ? 'View savings contributions' : 'Record monthly savings contributions'}</p>
             </Link>
 
-            {/* Loans quick action — shows pending count if any */}
             <Link to="/admin/loans" className="action-card" style={{ position: 'relative' }}>
               <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <FileText size={28} />
@@ -487,12 +538,17 @@ const AdminDashboard = () => {
               {stats.pendingDeposits > 0 && <span className="action-badge">{stats.pendingDeposits} pending</span>}
             </Link>
 
-            <Link to="/admin/fines" className="action-card">
+            <Link to="/admin/fines" className="action-card" style={{ position: 'relative' }}>
               <span className="action-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <AlertTriangle size={28} />
               </span>
               <h3>{isStaff ? 'View Fines' : 'Manage Fines'}</h3>
               <p>{isStaff ? 'View member fines' : 'View and manage member fines'}</p>
+              {stats.arrearsTotal > 0 && (
+                <span className="action-badge" style={{ background: '#e65100' }}>
+                  Arrears: {fmt(stats.arrearsTotal)}
+                </span>
+              )}
             </Link>
 
             <Link to="/admin/agm-fees" className="action-card">
