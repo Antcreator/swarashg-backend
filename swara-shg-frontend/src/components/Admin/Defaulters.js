@@ -22,13 +22,25 @@ const Defaulters = () => {
       );
 
       const enriched = defaultedLoans.map(loan => {
-        const principal    = Number(loan.amount        || 0);
-        const interestRate = Number(loan.interestRate  || 0);
-        const txFee        = Number(loan.transactionFee ?? 108);
-        const amountPaid   = Number(loan.amountPaid    || 0);
+        const originalPrincipal = Number(loan.amount        || 0);
+        const interestRate      = Number(loan.interestRate  || 0);
+        const txFee             = Number(loan.transactionFee ?? 108);
+        const amountPaid        = Number(loan.amountPaid    || 0);
 
-        const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
+        // Total interest = loan interest + transaction fee
+        const totalInterest   = Math.round(originalPrincipal * interestRate / 100) + txFee;
+        const totalRepayment  = originalPrincipal + totalInterest;
         const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
+
+        // ── Remaining principal ───────────────────────────────────
+        // Payments go to interest first, then principal.
+        // Examples (principal 100k, interest 20k):
+        //   Pays 0:   principalPaid = 0,  remainingPrincipal = 100k
+        //   Pays 10k: principalPaid = 0,  remainingPrincipal = 100k (10k < 20k interest)
+        //   Pays 40k: principalPaid = 20k, remainingPrincipal = 80k
+        //   Pays 64k: principalPaid = 44k, remainingPrincipal = 56k
+        const principalPaid      = Math.max(0, amountPaid - totalInterest);
+        const remainingPrincipal = Math.max(0, originalPrincipal - principalPaid);
 
         // ── Days / months overdue ─────────────────────────────────
         // Compare date-only (strip time) so a loan due today is 0 days
@@ -50,13 +62,14 @@ const Defaulters = () => {
         // Cap months at 3 for the arrears window; default loans still
         // show actual months so admins can see how long they've been overdue
         const cappedMonths = loan.status === 'default'
-          ? Math.max(overdueMonths, 3) // default = at least 3 months
+          ? Math.max(overdueMonths, 3)
           : Math.min(overdueMonths, 3);
 
-        // ── Penalty: 5% per month on PRINCIPAL ───────────────────
-        // Matches loanController.js: Math.round(principal × 0.05 × months)
-        const monthlyPenalty  = Math.round(principal * 0.05);
-        const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+        // ── Penalty: 5% per month on REMAINING PRINCIPAL ─────────
+        // Matches loanController.js exactly.
+        // Penalty is on remaining principal, not original principal.
+        const monthlyPenalty  = Math.round(remainingPrincipal * 0.05);
+        const penaltyInterest = Math.round(remainingPrincipal * 0.05 * cappedMonths);
         const totalDue        = baseLoanBalance + penaltyInterest;
 
         return {
@@ -67,7 +80,10 @@ const Defaulters = () => {
           overdueDays,
           overdueMonths,
           cappedMonths,
-          principal,
+          originalPrincipal,
+          remainingPrincipal,
+          principalPaid,
+          totalInterest,
           totalRepayment,
           amountPaid,
           baseLoanBalance,
@@ -111,16 +127,20 @@ const Defaulters = () => {
 
   const exportToCSV = () => {
     const headers = [
-      'Member', 'Loan Amount', 'Total Repayable',
-      'Amount Paid', 'Loan Balance', 'Days Overdue', 'Months Overdue',
-      'Monthly Penalty (5% of principal)', 'Total Penalty', 'Total Due',
-      'Due Date', 'Status',
+      'Member', 'Original Principal', 'Total Interest + Fee',
+      'Total Repayable', 'Amount Paid', 'Principal Paid',
+      'Remaining Principal', 'Loan Balance', 'Days Overdue',
+      'Months Overdue', 'Monthly Penalty (5% of rem. principal)',
+      'Total Penalty', 'Total Due', 'Due Date', 'Status',
     ];
     const rows = defaulters.map(d => [
       d.memberName,
-      d.principal,
+      d.originalPrincipal,
+      d.totalInterest,
       d.totalRepayment,
       d.amountPaid,
+      d.principalPaid,
+      d.remainingPrincipal,
       d.baseLoanBalance,
       d.overdueDays,
       d.cappedMonths,
@@ -194,7 +214,7 @@ const Defaulters = () => {
           <div className="summary-card warning">
             <h3>Total Penalties</h3>
             <p className="amount">{fmt(totalPenalties)}</p>
-            <small style={{ color: '#999', fontSize: '11px' }}>5% × principal × months</small>
+            <small style={{ color: '#999', fontSize: '11px' }}>5% × remaining principal × months</small>
           </div>
         </div>
 
@@ -214,7 +234,13 @@ const Defaulters = () => {
                   <th>
                     Loan Balance
                     <div style={{ fontWeight:400, fontSize:'11px', color:'#aaa' }}>
-                      principal + interest + fee − paid
+                      total repayable − paid
+                    </div>
+                  </th>
+                  <th>
+                    Principal
+                    <div style={{ fontWeight:400, fontSize:'11px', color:'#aaa' }}>
+                      original → remaining
                     </div>
                   </th>
                   <th>
@@ -226,7 +252,7 @@ const Defaulters = () => {
                   <th>
                     Monthly Penalty
                     <div style={{ fontWeight:400, fontSize:'11px', color:'#aaa' }}>
-                      5% of principal
+                      5% of remaining principal
                     </div>
                   </th>
                   <th>
@@ -254,7 +280,7 @@ const Defaulters = () => {
                     <td>
                       <strong>{loan.memberName}</strong><br />
                       <small style={{ color:'#888' }}>
-                        Loan #{loan.id} · Principal: {fmt(loan.principal)}
+                        Loan #{loan.id}
                       </small>
                     </td>
 
@@ -264,6 +290,21 @@ const Defaulters = () => {
                       <div style={{ fontSize:'11px', color:'#888' }}>
                         Paid: {fmt(loan.amountPaid)}
                       </div>
+                    </td>
+
+                    {/* Principal breakdown */}
+                    <td className="amount">
+                      <div style={{ fontSize:'12px', color:'#888', textDecoration:'line-through' }}>
+                        {fmt(loan.originalPrincipal)}
+                      </div>
+                      <strong style={{ color: loan.remainingPrincipal < loan.originalPrincipal ? '#2e7d32' : '#1a1a2e' }}>
+                        {fmt(loan.remainingPrincipal)}
+                      </strong>
+                      {loan.principalPaid > 0 && (
+                        <div style={{ fontSize:'11px', color:'#2e7d32' }}>
+                          {fmt(loan.principalPaid)} paid off
+                        </div>
+                      )}
                     </td>
 
                     {/* Overdue days / months */}
@@ -288,7 +329,7 @@ const Defaulters = () => {
                     <td className="amount" style={{ color: '#e65100' }}>
                       {fmt(loan.monthlyPenalty)}
                       <div style={{ fontSize:'11px', color:'#888' }}>
-                        5% × {fmt(loan.principal)}
+                        5% × {fmt(loan.remainingPrincipal)}
                       </div>
                     </td>
 
@@ -327,6 +368,7 @@ const Defaulters = () => {
                 <tr>
                   <td colSpan="2"><strong>TOTALS ({sortedDefaulters.length} loans)</strong></td>
                   <td className="amount"><strong>{fmt(totalBaseLoan)}</strong></td>
+                  <td></td>
                   <td></td>
                   <td></td>
                   <td className="amount" style={{ color:'#e65100' }}>
