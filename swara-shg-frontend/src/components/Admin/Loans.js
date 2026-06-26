@@ -562,7 +562,7 @@ const Loans = () => {
                   {/* Total Repayment */}
                   <div style={{ background: '#e3f2fd', borderRadius: '10px', padding: '14px', border: '2px solid #90caf9' }}>
                     <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Wallet size={13} /> Total Repayment
+                      <Wallet size={13} /> Initial Due
                     </div>
                     <div style={{ fontSize: '24px', fontWeight: 800, color: '#1565c0', marginTop: '4px' }}>{fmt(baseRepayment)}</div>
                     <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
@@ -594,7 +594,7 @@ const Loans = () => {
                     </div>
                     <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5, marginTop: '8px' }}>
                       <TrendingUp size={13} color={liveArrearsPenalty > 0 ? (selectedLoan.status === 'default' ? '#b71c1c' : '#e65100') : '#7b1fa2'} />
-                      Total Outstanding
+                      Initial plus Penalties
                     </div>
                     <div style={{
                       fontSize: '24px', fontWeight: 900, marginTop: '4px',
