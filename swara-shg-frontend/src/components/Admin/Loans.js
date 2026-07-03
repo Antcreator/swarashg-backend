@@ -9,7 +9,7 @@ import { useToast, useConfirm, ToastContainer } from '../../useToast';
 import {
   CreditCard, BarChart2, Pencil, Check, X, Trash2, Eye,
   Banknote, RefreshCw, AlertTriangle, CheckCircle, Building2,
-  Users, Wallet, FileText, TrendingUp,
+  Users, Wallet, FileText, TrendingUp, Clock,
 } from 'lucide-react';
 
 const TRANSACTION_FEE = 108;
@@ -61,6 +61,20 @@ const Loans = () => {
     return nonOffice.length > 0 && nonOffice.every(g => g.approvalStatus === 'rejected');
   };
 
+  // True when every guarantor (non-office) has accepted — button becomes active
+  const allGuarantorsAccepted = (loan) => {
+    const guarantors = loan.guarantors || [];
+    const nonOffice  = guarantors.filter(g => g.guarantorId !== -1);
+    if (nonOffice.length === 0) return false; // no guarantors yet
+    return nonOffice.every(g => g.approvalStatus === 'accepted' || g.approvalStatus === 'admin_override');
+  };
+
+  // Has at least one pending guarantor (not yet responded)
+  const hasPendingGuarantors = (loan) => {
+    const guarantors = loan.guarantors || [];
+    return guarantors.some(g => g.approvalStatus === 'pending');
+  };
+
   const getAcceptedGuarantors = (loan) => {
     const guarantors = loan.guarantors || [];
     return guarantors.filter(g => g.approvalStatus === 'accepted' || g.approvalStatus === 'admin_override');
@@ -76,6 +90,12 @@ const Loans = () => {
     const loan        = loans.find(l => l.id === loanId);
     const allRejected = loan && allGuarantorsRejected(loan);
     const isTopUp     = loan?.loanType === 'top_up';
+
+    // Safety guard — should not be reachable via UI but prevents accidental API calls
+    if (!allRejected && !allGuarantorsAccepted(loan)) {
+      toast.warning('Waiting on Guarantors', 'Cannot approve until all guarantors have responded.');
+      return;
+    }
 
     const acceptedGuarantors = loan ? getAcceptedGuarantors(loan) : [];
     const guarantorSection = acceptedGuarantors.length > 0
@@ -372,10 +392,52 @@ const Loans = () => {
                                       <Pencil size={11} /> Edit
                                     </button>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <button className="btn-primary" onClick={() => handleApproveLoan(loan.id)}
-                                        style={{ fontSize: '11px', padding: '4px 8px', background: danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                        {danger ? <><AlertTriangle size={11} /> Approve</> : isTopUp ? <><RefreshCw size={11} /> Approve Top-Up</> : <><Check size={11} /> Approve</>}
-                                      </button>
+                                      {(() => {
+                                        const accepted  = allGuarantorsAccepted(loan);
+                                        const pending   = hasPendingGuarantors(loan);
+                                        // Button is active when: all rejected (admin override) OR all accepted
+                                        // Button is disabled when: still waiting on guarantors
+                                        const canApprove = danger || accepted;
+                                        const btnColor   = danger ? '#f44336' : isTopUp ? '#7b1fa2' : '#4caf50';
+                                        return (
+                                          <>
+                                            <button
+                                              className="btn-primary"
+                                              onClick={() => canApprove && handleApproveLoan(loan.id)}
+                                              disabled={!canApprove}
+                                              title={
+                                                canApprove
+                                                  ? (danger ? 'All guarantors rejected — will assign liability to Admin' : 'All guarantors accepted — ready to approve')
+                                                  : `Waiting for ${loan.guarantors?.filter(g => g.approvalStatus === 'pending').length || 0} guarantor(s) to respond`
+                                              }
+                                              style={{
+                                                fontSize: '11px', padding: '4px 8px',
+                                                background: canApprove ? btnColor : '#bdbdbd',
+                                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                cursor: canApprove ? 'pointer' : 'not-allowed',
+                                                opacity: canApprove ? 1 : 0.7,
+                                                border: 'none', borderRadius: '4px', color: 'white',
+                                              }}
+                                            >
+                                              {danger
+                                                ? <><AlertTriangle size={11} /> Approve</>
+                                                : isTopUp
+                                                  ? <><RefreshCw size={11} /> Approve Top-Up</>
+                                                  : <><Check size={11} /> Approve</>}
+                                            </button>
+                                            {/* Waiting badge — shown when guarantors are still pending */}
+                                            {pending && !danger && (
+                                              <span style={{
+                                                fontSize: '10px', color: '#e65100', fontWeight: 600,
+                                                display: 'inline-flex', alignItems: 'center', gap: 3,
+                                                marginTop: '2px',
+                                              }}>
+                                                <Clock size={10} /> Awaiting {loan.guarantors?.filter(g => g.approvalStatus === 'pending').length} response(s)
+                                              </span>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                       <AcceptedGuarantorPills loan={loan} />
                                     </div>
                                     <button className="btn-danger" onClick={() => openRejectModal(loan)} style={{ fontSize: '11px', padding: '4px 8px', background: '#f44336', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -562,7 +624,7 @@ const Loans = () => {
                   {/* Total Repayment */}
                   <div style={{ background: '#e3f2fd', borderRadius: '10px', padding: '14px', border: '2px solid #90caf9' }}>
                     <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Wallet size={13} /> Initial Due
+                      <Wallet size={13} /> Total Repayment
                     </div>
                     <div style={{ fontSize: '24px', fontWeight: 800, color: '#1565c0', marginTop: '4px' }}>{fmt(baseRepayment)}</div>
                     <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
@@ -594,7 +656,7 @@ const Loans = () => {
                     </div>
                     <div style={{ fontSize: '11px', color: '#555', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5, marginTop: '8px' }}>
                       <TrendingUp size={13} color={liveArrearsPenalty > 0 ? (selectedLoan.status === 'default' ? '#b71c1c' : '#e65100') : '#7b1fa2'} />
-                      Initial plus Penalties
+                      Total Outstanding
                     </div>
                     <div style={{
                       fontSize: '24px', fontWeight: 900, marginTop: '4px',
