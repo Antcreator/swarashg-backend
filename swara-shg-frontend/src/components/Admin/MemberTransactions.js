@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
-import { Download, Printer, PiggyBank, FileText } from 'lucide-react';
+import { Download, Printer, PiggyBank, FileText, X } from 'lucide-react';
 
 const MemberTransactions = () => {
   const [members, setMembers]               = useState([]);
@@ -42,8 +42,6 @@ const MemberTransactions = () => {
         depositsAPI.getSummary(memberId),
         agmFeeAPI.getAll(year),
         statutoryAPI.getAll(year),
-        // getByMember now filters the full seed capital list client-side,
-        // so it correctly reflects direct admin entries from the Seed Capital page.
         seedCapitalAPI.getByMember(memberId),
       ]);
 
@@ -65,7 +63,7 @@ const MemberTransactions = () => {
       const loans = loansData.map(loan => ({
         ...loan, type: 'loan',
         date: loan.disbursementDate || loan.createdAt,
-        description: `Loan disbursement - ${loan.durationMonths} months @ ${loan.interestRate}%`,
+        description: `Loan ${loan.approvalStatus === 'rejected' ? '(Rejected)' : 'disbursement'} - ${loan.durationMonths} months @ ${loan.interestRate}%`,
         amount: Number(loan.amount), isCredit: false,
       }));
 
@@ -90,9 +88,6 @@ const MemberTransactions = () => {
         : [];
       const depositOther = distributed.reduce((s, d) => s + Number(d.othersAmount || 0), 0);
 
-      // ── Seed capital: use the value from getByMember (which reads direct
-      //    admin entries from the Seed Capital page). Falls back to the
-      //    deposit-derived total only if the API call failed entirely.
       const liveSeedCapital = seedRes.status === 'fulfilled'
         ? Number(seedRes.value.data?.totalSeedCapital || 0)
         : 0;
@@ -203,11 +198,17 @@ const MemberTransactions = () => {
 
   const filteredTransactions = getFilteredTransactions();
 
+  // ── Loan status style — includes rejected ─────────────────────
   const loanStatusStyle = (loan) => {
-    if (loan.status === 'paid')    return { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid' };
-    if (loan.status === 'active')  return { bg: '#e3f2fd', color: '#1565c0', label: 'Active' };
-    if (loan.status === 'arrears') return { bg: '#fff8e1', color: '#e65100', label: 'Arrears' };
-    if (loan.status === 'overdue') return { bg: '#ffebee', color: '#c62828', label: 'Overdue' };
+    // Check approvalStatus first — rejected overrides everything
+    if (loan.approvalStatus === 'rejected') return { bg: '#ffebee', color: '#c62828', label: 'Rejected' };
+    if (loan.approvalStatus === 'pending')  return { bg: '#fff3e0', color: '#e65100', label: 'Pending'  };
+    // Then check loan status
+    if (loan.status === 'paid')      return { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid'    };
+    if (loan.status === 'active')    return { bg: '#e3f2fd', color: '#1565c0', label: 'Active'  };
+    if (loan.status === 'arrears')   return { bg: '#fff8e1', color: '#e65100', label: 'Arrears' };
+    if (loan.status === 'default')   return { bg: '#ffebee', color: '#c62828', label: 'Default' };
+    if (loan.status === 'topped_up') return { bg: '#f3e5f5', color: '#7b1fa2', label: 'Topped Up' };
     return { bg: '#f5f5f5', color: '#777', label: loan.status || 'Pending' };
   };
 
@@ -242,7 +243,7 @@ const MemberTransactions = () => {
             {memberStats && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', margin: '20px 0' }}>
 
-                {/* Card 1 — Financial Summary (includes Seed Capital from direct admin entries) */}
+                {/* Card 1 — Financial Summary */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #1976d2' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1976d2', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <PiggyBank size={15} /> Financial Summary
@@ -271,6 +272,7 @@ const MemberTransactions = () => {
                   </div>
                 ) : memberLoans.map((loan) => {
                   const st      = loanStatusStyle(loan);
+                  const isRejected = loan.approvalStatus === 'rejected';
                   const balance = Number(loan.remainingBalance ?? (
                     Number(loan.amount) + (Number(loan.amount) * Number(loan.interestRate || 0) / 100)
                     + Number(loan.penaltyInterest || 0) - Number(loan.total_paid || loan.amountPaid || 0)
@@ -280,21 +282,41 @@ const MemberTransactions = () => {
                     : 0;
 
                   return (
-                    <div key={loan.id} style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: `4px solid ${st.color}` }}>
+                    <div key={loan.id} style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: `4px solid ${st.color}`, opacity: isRejected ? 0.85 : 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                         <span style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a2e', display: 'flex', alignItems: 'center', gap: 6 }}>
                           <FileText size={14} /> Loan #{loan.id}
+                          {loan.loanType === 'top_up' && (
+                            <span style={{ fontSize: '10px', fontWeight: 700, background: '#f3e5f5', color: '#7b1fa2', padding: '1px 6px', borderRadius: '8px', marginLeft: '4px' }}>
+                              Top-Up
+                            </span>
+                          )}
                         </span>
-                        <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: st.bg, color: st.color }}>{st.label}</span>
+                        <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, background: st.bg, color: st.color, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {isRejected && <X size={10} />}
+                          {st.label}
+                        </span>
                       </div>
+
+                      {/* Rejection reason banner */}
+                      {isRejected && loan.rejectionReason && (
+                        <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#c62828', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <X size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
+                          <span><strong>Rejection reason:</strong> {loan.rejectionReason}</span>
+                        </div>
+                      )}
+
                       {[
                         { label: 'Principal',      value: formatCurrency(loan.amount),                                    color: '#1a1a2e' },
                         { label: 'Interest Rate',  value: `${loan.interestRate || 0}%`,                                   color: '#555',   raw: true },
                         { label: 'Duration',       value: `${loan.durationMonths || '—'} months`,                        color: '#555',   raw: true },
-                        { label: 'Disbursed',      value: formatDate(loan.disbursementDate),                              color: '#555',   raw: true },
-                        { label: 'Due Date',       value: formatDate(loan.dueDate),                                       color: loan.isOverdue ? '#c62828' : '#555', raw: true },
-                        { label: 'Amount Paid',    value: formatCurrency(loan.total_paid || loan.amountPaid || 0),        color: '#2e7d32' },
-                        { label: 'Balance',        value: formatCurrency(balance),                                        color: balance > 0 ? '#c62828' : '#2e7d32' },
+                        { label: 'Applied On',     value: formatDate(loan.createdAt),                                     color: '#555',   raw: true },
+                        ...(!isRejected ? [
+                          { label: 'Disbursed',    value: formatDate(loan.disbursementDate),                              color: '#555',   raw: true },
+                          { label: 'Due Date',     value: formatDate(loan.dueDate),                                       color: loan.isOverdue ? '#c62828' : '#555', raw: true },
+                          { label: 'Amount Paid',  value: formatCurrency(loan.total_paid || loan.amountPaid || 0),        color: '#2e7d32' },
+                          { label: 'Balance',      value: formatCurrency(balance),                                        color: balance > 0 ? '#c62828' : '#2e7d32' },
+                        ] : []),
                       ].map(row => (
                         <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
                           <span style={{ fontSize: '12px', color: '#666' }}>{row.label}</span>
@@ -320,8 +342,10 @@ const MemberTransactions = () => {
                               };
                               const sc = statusColors[g.approvalStatus] || { bg: '#f5f5f5', color: '#777' };
                               return (
-                                <span key={g.id || gi} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: sc.bg, color: sc.color }}>
+                                <span key={g.id || gi} style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: sc.bg, color: sc.color, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  {g.approvalStatus === 'rejected' && <X size={9} />}
                                   {name}
+                                  <span style={{ opacity: 0.7, fontSize: '10px' }}>· {g.approvalStatus === 'admin_override' ? 'override' : g.approvalStatus}</span>
                                 </span>
                               );
                             })}
@@ -329,15 +353,18 @@ const MemberTransactions = () => {
                         </div>
                       )}
 
-                      <div style={{ marginTop: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
-                          <span>Repayment progress</span>
-                          <span>{progress}%</span>
+                      {/* Progress bar — only for non-rejected loans */}
+                      {!isRejected && (
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
+                            <span>Repayment progress</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div style={{ background: '#f0f0f0', borderRadius: '6px', height: '7px', overflow: 'hidden' }}>
+                            <div style={{ width: `${progress}%`, height: '100%', background: progress >= 100 ? '#2e7d32' : '#1976d2', borderRadius: '6px', transition: 'width 0.4s' }} />
+                          </div>
                         </div>
-                        <div style={{ background: '#f0f0f0', borderRadius: '6px', height: '7px', overflow: 'hidden' }}>
-                          <div style={{ width: `${progress}%`, height: '100%', background: progress >= 100 ? '#2e7d32' : '#1976d2', borderRadius: '6px', transition: 'width 0.4s' }} />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -375,15 +402,27 @@ const MemberTransactions = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTransactions.map((t, index) => (
-                      <tr key={`${t.type}-${t.id}-${index}`}>
-                        <td>{formatDate(t.date)}</td>
-                        <td><span className={`type-badge ${t.type}`}>{t.type}</span></td>
-                        <td>{t.description}</td>
-                        <td className="amount debit">{!t.isCredit && formatCurrency(t.amount)}</td>
-                        <td className="amount credit">{t.isCredit && formatCurrency(t.amount)}</td>
-                      </tr>
-                    ))}
+                    {filteredTransactions.map((t, index) => {
+                      const isRejectedLoan = t.type === 'loan' && t.approvalStatus === 'rejected';
+                      return (
+                        <tr key={`${t.type}-${t.id}-${index}`} style={isRejectedLoan ? { opacity: 0.65, background: '#fff5f5' } : {}}>
+                          <td>{formatDate(t.date)}</td>
+                          <td>
+                            <span className={`type-badge ${t.type}`} style={isRejectedLoan ? { textDecoration: 'line-through' } : {}}>
+                              {t.type}
+                            </span>
+                            {isRejectedLoan && (
+                              <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, background: '#ffebee', color: '#c62828', padding: '1px 6px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <X size={9} /> Rejected
+                              </span>
+                            )}
+                          </td>
+                          <td style={isRejectedLoan ? { color: '#999' } : {}}>{t.description}</td>
+                          <td className="amount debit" style={isRejectedLoan ? { textDecoration: 'line-through', color: '#ccc' } : {}}>{!t.isCredit && formatCurrency(t.amount)}</td>
+                          <td className="amount credit">{t.isCredit && formatCurrency(t.amount)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -7,7 +7,7 @@ import DepositCard from './DepositCard';
 import './memberDashboard.css';
 import {
   Coins, ClipboardList, AlertTriangle, Sprout, Package,
-  Handshake, FileText, Eye, EyeOff, Banknote,
+  Handshake, FileText, Eye, EyeOff, Banknote, CalendarDays,
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -400,21 +400,24 @@ const MemberDashboard = () => {
 
   const guaranteedLoanStatusClass = (status) => {
     switch (status) {
-      case 'paid':    return 'ontime';
-      case 'active':  return 'active';
-      case 'arrears': return 'late';
-      case 'pending': return 'pending';
-      default:        return 'overdue';
+      case 'paid':     return 'ontime';
+      case 'active':   return 'active';
+      case 'arrears':  return 'late';
+      case 'pending':  return 'pending';
+      case 'rejected': return 'rejected';
+      default:         return 'overdue';
     }
   };
 
   const guaranteedLoanStatusLabel = (status) => {
     switch (status) {
-      case 'paid':    return 'Paid';
-      case 'active':  return 'Active';
-      case 'arrears': return 'Arrears';
-      case 'pending': return 'Pending';
-      default:        return 'Default';
+      case 'paid':     return 'Paid';
+      case 'active':   return 'Active';
+      case 'arrears':  return 'Arrears';
+      case 'pending':  return 'Pending';
+      case 'rejected': return 'Rejected';
+      case 'default':  return 'Default';
+      default:         return status || 'Unknown';
     }
   };
 
@@ -691,13 +694,17 @@ const MemberDashboard = () => {
                           </td>
                           <td>
                             <span className={`status ${
-                              loan.status === 'arrears' ? 'late'
+                              loan.approvalStatus === 'rejected' ? 'rejected'
+                              : loan.status === 'arrears' ? 'late'
                               : loan.status === 'default' ? 'overdue'
+                              : loan.status === 'paid' ? 'ontime'
                               : loan.isOverdue ? 'overdue'
                               : 'active'
                             }`}>
-                              {loan.status === 'arrears' ? 'Arrears'
+                              {loan.approvalStatus === 'rejected' ? 'Rejected'
+                               : loan.status === 'arrears' ? 'Arrears'
                                : loan.status === 'default' ? 'Default'
+                               : loan.status === 'paid' ? 'Paid'
                                : loan.isOverdue ? 'Overdue'
                                : 'Active'}
                             </span>
@@ -783,7 +790,7 @@ const MemberDashboard = () => {
                         <td>
                           {p.scheduledLabel ? (
                             <span className={`payout-badge ${p.hasReceived ? 'payout-received' : 'payout-pending'}`}>
-                              📅 {p.scheduledLabel}
+                              <CalendarDays size={11} style={{ display:'inline', verticalAlign:'middle', marginRight:'3px' }} />{p.scheduledLabel}
                             </span>
                           ) : (
                             <span className="payout-unscheduled">Not scheduled yet</span>
