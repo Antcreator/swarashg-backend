@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
-import { Download, Printer, PiggyBank, FileText, X } from 'lucide-react';
+import { Download, Printer, PiggyBank, FileText, X, Handshake } from 'lucide-react';
+
+const TRANSACTION_FEE = 108;
 
 const MemberTransactions = () => {
   const [members, setMembers]               = useState([]);
@@ -11,6 +13,7 @@ const MemberTransactions = () => {
   const [transactions, setTransactions]     = useState([]);
   const [memberLoans, setMemberLoans]       = useState([]);
   const [memberStats, setMemberStats]       = useState(null);
+  const [guaranteedLoans, setGuaranteedLoans] = useState([]);
   const [loading, setLoading]               = useState(false);
   const [filter, setFilter]                 = useState('all');
 
@@ -32,10 +35,11 @@ const MemberTransactions = () => {
       setTransactions([]);
       setMemberLoans([]);
       setMemberStats(null);
+      setGuaranteedLoans([]);
 
       const year = new Date().getFullYear();
 
-      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes, seedRes] = await Promise.allSettled([
+      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes, seedRes, guaranteedRes] = await Promise.allSettled([
         membersAPI.getAll(),
         savingsAPI.getAll({ memberId }),
         loansAPI.getAll({ memberId }),
@@ -43,6 +47,7 @@ const MemberTransactions = () => {
         agmFeeAPI.getAll(year),
         statutoryAPI.getAll(year),
         seedCapitalAPI.getByMember(memberId),
+        loansAPI.getGuaranteedLoans(memberId),
       ]);
 
       const member = memberRes.status === 'fulfilled'
@@ -83,6 +88,12 @@ const MemberTransactions = () => {
       allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
       setTransactions(allTransactions);
 
+      // Guaranteed loans
+      const guaranteed = guaranteedRes.status === 'fulfilled'
+        ? guaranteedRes.value.data.guaranteedLoans || []
+        : [];
+      setGuaranteedLoans(guaranteed);
+
       const distributed = depositRes.status === 'fulfilled'
         ? (depositRes.value.data.deposits || []).filter(d => d.depositStatus === 'distributed')
         : [];
@@ -118,6 +129,17 @@ const MemberTransactions = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Calculate guarantor liability per loan
+  const calcGuarantorLiability = (loan) => {
+    const principal          = Number(loan.amount || 0);
+    const interestRate       = Number(loan.interestRate || 0);
+    const requiredGuarantors = principal < 80000 ? 3 : 5;
+    const totalRepayment     = principal + (principal * interestRate / 100) + TRANSACTION_FEE;
+    const oneShare           = principal / 3;
+    const reduced            = totalRepayment - oneShare;
+    return Math.ceil(reduced / requiredGuarantors);
   };
 
   const getFilteredTransactions = () =>
@@ -200,16 +222,23 @@ const MemberTransactions = () => {
 
   // ── Loan status style — includes rejected ─────────────────────
   const loanStatusStyle = (loan) => {
-    // Check approvalStatus first — rejected overrides everything
     if (loan.approvalStatus === 'rejected') return { bg: '#ffebee', color: '#c62828', label: 'Rejected' };
     if (loan.approvalStatus === 'pending')  return { bg: '#fff3e0', color: '#e65100', label: 'Pending'  };
-    // Then check loan status
-    if (loan.status === 'paid')      return { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid'    };
-    if (loan.status === 'active')    return { bg: '#e3f2fd', color: '#1565c0', label: 'Active'  };
-    if (loan.status === 'arrears')   return { bg: '#fff8e1', color: '#e65100', label: 'Arrears' };
-    if (loan.status === 'default')   return { bg: '#ffebee', color: '#c62828', label: 'Default' };
+    if (loan.status === 'paid')      return { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid'      };
+    if (loan.status === 'active')    return { bg: '#e3f2fd', color: '#1565c0', label: 'Active'    };
+    if (loan.status === 'arrears')   return { bg: '#fff8e1', color: '#e65100', label: 'Arrears'   };
+    if (loan.status === 'default')   return { bg: '#ffebee', color: '#c62828', label: 'Default'   };
     if (loan.status === 'topped_up') return { bg: '#f3e5f5', color: '#7b1fa2', label: 'Topped Up' };
     return { bg: '#f5f5f5', color: '#777', label: loan.status || 'Pending' };
+  };
+
+  // Guaranteed loan status badge colours
+  const guaranteedStatusStyle = (status) => {
+    if (status === 'paid')    return { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid'    };
+    if (status === 'active')  return { bg: '#e3f2fd', color: '#1565c0', label: 'Active'  };
+    if (status === 'arrears') return { bg: '#fff8e1', color: '#e65100', label: 'Arrears' };
+    if (status === 'default') return { bg: '#ffebee', color: '#c62828', label: 'Default' };
+    return { bg: '#f5f5f5', color: '#777', label: status || 'Unknown' };
   };
 
   return (
@@ -243,7 +272,7 @@ const MemberTransactions = () => {
             {memberStats && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', margin: '20px 0' }}>
 
-                {/* Card 1 — Financial Summary */}
+                {/* Financial Summary card */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #1976d2' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1976d2', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <PiggyBank size={15} /> Financial Summary
@@ -271,9 +300,9 @@ const MemberTransactions = () => {
                     No loans found
                   </div>
                 ) : memberLoans.map((loan) => {
-                  const st      = loanStatusStyle(loan);
+                  const st         = loanStatusStyle(loan);
                   const isRejected = loan.approvalStatus === 'rejected';
-                  const balance = Number(loan.remainingBalance ?? (
+                  const balance    = Number(loan.remainingBalance ?? (
                     Number(loan.amount) + (Number(loan.amount) * Number(loan.interestRate || 0) / 100)
                     + Number(loan.penaltyInterest || 0) - Number(loan.total_paid || loan.amountPaid || 0)
                   ));
@@ -298,7 +327,6 @@ const MemberTransactions = () => {
                         </span>
                       </div>
 
-                      {/* Rejection reason banner */}
                       {isRejected && loan.rejectionReason && (
                         <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#c62828', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                           <X size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
@@ -307,15 +335,15 @@ const MemberTransactions = () => {
                       )}
 
                       {[
-                        { label: 'Principal',      value: formatCurrency(loan.amount),                                    color: '#1a1a2e' },
-                        { label: 'Interest Rate',  value: `${loan.interestRate || 0}%`,                                   color: '#555',   raw: true },
-                        { label: 'Duration',       value: `${loan.durationMonths || '—'} months`,                        color: '#555',   raw: true },
-                        { label: 'Applied On',     value: formatDate(loan.createdAt),                                     color: '#555',   raw: true },
+                        { label: 'Principal',     value: formatCurrency(loan.amount),                                color: '#1a1a2e' },
+                        { label: 'Interest Rate', value: `${loan.interestRate || 0}%`,                              color: '#555', raw: true },
+                        { label: 'Duration',      value: `${loan.durationMonths || '—'} months`,                   color: '#555', raw: true },
+                        { label: 'Applied On',    value: formatDate(loan.createdAt),                                color: '#555', raw: true },
                         ...(!isRejected ? [
-                          { label: 'Disbursed',    value: formatDate(loan.disbursementDate),                              color: '#555',   raw: true },
-                          { label: 'Due Date',     value: formatDate(loan.dueDate),                                       color: loan.isOverdue ? '#c62828' : '#555', raw: true },
-                          { label: 'Amount Paid',  value: formatCurrency(loan.total_paid || loan.amountPaid || 0),        color: '#2e7d32' },
-                          { label: 'Balance',      value: formatCurrency(balance),                                        color: balance > 0 ? '#c62828' : '#2e7d32' },
+                          { label: 'Disbursed',   value: formatDate(loan.disbursementDate),                        color: '#555', raw: true },
+                          { label: 'Due Date',    value: formatDate(loan.dueDate),                                 color: loan.isOverdue ? '#c62828' : '#555', raw: true },
+                          { label: 'Amount Paid', value: formatCurrency(loan.total_paid || loan.amountPaid || 0),  color: '#2e7d32' },
+                          { label: 'Balance',     value: formatCurrency(balance),                                  color: balance > 0 ? '#c62828' : '#2e7d32' },
                         ] : []),
                       ].map(row => (
                         <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
@@ -353,7 +381,6 @@ const MemberTransactions = () => {
                         </div>
                       )}
 
-                      {/* Progress bar — only for non-rejected loans */}
                       {!isRejected && (
                         <div style={{ marginTop: '12px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
@@ -374,10 +401,11 @@ const MemberTransactions = () => {
             {/* Controls */}
             <div className="controls">
               <div className="filter-buttons">
-                <button className={filter === 'all'     ? 'active' : ''} onClick={() => setFilter('all')}>All ({transactions.length})</button>
-                <button className={filter === 'savings' ? 'active' : ''} onClick={() => setFilter('savings')}>Savings ({transactions.filter(t => t.type === 'savings').length})</button>
-                <button className={filter === 'loan'    ? 'active' : ''} onClick={() => setFilter('loan')}>Loans ({transactions.filter(t => t.type === 'loan').length})</button>
-                <button className={filter === 'payment' ? 'active' : ''} onClick={() => setFilter('payment')}>Payments ({transactions.filter(t => t.type === 'payment').length})</button>
+                <button className={filter === 'all'          ? 'active' : ''} onClick={() => setFilter('all')}>All ({transactions.length})</button>
+                <button className={filter === 'savings'      ? 'active' : ''} onClick={() => setFilter('savings')}>Savings ({transactions.filter(t => t.type === 'savings').length})</button>
+                <button className={filter === 'loan'         ? 'active' : ''} onClick={() => setFilter('loan')}>Loans ({transactions.filter(t => t.type === 'loan').length})</button>
+                <button className={filter === 'payment'      ? 'active' : ''} onClick={() => setFilter('payment')}>Payments ({transactions.filter(t => t.type === 'payment').length})</button>
+                <button className={filter === 'guarantorship'? 'active' : ''} onClick={() => setFilter('guarantorship')}>Guarantorship ({guaranteedLoans.length})</button>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-export" onClick={exportToCSV} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -391,6 +419,84 @@ const MemberTransactions = () => {
 
             {loading ? (
               <div className="loading">Loading transactions...</div>
+            ) : filter === 'guarantorship' ? (
+
+              /* ── Guarantorship tab ── */
+              guaranteedLoans.length === 0 ? (
+                <div className="no-transactions"><p>Not guaranteeing any loans</p></div>
+              ) : (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
+                          <Handshake size={13} /> Loan ID
+                        </th>
+                        <th>Borrower</th>
+                        <th>Loan Amount</th>
+                        <th>Date Accepted</th>
+                        <th>My Liability</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {guaranteedLoans.map((loan, index) => {
+                        const liability = calcGuarantorLiability(loan);
+                        const st        = guaranteedStatusStyle(loan.status);
+                        return (
+                          <tr key={`guaranteed-${loan.loanId}-${index}`}>
+                            <td style={{ fontWeight: 700, color: '#1a1a2e' }}>
+                              #{loan.loanId}
+                            </td>
+                            <td style={{ fontWeight: 600 }}>
+                              {loan.borrowerName || '—'}
+                            </td>
+                            <td style={{ fontWeight: 700, color: '#1565c0' }}>
+                              {formatCurrency(loan.amount)}
+                            </td>
+                            <td>
+                              {/* disbursementDate is when the loan was approved/accepted */}
+                              {formatDate(loan.disbursementDate) || '—'}
+                            </td>
+                            <td>
+                              <span style={{
+                                background: '#e0f2f1', color: '#00695c',
+                                padding: '3px 10px', borderRadius: '10px',
+                                fontWeight: 700, fontSize: '12px',
+                                display: 'inline-block',
+                              }}>
+                                {formatCurrency(liability)}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{
+                                background: st.bg, color: st.color,
+                                padding: '3px 10px', borderRadius: '10px',
+                                fontWeight: 700, fontSize: '11px',
+                                display: 'inline-block',
+                              }}>
+                                {st.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: '#f5f5f5', fontWeight: 700 }}>
+                        <td colSpan="4">Total Liability ({guaranteedLoans.length} loan{guaranteedLoans.length !== 1 ? 's' : ''})</td>
+                        <td>
+                          <span style={{ color: '#00695c', fontWeight: 800 }}>
+                            {formatCurrency(guaranteedLoans.reduce((s, l) => s + calcGuarantorLiability(l), 0))}
+                          </span>
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
+
             ) : filteredTransactions.length === 0 ? (
               <div className="no-transactions"><p>No transactions found</p></div>
             ) : (
