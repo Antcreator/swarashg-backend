@@ -426,125 +426,124 @@ const MemberTransactions = () => {
               </div>
             )}
 
-            {/* ── Chamaa Payment History ── */}
+            {/* ── Chamaa Payment History — single card ── */}
             {chamaaData.slots.length > 0 && (() => {
               const now          = new Date();
               const currentMonth = now.getMonth() + 1;
               const currentYear  = now.getFullYear();
               const MONTH_NAMES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-              return chamaaData.slots.map((slot, si) => {
-                // Build expected months: from cycle start month up to current month
+              // Build all rows across all slots
+              const allRows = [];
+              chamaaData.slots.forEach((slot) => {
                 const cycleStart     = slot.cycle?.startMonth     || slot.cycle?.start_month     || 1;
                 const cycleStartYear = slot.cycle?.startYear      || slot.cycle?.start_year      || currentYear;
                 const cycleName      = slot.cycle?.name           || `Cycle #${slot.cycleId      || slot.id}`;
                 const contribution   = Number(slot.cycle?.contributionAmount || slot.cycle?.contribution_amount || 2030);
 
-                // Generate all expected months from cycle start to now
                 const expectedMonths = [];
                 let m = cycleStart, y = cycleStartYear;
                 while (y < currentYear || (y === currentYear && m <= currentMonth)) {
                   expectedMonths.push({ month: m, year: y });
-                  m++;
-                  if (m > 12) { m = 1; y++; }
-                  if (expectedMonths.length > 36) break; // safety cap
+                  m++; if (m > 12) { m = 1; y++; }
+                  if (expectedMonths.length > 36) break;
                 }
 
-                // Map contributions by month+year
-                // Contributions are nested under the participant slot from getAllCycles
                 const contribMap = {};
                 const slotContribs = slot.contributions || slot.ChamaaContributions || [];
                 slotContribs.forEach(c => { contribMap[`${c.year}-${c.month}`] = c; });
 
-                return (
-                  <div key={si} style={{
-                    background: 'white', borderRadius: '12px', padding: '20px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #7b1fa2',
-                    marginBottom: '0',
-                  }}>
-                    {/* Card header */}
-                    <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'14px' }}>
-                      <Handshake size={15} color="#7b1fa2" />
-                      <span style={{ fontSize:'13px', fontWeight:700, color:'#1a1a2e' }}>
-                        Chamaa — {cycleName}
+                expectedMonths.forEach(({ month, year }) => {
+                  const contrib    = contribMap[`${year}-${month}`];
+                  const paid       = !!(contrib && (contrib.isPaid || Number(contrib.amount) > 0));
+                  const isLate     = !!(contrib?.isLate);
+                  const isCurrent  = month === currentMonth && year === currentYear;
+                  const fineAmount = Number(contrib?.fineAmount || 0);
+                  allRows.push({ cycleName, contribution, month, year, paid, isLate, isCurrent, fineAmount });
+                });
+              });
+
+              const paidCount   = allRows.filter(r => r.paid).length;
+              const unpaidCount = allRows.filter(r => !r.paid).length;
+              const lateCount   = allRows.filter(r => r.isLate).length;
+
+              return (
+                <div style={{
+                  background: 'white', borderRadius: '12px', padding: '20px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #7b1fa2',
+                }}>
+                  {/* Card header */}
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px' }}>
+                    <Handshake size={15} color="#7b1fa2" />
+                    <span style={{ fontSize:'13px', fontWeight:700, color:'#1a1a2e' }}>
+                      Chamaa Payments
+                    </span>
+                    {/* Summary pills */}
+                    <div style={{ marginLeft:'auto', display:'flex', gap:'6px', flexWrap:'wrap' }}>
+                      <span style={{ fontSize:'10px', fontWeight:700, background:'#e8f5e9', color:'#2e7d32', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
+                        <CheckCircle2 size={9} /> {paidCount} paid
                       </span>
-                      <span style={{ fontSize:'11px', color:'#888', marginLeft:'auto' }}>
-                        KES {contribution.toLocaleString()} / month
-                      </span>
-                    </div>
-
-                    {/* Month grid */}
-                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(120px, 1fr))', gap:'8px' }}>
-                      {expectedMonths.map(({ month, year }) => {
-                        const key     = `${year}-${month}`;
-                        const contrib = contribMap[key];
-                        const paid    = contrib && (contrib.isPaid || contrib.amount > 0);
-                        const isLate  = contrib?.isLate;
-                        const isCurrent = month === currentMonth && year === currentYear;
-
-                        // Color scheme
-                        let bg = '#f5f5f5', color = '#999', borderColor = '#e0e0e0';
-                        let label = 'Unpaid';
-                        let Icon  = AlertCircle;
-
-                        if (paid && !isLate) {
-                          bg = '#e8f5e9'; color = '#2e7d32'; borderColor = '#a5d6a7';
-                          label = 'Paid'; Icon = CheckCircle2;
-                        } else if (paid && isLate) {
-                          bg = '#fff3e0'; color = '#e65100'; borderColor = '#ffcc80';
-                          label = 'Paid Late'; Icon = CheckCircle2;
-                        } else if (isCurrent) {
-                          bg = '#e3f2fd'; color = '#1565c0'; borderColor = '#90caf9';
-                          label = 'Due'; Icon = CalendarDays;
-                        } else {
-                          bg = '#ffebee'; color = '#c62828'; borderColor = '#ef9a9a';
-                          label = 'Unpaid'; Icon = AlertCircle;
-                        }
-
-                        return (
-                          <div key={key} style={{
-                            background: bg, border: `1px solid ${borderColor}`,
-                            borderRadius: '8px', padding: '8px 10px',
-                          }}>
-                            <div style={{ fontSize:'11px', fontWeight:700, color, display:'flex', alignItems:'center', gap:4 }}>
-                              <Icon size={10} />
-                              {MONTH_NAMES[month - 1]} {year}
-                            </div>
-                            <div style={{ fontSize:'10px', color, marginTop:'3px', fontWeight:600 }}>
-                              {label}
-                            </div>
-                            {paid && contrib?.fineAmount > 0 && (
-                              <div style={{ fontSize:'9px', color:'#e65100', marginTop:'2px' }}>
-                                Fine: {formatCurrency(contrib.fineAmount)}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Summary */}
-                    <div style={{ display:'flex', gap:'16px', marginTop:'12px', paddingTop:'10px', borderTop:'1px solid #f0f0f0', flexWrap:'wrap' }}>
-                      <span style={{ fontSize:'11px', color:'#2e7d32', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
-                        <CheckCircle2 size={11} />
-                        Paid: {Object.values(contribMap).filter(c => c.isPaid || c.amount > 0).length}/{expectedMonths.length}
-                      </span>
-                      <span style={{ fontSize:'11px', color:'#c62828', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
-                        <AlertCircle size={11} />
-                        Unpaid: {expectedMonths.filter(({ month, year }) => {
-                          const c = contribMap[`${year}-${month}`];
-                          return !c || (!c.isPaid && !c.amount);
-                        }).length}
-                      </span>
-                      {Object.values(contribMap).some(c => c.isLate) && (
-                        <span style={{ fontSize:'11px', color:'#e65100', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
-                          Late: {Object.values(contribMap).filter(c => c.isLate).length}
+                      {unpaidCount > 0 && (
+                        <span style={{ fontSize:'10px', fontWeight:700, background:'#ffebee', color:'#c62828', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
+                          <AlertCircle size={9} /> {unpaidCount} unpaid
+                        </span>
+                      )}
+                      {lateCount > 0 && (
+                        <span style={{ fontSize:'10px', fontWeight:700, background:'#fff3e0', color:'#e65100', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
+                          {lateCount} late
                         </span>
                       )}
                     </div>
                   </div>
-                );
-              });
+
+                  {/* Compact table */}
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
+                      <thead>
+                        <tr style={{ background:'#f3e5f5' }}>
+                          <th style={{ padding:'6px 10px', textAlign:'left', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Cycle</th>
+                          <th style={{ padding:'6px 10px', textAlign:'left', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Month</th>
+                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Amount</th>
+                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Status</th>
+                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Fine</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allRows.map((row, idx) => {
+                          let statusBg = '#ffebee', statusColor = '#c62828', statusLabel = 'Unpaid', StatusIcon = AlertCircle;
+                          if (row.paid && !row.isLate) {
+                            statusBg = '#e8f5e9'; statusColor = '#2e7d32'; statusLabel = 'Paid'; StatusIcon = CheckCircle2;
+                          } else if (row.paid && row.isLate) {
+                            statusBg = '#fff3e0'; statusColor = '#e65100'; statusLabel = 'Paid Late'; StatusIcon = CheckCircle2;
+                          } else if (row.isCurrent) {
+                            statusBg = '#e3f2fd'; statusColor = '#1565c0'; statusLabel = 'Due'; StatusIcon = CalendarDays;
+                          }
+                          return (
+                            <tr key={idx} style={{ background: idx % 2 === 0 ? 'white' : '#fdf6ff', borderBottom:'1px solid #f0f0f0' }}>
+                              <td style={{ padding:'7px 10px', color:'#555', fontSize:'11px' }}>{row.cycleName}</td>
+                              <td style={{ padding:'7px 10px', fontWeight:600, color:'#1a1a2e', whiteSpace:'nowrap' }}>
+                                {MONTH_NAMES[row.month - 1]} {row.year}
+                                {row.isCurrent && <span style={{ marginLeft:4, fontSize:'9px', background:'#e3f2fd', color:'#1565c0', padding:'1px 5px', borderRadius:'6px', fontWeight:700 }}>Current</span>}
+                              </td>
+                              <td style={{ padding:'7px 10px', textAlign:'center', fontWeight:600, color:'#7b1fa2' }}>
+                                {formatCurrency(row.contribution)}
+                              </td>
+                              <td style={{ padding:'7px 10px', textAlign:'center' }}>
+                                <span style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:700, background:statusBg, color:statusColor }}>
+                                  <StatusIcon size={9} /> {statusLabel}
+                                </span>
+                              </td>
+                              <td style={{ padding:'7px 10px', textAlign:'center', fontSize:'11px', color: row.fineAmount > 0 ? '#e65100' : '#ccc', fontWeight: row.fineAmount > 0 ? 700 : 400 }}>
+                                {row.fineAmount > 0 ? formatCurrency(row.fineAmount) : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
             })()}
 
             {/* Controls */}
