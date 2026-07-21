@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI, chamaaAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
-import { Download, Printer, PiggyBank, FileText, X, Handshake, AlertCircle, CheckCircle2, CalendarDays } from 'lucide-react';
+import { Download, Printer, PiggyBank, FileText, X, Handshake, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const TRANSACTION_FEE = 108;
 
@@ -132,12 +132,6 @@ const MemberTransactions = () => {
         setChamaaData({ slots: [], contributions: [] });
       }
 
-      // Calculate total chamaa paid from distributed deposits
-      const distDeposits   = depositRes.status === 'fulfilled'
-        ? (depositRes.value.data.deposits || []).filter(d => d.depositStatus === 'distributed')
-        : [];
-      const chamaaPayment  = distDeposits.reduce((s, d) => s + Number(d.chamaaPaymentAmount || 0), 0);
-
       setMemberStats({
         totalSavings:       Number(member?.total_savings || member?.totalSavings || 0),
         seedCapital,
@@ -147,7 +141,6 @@ const MemberTransactions = () => {
         cautionaryFee:      Number(statRecord?.cautionaryFee      || 0),
         guarantorDeduction: Number(statRecord?.guarantorDeduction || 0),
         other:              Number(statRecord?.other || 0) || depositOther,
-        chamaaPayment:      chamaaPayment,
       });
 
     } catch (err) {
@@ -310,7 +303,7 @@ const MemberTransactions = () => {
                     { label: 'AGM Fee',              value: memberStats.agmFee,             color: '#7b1fa2' },
                     { label: 'Savings Fines',        value: memberStats.savingsFine,        color: '#e65100' },
                     { label: 'Chamaa Fines',         value: memberStats.chamaaFine,         color: '#ad1457' },
-                    { label: 'Chamaa Payment',       value: memberStats.chamaaPayment || 0,  color: '#7b1fa2' },
+
                     { label: 'Cautionary Fee',       value: memberStats.cautionaryFee,      color: '#f57c00' },
                     { label: 'Guarantor Deduction',  value: memberStats.guarantorDeduction, color: '#00695c' },
                     { label: 'Other',                value: memberStats.other,              color: '#455a64' },
@@ -320,6 +313,48 @@ const MemberTransactions = () => {
                       <span style={{ fontSize: '13px', fontWeight: 600, color: row.color }}>{formatCurrency(row.value)}</span>
                     </div>
                   ))}
+
+                  {/* Chamaa this month — paid / unpaid */}
+                  {(() => {
+                    const now   = new Date();
+                    const month = now.getMonth() + 1;
+                    const year  = now.getFullYear();
+                    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                    const monthLabel  = MONTH_NAMES[month - 1];
+
+                    // Check if member has paid chamaa for current month
+                    // Look across all slots' contributions
+                    const hasPaidThisMonth = chamaaData.slots.some(slot => {
+                      const contribs = slot.contributions || slot.ChamaaContributions || [];
+                      return contribs.some(c =>
+                        Number(c.month) === month &&
+                        Number(c.year)  === year  &&
+                        (c.isPaid || Number(c.amount) > 0)
+                      );
+                    });
+
+                    // Only show if member participates in chamaa
+                    if (chamaaData.slots.length === 0) return null;
+
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
+                        <span style={{ fontSize: '12px', color: '#666' }}>
+                          Chamaa — {monthLabel}
+                        </span>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontSize: '12px', fontWeight: 700,
+                          padding: '2px 10px', borderRadius: '10px',
+                          background: hasPaidThisMonth ? '#e8f5e9' : '#ffebee',
+                          color:      hasPaidThisMonth ? '#2e7d32' : '#c62828',
+                        }}>
+                          {hasPaidThisMonth
+                            ? <><CheckCircle2 size={11} /> Paid</>
+                            : <><AlertCircle  size={11} /> Unpaid</>}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Loan cards */}
@@ -426,125 +461,6 @@ const MemberTransactions = () => {
               </div>
             )}
 
-            {/* ── Chamaa Payment History — single card ── */}
-            {chamaaData.slots.length > 0 && (() => {
-              const now          = new Date();
-              const currentMonth = now.getMonth() + 1;
-              const currentYear  = now.getFullYear();
-              const MONTH_NAMES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-              // Build all rows across all slots
-              const allRows = [];
-              chamaaData.slots.forEach((slot) => {
-                const cycleStart     = slot.cycle?.startMonth     || slot.cycle?.start_month     || 1;
-                const cycleStartYear = slot.cycle?.startYear      || slot.cycle?.start_year      || currentYear;
-                const cycleName      = slot.cycle?.name           || `Cycle #${slot.cycleId      || slot.id}`;
-                const contribution   = Number(slot.cycle?.contributionAmount || slot.cycle?.contribution_amount || 2030);
-
-                const expectedMonths = [];
-                let m = cycleStart, y = cycleStartYear;
-                while (y < currentYear || (y === currentYear && m <= currentMonth)) {
-                  expectedMonths.push({ month: m, year: y });
-                  m++; if (m > 12) { m = 1; y++; }
-                  if (expectedMonths.length > 36) break;
-                }
-
-                const contribMap = {};
-                const slotContribs = slot.contributions || slot.ChamaaContributions || [];
-                slotContribs.forEach(c => { contribMap[`${c.year}-${c.month}`] = c; });
-
-                expectedMonths.forEach(({ month, year }) => {
-                  const contrib    = contribMap[`${year}-${month}`];
-                  const paid       = !!(contrib && (contrib.isPaid || Number(contrib.amount) > 0));
-                  const isLate     = !!(contrib?.isLate);
-                  const isCurrent  = month === currentMonth && year === currentYear;
-                  const fineAmount = Number(contrib?.fineAmount || 0);
-                  allRows.push({ cycleName, contribution, month, year, paid, isLate, isCurrent, fineAmount });
-                });
-              });
-
-              const paidCount   = allRows.filter(r => r.paid).length;
-              const unpaidCount = allRows.filter(r => !r.paid).length;
-              const lateCount   = allRows.filter(r => r.isLate).length;
-
-              return (
-                <div style={{
-                  background: 'white', borderRadius: '12px', padding: '20px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #7b1fa2',
-                }}>
-                  {/* Card header */}
-                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px' }}>
-                    <Handshake size={15} color="#7b1fa2" />
-                    <span style={{ fontSize:'13px', fontWeight:700, color:'#1a1a2e' }}>
-                      Chamaa Payments
-                    </span>
-                    {/* Summary pills */}
-                    <div style={{ marginLeft:'auto', display:'flex', gap:'6px', flexWrap:'wrap' }}>
-                      <span style={{ fontSize:'10px', fontWeight:700, background:'#e8f5e9', color:'#2e7d32', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
-                        <CheckCircle2 size={9} /> {paidCount} paid
-                      </span>
-                      {unpaidCount > 0 && (
-                        <span style={{ fontSize:'10px', fontWeight:700, background:'#ffebee', color:'#c62828', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
-                          <AlertCircle size={9} /> {unpaidCount} unpaid
-                        </span>
-                      )}
-                      {lateCount > 0 && (
-                        <span style={{ fontSize:'10px', fontWeight:700, background:'#fff3e0', color:'#e65100', padding:'2px 8px', borderRadius:'10px', display:'inline-flex', alignItems:'center', gap:3 }}>
-                          {lateCount} late
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Compact table */}
-                  <div style={{ overflowX:'auto' }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
-                      <thead>
-                        <tr style={{ background:'#f3e5f5' }}>
-                          <th style={{ padding:'6px 10px', textAlign:'left', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Cycle</th>
-                          <th style={{ padding:'6px 10px', textAlign:'left', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Month</th>
-                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Amount</th>
-                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Status</th>
-                          <th style={{ padding:'6px 10px', textAlign:'center', color:'#7b1fa2', fontWeight:700, fontSize:'11px' }}>Fine</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {allRows.map((row, idx) => {
-                          let statusBg = '#ffebee', statusColor = '#c62828', statusLabel = 'Unpaid', StatusIcon = AlertCircle;
-                          if (row.paid && !row.isLate) {
-                            statusBg = '#e8f5e9'; statusColor = '#2e7d32'; statusLabel = 'Paid'; StatusIcon = CheckCircle2;
-                          } else if (row.paid && row.isLate) {
-                            statusBg = '#fff3e0'; statusColor = '#e65100'; statusLabel = 'Paid Late'; StatusIcon = CheckCircle2;
-                          } else if (row.isCurrent) {
-                            statusBg = '#e3f2fd'; statusColor = '#1565c0'; statusLabel = 'Due'; StatusIcon = CalendarDays;
-                          }
-                          return (
-                            <tr key={idx} style={{ background: idx % 2 === 0 ? 'white' : '#fdf6ff', borderBottom:'1px solid #f0f0f0' }}>
-                              <td style={{ padding:'7px 10px', color:'#555', fontSize:'11px' }}>{row.cycleName}</td>
-                              <td style={{ padding:'7px 10px', fontWeight:600, color:'#1a1a2e', whiteSpace:'nowrap' }}>
-                                {MONTH_NAMES[row.month - 1]} {row.year}
-                                {row.isCurrent && <span style={{ marginLeft:4, fontSize:'9px', background:'#e3f2fd', color:'#1565c0', padding:'1px 5px', borderRadius:'6px', fontWeight:700 }}>Current</span>}
-                              </td>
-                              <td style={{ padding:'7px 10px', textAlign:'center', fontWeight:600, color:'#7b1fa2' }}>
-                                {formatCurrency(row.contribution)}
-                              </td>
-                              <td style={{ padding:'7px 10px', textAlign:'center' }}>
-                                <span style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:700, background:statusBg, color:statusColor }}>
-                                  <StatusIcon size={9} /> {statusLabel}
-                                </span>
-                              </td>
-                              <td style={{ padding:'7px 10px', textAlign:'center', fontSize:'11px', color: row.fineAmount > 0 ? '#e65100' : '#ccc', fontWeight: row.fineAmount > 0 ? 700 : 400 }}>
-                                {row.fineAmount > 0 ? formatCurrency(row.fineAmount) : '—'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
 
             {/* Controls */}
             <div className="controls">
