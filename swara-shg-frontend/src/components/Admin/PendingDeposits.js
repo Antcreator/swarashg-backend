@@ -8,6 +8,7 @@ import './PendingDeposits.css';
 import {
   PiggyBank, FileText, Handshake, Sprout, AlertTriangle,
   Bell, Package, Smartphone, CreditCard, User, X, ChevronDown, ChevronUp,
+  MessageSquare, Pencil,
 } from 'lucide-react';
 
 const PendingDeposits = () => {
@@ -38,7 +39,6 @@ const PendingDeposits = () => {
 
   useEffect(() => { fetchDeposits(); }, [fetchDeposits]);
 
-  // Lock scroll when reject modal open
   useEffect(() => {
     if (showRejectModal) {
       document.body.style.overflow = 'hidden';
@@ -205,6 +205,7 @@ const PendingDeposits = () => {
                 const isEditing   = editMode === deposit.id;
                 const distTotal   = distributionTotal(deposit);
                 const unallocated = Number(deposit.totalAmount) - distTotal;
+                const memberNotes = deposit.confirmationNotes || deposit.memberNotes || deposit.notes || '';
 
                 return (
                   <div key={deposit.id} className={`deposit-card${isExpanded ? ' expanded' : ''}`}>
@@ -234,11 +235,24 @@ const PendingDeposits = () => {
                         </div>
                       </div>
 
-                      {/* Right: amount + code + chevron */}
+                      {/* Right: amount + code + note indicator + chevron */}
                       <div className="header-right">
                         <div className="amount-block">
                           <p className="total-amount">{fmt(deposit.totalAmount)}</p>
                           <span className="mpesa-tag">Code: {deposit.mpesaCode}</span>
+                          {/* Show a note pill in header if member left a note */}
+                          {memberNotes && (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontSize: '10px', fontWeight: 600,
+                              background: '#fff8e1', color: '#e65100',
+                              border: '1px solid #ffc107',
+                              borderRadius: '10px', padding: '2px 8px',
+                              marginTop: '4px',
+                            }}>
+                              <MessageSquare size={9} /> Note from member
+                            </span>
+                          )}
                         </div>
                         <button className="expand-btn" aria-label="Toggle details">
                           {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -249,6 +263,33 @@ const PendingDeposits = () => {
                     {/* ── Card Body ── */}
                     {isExpanded && (
                       <div className="deposit-details">
+
+                        {/* ── Member Notes — shown when member left a note ── */}
+                        {memberNotes && (
+                          <div style={{
+                            background: '#fff8e1',
+                            border: '1px solid #ffc107',
+                            borderRadius: '8px',
+                            padding: '12px 14px',
+                            marginBottom: '14px',
+                          }}>
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              fontSize: '11px', fontWeight: 700, color: '#e65100',
+                              marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                              <MessageSquare size={13} />
+                              Note from Member
+                            </div>
+                            <p style={{
+                              fontSize: '13px', color: '#1a1a2e',
+                              lineHeight: 1.6, margin: 0,
+                              fontStyle: 'italic',
+                            }}>
+                              "{memberNotes}"
+                            </p>
+                          </div>
+                        )}
 
                         {/* M-Pesa Message */}
                         <div className="mpesa-box">
@@ -323,6 +364,21 @@ const PendingDeposits = () => {
                                 </div>
                               </div>
 
+                              {/* Admin notes field in edit mode */}
+                              <div className="form-group" style={{ marginTop: '12px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Pencil size={12} /> Admin Notes
+                                </label>
+                                <textarea
+                                  className="edit-input"
+                                  rows="2"
+                                  placeholder="Add any notes for this deposit..."
+                                  value={editData.notes}
+                                  onChange={e => setEditData({ ...editData, notes: e.target.value })}
+                                  style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '13px' }}
+                                />
+                              </div>
+
                               <div className="edit-actions">
                                 <button className="btn-cancel" onClick={() => setEditMode(null)}>Cancel</button>
                                 <button
@@ -370,9 +426,15 @@ const PendingDeposits = () => {
                         {/* Action buttons */}
                         {!isEditing && !isStaff && (
                           <div className="deposit-actions">
-                            <button className="btn-edit"   onClick={() => startEdit(deposit)}>✏️ Edit</button>
-                            <button className="btn-reject" onClick={() => setShowRejectModal(deposit.id)}>✗ Reject</button>
-                            <button className="btn-approve" onClick={() => handleApprove(deposit.id)}>✓ Approve &amp; Distribute</button>
+                            <button className="btn-edit" onClick={() => startEdit(deposit)}>
+                              <Pencil size={13} style={{ marginRight: 4 }} /> Edit
+                            </button>
+                            <button className="btn-reject" onClick={() => setShowRejectModal(deposit.id)}>
+                              <X size={13} style={{ marginRight: 4 }} /> Reject
+                            </button>
+                            <button className="btn-approve" onClick={() => handleApprove(deposit.id)}>
+                              ✓ Approve &amp; Distribute
+                            </button>
                           </div>
                         )}
                       </div>
@@ -384,7 +446,7 @@ const PendingDeposits = () => {
           )}
         </div>
 
-        {/* ── Reject Modal (bottom-sheet on mobile) ── */}
+        {/* ── Reject Modal ── */}
         {!isStaff && showRejectModal && (
           <div
             className="modal-overlay"

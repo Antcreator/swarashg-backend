@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI } from '../../Service/Api';
+import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI, chamaaAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
-import { Download, Printer, PiggyBank, FileText, X, Handshake } from 'lucide-react';
+import { Download, Printer, PiggyBank, FileText, X, Handshake, AlertCircle, CheckCircle2, CalendarDays } from 'lucide-react';
 
 const TRANSACTION_FEE = 108;
 
@@ -12,6 +12,7 @@ const MemberTransactions = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [transactions, setTransactions]     = useState([]);
   const [memberLoans, setMemberLoans]       = useState([]);
+  const [chamaaData, setChamaaData]         = useState({ slots: [], contributions: [] });
   const [memberStats, setMemberStats]       = useState(null);
   const [guaranteedLoans, setGuaranteedLoans] = useState([]);
   const [loading, setLoading]               = useState(false);
@@ -35,11 +36,12 @@ const MemberTransactions = () => {
       setTransactions([]);
       setMemberLoans([]);
       setMemberStats(null);
+      setChamaaData({ slots: [], contributions: [] });
       setGuaranteedLoans([]);
 
       const year = new Date().getFullYear();
 
-      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes, seedRes, guaranteedRes] = await Promise.allSettled([
+      const [memberRes, savingsRes, loansRes, depositRes, agmRes, statRes, seedRes, guaranteedRes, chamaaRes] = await Promise.allSettled([
         membersAPI.getAll(),
         savingsAPI.getAll({ memberId }),
         loansAPI.getAll({ memberId }),
@@ -48,6 +50,7 @@ const MemberTransactions = () => {
         statutoryAPI.getAll(year),
         seedCapitalAPI.getByMember(memberId),
         loansAPI.getGuaranteedLoans(memberId),
+        chamaaAPI.getAllCycles({ includeParticipants: true }),
       ]);
 
       const member = memberRes.status === 'fulfilled'
@@ -112,6 +115,29 @@ const MemberTransactions = () => {
       const statMembers = statRes.status === 'fulfilled' ? statRes.value.data.members || [] : [];
       const statRecord  = statMembers.find(m => String(m.id) === String(memberId));
 
+      // Process chamaa: find all cycles where this member is a participant
+      if (chamaaRes.status === 'fulfilled') {
+        const cycles    = chamaaRes.value.data.cycles || [];
+        const memberIdN = parseInt(memberId);
+        // Build flat list of slots this member participates in, each with their cycle
+        const slots = [];
+        cycles.forEach(cycle => {
+          const participants = cycle.participants || cycle.ChamaaParticipants || [];
+          participants
+            .filter(p => Number(p.memberId) === memberIdN)
+            .forEach(p => slots.push({ ...p, cycle }));
+        });
+        setChamaaData({ slots, contributions: [] });
+      } else {
+        setChamaaData({ slots: [], contributions: [] });
+      }
+
+      // Calculate total chamaa paid from distributed deposits
+      const distDeposits   = depositRes.status === 'fulfilled'
+        ? (depositRes.value.data.deposits || []).filter(d => d.depositStatus === 'distributed')
+        : [];
+      const chamaaPayment  = distDeposits.reduce((s, d) => s + Number(d.chamaaPaymentAmount || 0), 0);
+
       setMemberStats({
         totalSavings:       Number(member?.total_savings || member?.totalSavings || 0),
         seedCapital,
@@ -121,6 +147,7 @@ const MemberTransactions = () => {
         cautionaryFee:      Number(statRecord?.cautionaryFee      || 0),
         guarantorDeduction: Number(statRecord?.guarantorDeduction || 0),
         other:              Number(statRecord?.other || 0) || depositOther,
+        chamaaPayment:      chamaaPayment,
       });
 
     } catch (err) {
@@ -283,6 +310,7 @@ const MemberTransactions = () => {
                     { label: 'AGM Fee',              value: memberStats.agmFee,             color: '#7b1fa2' },
                     { label: 'Savings Fines',        value: memberStats.savingsFine,        color: '#e65100' },
                     { label: 'Chamaa Fines',         value: memberStats.chamaaFine,         color: '#ad1457' },
+                    { label: 'Chamaa Payment',       value: memberStats.chamaaPayment || 0,  color: '#7b1fa2' },
                     { label: 'Cautionary Fee',       value: memberStats.cautionaryFee,      color: '#f57c00' },
                     { label: 'Guarantor Deduction',  value: memberStats.guarantorDeduction, color: '#00695c' },
                     { label: 'Other',                value: memberStats.other,              color: '#455a64' },
@@ -397,6 +425,127 @@ const MemberTransactions = () => {
                 })}
               </div>
             )}
+
+            {/* ── Chamaa Payment History ── */}
+            {chamaaData.slots.length > 0 && (() => {
+              const now          = new Date();
+              const currentMonth = now.getMonth() + 1;
+              const currentYear  = now.getFullYear();
+              const MONTH_NAMES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+              return chamaaData.slots.map((slot, si) => {
+                // Build expected months: from cycle start month up to current month
+                const cycleStart     = slot.cycle?.startMonth     || slot.cycle?.start_month     || 1;
+                const cycleStartYear = slot.cycle?.startYear      || slot.cycle?.start_year      || currentYear;
+                const cycleName      = slot.cycle?.name           || `Cycle #${slot.cycleId      || slot.id}`;
+                const contribution   = Number(slot.cycle?.contributionAmount || slot.cycle?.contribution_amount || 2030);
+
+                // Generate all expected months from cycle start to now
+                const expectedMonths = [];
+                let m = cycleStart, y = cycleStartYear;
+                while (y < currentYear || (y === currentYear && m <= currentMonth)) {
+                  expectedMonths.push({ month: m, year: y });
+                  m++;
+                  if (m > 12) { m = 1; y++; }
+                  if (expectedMonths.length > 36) break; // safety cap
+                }
+
+                // Map contributions by month+year
+                // Contributions are nested under the participant slot from getAllCycles
+                const contribMap = {};
+                const slotContribs = slot.contributions || slot.ChamaaContributions || [];
+                slotContribs.forEach(c => { contribMap[`${c.year}-${c.month}`] = c; });
+
+                return (
+                  <div key={si} style={{
+                    background: 'white', borderRadius: '12px', padding: '20px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderTop: '4px solid #7b1fa2',
+                    marginBottom: '0',
+                  }}>
+                    {/* Card header */}
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'14px' }}>
+                      <Handshake size={15} color="#7b1fa2" />
+                      <span style={{ fontSize:'13px', fontWeight:700, color:'#1a1a2e' }}>
+                        Chamaa — {cycleName}
+                      </span>
+                      <span style={{ fontSize:'11px', color:'#888', marginLeft:'auto' }}>
+                        KES {contribution.toLocaleString()} / month
+                      </span>
+                    </div>
+
+                    {/* Month grid */}
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(120px, 1fr))', gap:'8px' }}>
+                      {expectedMonths.map(({ month, year }) => {
+                        const key     = `${year}-${month}`;
+                        const contrib = contribMap[key];
+                        const paid    = contrib && (contrib.isPaid || contrib.amount > 0);
+                        const isLate  = contrib?.isLate;
+                        const isCurrent = month === currentMonth && year === currentYear;
+
+                        // Color scheme
+                        let bg = '#f5f5f5', color = '#999', borderColor = '#e0e0e0';
+                        let label = 'Unpaid';
+                        let Icon  = AlertCircle;
+
+                        if (paid && !isLate) {
+                          bg = '#e8f5e9'; color = '#2e7d32'; borderColor = '#a5d6a7';
+                          label = 'Paid'; Icon = CheckCircle2;
+                        } else if (paid && isLate) {
+                          bg = '#fff3e0'; color = '#e65100'; borderColor = '#ffcc80';
+                          label = 'Paid Late'; Icon = CheckCircle2;
+                        } else if (isCurrent) {
+                          bg = '#e3f2fd'; color = '#1565c0'; borderColor = '#90caf9';
+                          label = 'Due'; Icon = CalendarDays;
+                        } else {
+                          bg = '#ffebee'; color = '#c62828'; borderColor = '#ef9a9a';
+                          label = 'Unpaid'; Icon = AlertCircle;
+                        }
+
+                        return (
+                          <div key={key} style={{
+                            background: bg, border: `1px solid ${borderColor}`,
+                            borderRadius: '8px', padding: '8px 10px',
+                          }}>
+                            <div style={{ fontSize:'11px', fontWeight:700, color, display:'flex', alignItems:'center', gap:4 }}>
+                              <Icon size={10} />
+                              {MONTH_NAMES[month - 1]} {year}
+                            </div>
+                            <div style={{ fontSize:'10px', color, marginTop:'3px', fontWeight:600 }}>
+                              {label}
+                            </div>
+                            {paid && contrib?.fineAmount > 0 && (
+                              <div style={{ fontSize:'9px', color:'#e65100', marginTop:'2px' }}>
+                                Fine: {formatCurrency(contrib.fineAmount)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Summary */}
+                    <div style={{ display:'flex', gap:'16px', marginTop:'12px', paddingTop:'10px', borderTop:'1px solid #f0f0f0', flexWrap:'wrap' }}>
+                      <span style={{ fontSize:'11px', color:'#2e7d32', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
+                        <CheckCircle2 size={11} />
+                        Paid: {Object.values(contribMap).filter(c => c.isPaid || c.amount > 0).length}/{expectedMonths.length}
+                      </span>
+                      <span style={{ fontSize:'11px', color:'#c62828', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
+                        <AlertCircle size={11} />
+                        Unpaid: {expectedMonths.filter(({ month, year }) => {
+                          const c = contribMap[`${year}-${month}`];
+                          return !c || (!c.isPaid && !c.amount);
+                        }).length}
+                      </span>
+                      {Object.values(contribMap).some(c => c.isLate) && (
+                        <span style={{ fontSize:'11px', color:'#e65100', fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
+                          Late: {Object.values(contribMap).filter(c => c.isLate).length}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
 
             {/* Controls */}
             <div className="controls">

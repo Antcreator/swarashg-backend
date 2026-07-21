@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { membersAPI, loansAPI, depositsAPI, finesAPI, seedCapitalAPI, agmFeeAPI, registrationFeeAPI, savingsAPI, investmentAPI } from '../../Service/Api';
+import { membersAPI, loansAPI, depositsAPI, finesAPI, seedCapitalAPI, agmFeeAPI, registrationFeeAPI, savingsAPI, investmentAPI, chamaaAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
 import './adminDashboard.css';
@@ -94,12 +94,36 @@ const AdminDashboard = () => {
           .then(r => { totalSeedCapital = r.data.totalSeedCapital || 0; })
           .catch(() => {}),
 
+        // Fines from the fines table (savings_late records)
         finesAPI.getStats({ year: CURRENT_YEAR })
           .then(r => {
             savingsFineTotal = r.data.savingsFineTotal || 0;
-            chamaaFineTotal  = r.data.chamaaFineTotal  || 0;
+            // chamaaFineTotal comes from chamaa contributions below — don't overwrite
           })
           .catch(() => {}),
+
+        // Chamaa fines: use payments-report for current month to get late/unpaid fine totals
+        // getPaymentsReport(month, year) returns details[] with fine amounts per member
+        (() => {
+          const now = new Date();
+          const m   = now.getMonth() + 1;
+          const y   = now.getFullYear();
+          return chamaaAPI.getPaymentsReport(m, y)
+            .then(r => {
+              const details = r.data.details || [];
+              // Sum fines from late payers this month
+              const lateFines = details.reduce((sum, d) => sum + Number(d.fine || 0), 0);
+              // Also count members who haven't paid (no Fine record yet but month is overdue)
+              // Use CURRENT_YEAR fines as fallback then add from report
+              chamaaFineTotal = lateFines;
+            })
+            .catch(() => {
+              // Fallback: use fines table
+              finesAPI.getStats({ year: CURRENT_YEAR })
+                .then(r => { chamaaFineTotal = r.data.chamaaFineTotal || 0; })
+                .catch(() => {});
+            });
+        })(),
 
         agmFeeAPI.getStats({ year: CURRENT_YEAR })
           .then(r => { agmFeeTotal = r.data.totalThisYear || r.data.total || 0; })
