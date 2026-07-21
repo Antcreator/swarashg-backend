@@ -12,7 +12,7 @@ const MemberTransactions = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [transactions, setTransactions]     = useState([]);
   const [memberLoans, setMemberLoans]       = useState([]);
-  const [chamaaData, setChamaaData]         = useState({ slots: [], contributions: [] });
+  const [chamaaStatus, setChamaaStatus]     = useState(null); // null | 'paid' | 'unpaid' | 'not_in_chamaa'
   const [memberStats, setMemberStats]       = useState(null);
   const [guaranteedLoans, setGuaranteedLoans] = useState([]);
   const [loading, setLoading]               = useState(false);
@@ -36,7 +36,7 @@ const MemberTransactions = () => {
       setTransactions([]);
       setMemberLoans([]);
       setMemberStats(null);
-      setChamaaData({ slots: [], contributions: [] });
+      setChamaaStatus(null);
       setGuaranteedLoans([]);
 
       const year = new Date().getFullYear();
@@ -50,7 +50,7 @@ const MemberTransactions = () => {
         statutoryAPI.getAll(year),
         seedCapitalAPI.getByMember(memberId),
         loansAPI.getGuaranteedLoans(memberId),
-        chamaaAPI.getAllCycles({ includeParticipants: true }),
+        (() => { const n = new Date(); return chamaaAPI.getPaymentsReport(n.getMonth() + 1, n.getFullYear()); })(),
       ]);
 
       const member = memberRes.status === 'fulfilled'
@@ -115,21 +115,25 @@ const MemberTransactions = () => {
       const statMembers = statRes.status === 'fulfilled' ? statRes.value.data.members || [] : [];
       const statRecord  = statMembers.find(m => String(m.id) === String(memberId));
 
-      // Process chamaa: find all cycles where this member is a participant
+      // Process chamaa payments report — find this member's status for current month
       if (chamaaRes.status === 'fulfilled') {
-        const cycles    = chamaaRes.value.data.cycles || [];
+        const details   = chamaaRes.value.data.details || [];
         const memberIdN = parseInt(memberId);
-        // Build flat list of slots this member participates in, each with their cycle
-        const slots = [];
-        cycles.forEach(cycle => {
-          const participants = cycle.participants || cycle.ChamaaParticipants || [];
-          participants
-            .filter(p => Number(p.memberId) === memberIdN)
-            .forEach(p => slots.push({ ...p, cycle }));
-        });
-        setChamaaData({ slots, contributions: [] });
+        // details[] has one row per member; find this member
+        const memberRow = details.find(d => Number(d.id) === memberIdN);
+
+        if (!memberRow) {
+          // Member not in chamaa at all
+          setChamaaStatus('not_in_chamaa');
+        } else if (!memberRow.hasActiveChamaa) {
+          setChamaaStatus('not_in_chamaa');
+        } else if (memberRow.paid) {
+          setChamaaStatus(memberRow.isLate ? 'paid_late' : 'paid');
+        } else {
+          setChamaaStatus('unpaid');
+        }
       } else {
-        setChamaaData({ slots: [], contributions: [] });
+        setChamaaStatus('not_in_chamaa');
       }
 
       setMemberStats({
@@ -314,27 +318,17 @@ const MemberTransactions = () => {
                     </div>
                   ))}
 
-                  {/* Chamaa this month — paid / unpaid */}
-                  {(() => {
+                  {/* Chamaa this month — from payments report */}
+                  {chamaaStatus && chamaaStatus !== 'not_in_chamaa' && (() => {
                     const now   = new Date();
-                    const month = now.getMonth() + 1;
-                    const year  = now.getFullYear();
                     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-                    const monthLabel  = MONTH_NAMES[month - 1];
+                    const monthLabel  = MONTH_NAMES[now.getMonth()];
 
-                    // Check if member has paid chamaa for current month
-                    // Look across all slots' contributions
-                    const hasPaidThisMonth = chamaaData.slots.some(slot => {
-                      const contribs = slot.contributions || slot.ChamaaContributions || [];
-                      return contribs.some(c =>
-                        Number(c.month) === month &&
-                        Number(c.year)  === year  &&
-                        (c.isPaid || Number(c.amount) > 0)
-                      );
-                    });
-
-                    // Only show if member participates in chamaa
-                    if (chamaaData.slots.length === 0) return null;
+                    const cfg = {
+                      paid:      { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid',      Icon: CheckCircle2 },
+                      paid_late: { bg: '#fff3e0', color: '#e65100', label: 'Paid Late', Icon: CheckCircle2 },
+                      unpaid:    { bg: '#ffebee', color: '#c62828', label: 'Unpaid',    Icon: AlertCircle  },
+                    }[chamaaStatus] || { bg: '#f5f5f5', color: '#999', label: 'Unknown', Icon: AlertCircle };
 
                     return (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
@@ -345,12 +339,9 @@ const MemberTransactions = () => {
                           display: 'inline-flex', alignItems: 'center', gap: 4,
                           fontSize: '12px', fontWeight: 700,
                           padding: '2px 10px', borderRadius: '10px',
-                          background: hasPaidThisMonth ? '#e8f5e9' : '#ffebee',
-                          color:      hasPaidThisMonth ? '#2e7d32' : '#c62828',
+                          background: cfg.bg, color: cfg.color,
                         }}>
-                          {hasPaidThisMonth
-                            ? <><CheckCircle2 size={11} /> Paid</>
-                            : <><AlertCircle  size={11} /> Unpaid</>}
+                          <cfg.Icon size={11} /> {cfg.label}
                         </span>
                       </div>
                     );
