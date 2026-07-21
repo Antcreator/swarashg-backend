@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { membersAPI, savingsAPI, loansAPI, depositsAPI, agmFeeAPI, statutoryAPI, seedCapitalAPI, chamaaAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './MemberTransactions.css';
-import { Download, Printer, PiggyBank, FileText, X, Handshake, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Download, Printer, PiggyBank, FileText, X, Handshake } from 'lucide-react';
 
 const TRANSACTION_FEE = 108;
 
@@ -12,7 +12,7 @@ const MemberTransactions = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [transactions, setTransactions]     = useState([]);
   const [memberLoans, setMemberLoans]       = useState([]);
-  const [chamaaStatus, setChamaaStatus]     = useState(null); // null | 'paid' | 'unpaid' | 'not_in_chamaa'
+  const [chamaaUnpaid, setChamaaUnpaid]     = useState(null); // null = not in chamaa, 0 = paid, N = unpaid months × contribution
   const [memberStats, setMemberStats]       = useState(null);
   const [guaranteedLoans, setGuaranteedLoans] = useState([]);
   const [loading, setLoading]               = useState(false);
@@ -36,7 +36,7 @@ const MemberTransactions = () => {
       setTransactions([]);
       setMemberLoans([]);
       setMemberStats(null);
-      setChamaaStatus(null);
+      setChamaaUnpaid(null);
       setGuaranteedLoans([]);
 
       const year = new Date().getFullYear();
@@ -115,25 +115,28 @@ const MemberTransactions = () => {
       const statMembers = statRes.status === 'fulfilled' ? statRes.value.data.members || [] : [];
       const statRecord  = statMembers.find(m => String(m.id) === String(memberId));
 
-      // Process chamaa payments report — find this member's status for current month
+      // Process chamaa payments report — calculate cumulative unpaid amount
+      // For each month the member hasn't paid, the contribution amount accumulates.
+      // This makes the negative figure grow over time if they keep missing payments.
       if (chamaaRes.status === 'fulfilled') {
         const details   = chamaaRes.value.data.details || [];
         const memberIdN = parseInt(memberId);
-        // details[] has one row per member; find this member
         const memberRow = details.find(d => Number(d.id) === memberIdN);
 
-        if (!memberRow) {
-          // Member not in chamaa at all
-          setChamaaStatus('not_in_chamaa');
-        } else if (!memberRow.hasActiveChamaa) {
-          setChamaaStatus('not_in_chamaa');
+        if (!memberRow || !memberRow.hasActiveChamaa) {
+          setChamaaUnpaid(null); // not in chamaa — hide row
         } else if (memberRow.paid) {
-          setChamaaStatus(memberRow.isLate ? 'paid_late' : 'paid');
+          setChamaaUnpaid(0); // paid this month
         } else {
-          setChamaaStatus('unpaid');
+          // Unpaid: accumulate per month missed
+          // unpaidMonths comes from the report (how many consecutive months unpaid)
+          // Fall back to 1 if not provided (at minimum current month)
+          const contribution  = Number(memberRow.contributionAmount || memberRow.contribution || 2030);
+          const unpaidMonths  = Number(memberRow.unpaidMonths || memberRow.monthsMissed || 1);
+          setChamaaUnpaid(contribution * unpaidMonths);
         }
       } else {
-        setChamaaStatus('not_in_chamaa');
+        setChamaaUnpaid(null);
       }
 
       setMemberStats({
@@ -318,34 +321,15 @@ const MemberTransactions = () => {
                     </div>
                   ))}
 
-                  {/* Chamaa this month — from payments report */}
-                  {chamaaStatus && chamaaStatus !== 'not_in_chamaa' && (() => {
-                    const now   = new Date();
-                    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-                    const monthLabel  = MONTH_NAMES[now.getMonth()];
-
-                    const cfg = {
-                      paid:      { bg: '#e8f5e9', color: '#2e7d32', label: 'Paid',      Icon: CheckCircle2 },
-                      paid_late: { bg: '#fff3e0', color: '#e65100', label: 'Paid Late', Icon: CheckCircle2 },
-                      unpaid:    { bg: '#ffebee', color: '#c62828', label: 'Unpaid',    Icon: AlertCircle  },
-                    }[chamaaStatus] || { bg: '#f5f5f5', color: '#999', label: 'Unknown', Icon: AlertCircle };
-
-                    return (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>
-                          Chamaa — {monthLabel}
-                        </span>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          fontSize: '12px', fontWeight: 700,
-                          padding: '2px 10px', borderRadius: '10px',
-                          background: cfg.bg, color: cfg.color,
-                        }}>
-                          <cfg.Icon size={11} /> {cfg.label}
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  {/* Chamaa unpaid — shows negative cumulative amount, hidden when paid or not in chamaa */}
+                  {chamaaUnpaid !== null && chamaaUnpaid > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
+                      <span style={{ fontSize: '12px', color: '#666' }}>Chamaa</span>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#c62828' }}>
+                        -{formatCurrency(chamaaUnpaid)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Loan cards */}
