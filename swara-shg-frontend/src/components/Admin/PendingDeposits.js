@@ -176,6 +176,16 @@ const PendingDeposits = () => {
       <ConfirmDialog />
 
       <div className="pending-deposits-page">
+        {/* Mobile override: ensure member names never get clipped */}
+        <style>{`
+          @media (max-width: 480px) {
+            .deposit-header { padding: 12px !important; gap: 8px !important; }
+            .member-name    { font-size: 14px !important; }
+            .total-amount   { font-size: 14px !important; }
+            .mpesa-tag      { font-size: 9px !important; }
+            .expand-btn     { padding: 2px !important; }
+          }
+        `}</style>
         <Link to="/admin/dashboard" className="back-link">← Dashboard</Link>
 
         <div className="page-header">
@@ -217,29 +227,40 @@ const PendingDeposits = () => {
                         setExpandedDeposit(isExpanded ? null : deposit.id);
                         setEditMode(null);
                       }}
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '14px',
+                        cursor: 'pointer',
+                      }}
                     >
-                      {/* Left: avatar + name/date */}
-                      <div className="member-info">
-                        <span className="member-icon">
+                      {/* Left: avatar + name/date — takes all available space */}
+                      <div className="member-info" style={{ display:'flex', alignItems:'center', gap:'10px', flex:'1 1 0', minWidth:0 }}>
+                        <span className="member-icon" style={{ flexShrink:0 }}>
                           <User size={20} color="white" />
                         </span>
-                        <div className="member-text">
-                          <h3 className="member-name">
+                        <div className="member-text" style={{ minWidth:0 }}>
+                          <h3 className="member-name" style={{
+                            margin:0, fontSize:'15px', fontWeight:700, color:'#1a1a2e',
+                            whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                          }}>
                             {deposit.member
                               ? `${deposit.member.firstName} ${deposit.member.lastName}`
                               : 'Unknown Member'}
                           </h3>
-                          <p className="deposit-date">
+                          <p className="deposit-date" style={{ margin:'2px 0 0', fontSize:'11px', color:'#888', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                             {fmtDate(deposit.createdAt)}
                           </p>
                         </div>
                       </div>
 
                       {/* Right: amount + code + note indicator + chevron */}
-                      <div className="header-right">
-                        <div className="amount-block">
-                          <p className="total-amount">{fmt(deposit.totalAmount)}</p>
-                          <span className="mpesa-tag">Code: {deposit.mpesaCode}</span>
+                      <div className="header-right" style={{ display:'flex', alignItems:'center', gap:'8px', flexShrink:0 }}>
+                        <div className="amount-block" style={{ textAlign:'right' }}>
+                          <p className="total-amount" style={{ margin:0, fontSize:'15px', fontWeight:800, color:'#1a1a2e' }}>{fmt(deposit.totalAmount)}</p>
+                          <span className="mpesa-tag" style={{ fontSize:'10px', color:'#888', display:'block', marginTop:'2px' }}>Code: {deposit.mpesaCode}</span>
                           {/* Show a note pill in header if member left a note */}
                           {memberNotes && (
                             <span style={{
@@ -250,11 +271,11 @@ const PendingDeposits = () => {
                               borderRadius: '10px', padding: '2px 8px',
                               marginTop: '4px',
                             }}>
-                              <MessageSquare size={9} /> Note from member
+                              <MessageSquare size={9} /> Note
                             </span>
                           )}
                         </div>
-                        <button className="expand-btn" aria-label="Toggle details">
+                        <button className="expand-btn" aria-label="Toggle details" style={{ flexShrink:0, background:'none', border:'none', cursor:'pointer', padding:'4px' }}>
                           {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </button>
                       </div>
