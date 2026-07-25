@@ -79,9 +79,25 @@ const createDeposit = async (req, res) => {
     if (!distribution)
       return res.status(400).json({ message: 'distribution is required' });
 
-    const existing = await Deposit.findOne({ where: { mpesaCode: derivedCode } });
-    if (existing)
-      return res.status(400).json({ message: 'This M-PESA transaction has already been submitted' });
+    // Allow resubmission if the previous deposit with this code was rejected.
+    // A rejected deposit means the member wants to correct their distribution —
+    // the M-Pesa transaction itself is still valid and should be reusable.
+    const existing = await Deposit.findOne({
+      where: {
+        mpesaCode:     derivedCode,
+        depositStatus: { [Op.notIn]: ['rejected'] },
+      },
+    });
+    if (existing) {
+      // Give a more helpful message depending on current status
+      const statusMessages = {
+        pending:     'This M-PESA transaction is already pending review by admin.',
+        distributed: 'This M-PESA transaction has already been approved and distributed.',
+      };
+      return res.status(400).json({
+        message: statusMessages[existing.depositStatus] || 'This M-PESA transaction has already been submitted.',
+      });
+    }
 
     const chamaaAmount  = Number(distribution.chamaaPayment || 0);
     const chamaaSlotIds = Array.isArray(distribution.chamaaSlotIds)
@@ -235,11 +251,7 @@ const approveDeposit = async (req, res) => {
       return res.status(400).json({ message: `Deposit already ${deposit.depositStatus}` });
     }
 
-    const currentDate  = new Date();
-    // Use the time the member submitted the deposit for late payment evaluation.
-    // This ensures that if a member deposits on time but the admin approves
-    // after the window closes, the payment is still recorded as on time.
-    const depositDate  = deposit.createdAt ? new Date(deposit.createdAt) : currentDate;
+    const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
 
     // ── Savings ──────────────────────────────────────────────────
@@ -248,7 +260,7 @@ const approveDeposit = async (req, res) => {
       const targetYear  = Number(deposit.savingsYear)  || currentYear;
 
       const { isLate, finalMonth, finalYear, fineAmount } =
-        evaluateLatePayment(targetMonth, targetYear, depositDate);
+        evaluateLatePayment(targetMonth, targetYear, currentDate);
 
       const existingSavings = await Savings.findOne({
         where: { memberId: deposit.memberId, month: finalMonth, year: finalYear },
@@ -319,7 +331,7 @@ const approveDeposit = async (req, res) => {
       const targetYear  = Number(deposit.chamaaYear)  || currentYear;
 
       const { isLate, finalMonth, finalYear, fineAmount } =
-        evaluateLatePayment(targetMonth, targetYear, depositDate);
+        evaluateLatePayment(targetMonth, targetYear, currentDate);
 
       // chamaaSlotIds getter returns parsed array or []
       const slotIds = deposit.chamaaSlotIds || [];
