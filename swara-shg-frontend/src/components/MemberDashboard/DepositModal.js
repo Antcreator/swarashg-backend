@@ -470,10 +470,15 @@ const DepositModal = ({
     } catch (err) {
       const data = err.response?.data;
       const msg  = data?.message || err.message || 'Failed to submit deposit';
-      if (data?.code === 'DUPLICATE_OWN' || data?.code === 'DUPLICATE_OTHER') {
+
+      // If the transaction was previously rejected, this shouldn't happen anymore
+      // (backend now allows resubmission of rejected codes). But for any other
+      // duplicate (pending or distributed), guide the member.
+      const isDuplicate = msg.toLowerCase().includes('already') || msg.toLowerCase().includes('pending review');
+      if (isDuplicate) {
         setStep(1);
         setErrors(prev => ({ ...prev, mpesaMessage: msg }));
-        toast.warning('Duplicate Transaction', msg);
+        toast.warning('Transaction Already Submitted', msg);
       } else {
         toast.error('Submission Failed', msg);
       }
