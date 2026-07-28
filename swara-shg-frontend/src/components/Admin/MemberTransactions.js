@@ -115,25 +115,32 @@ const MemberTransactions = () => {
       const statMembers = statRes.status === 'fulfilled' ? statRes.value.data.members || [] : [];
       const statRecord  = statMembers.find(m => String(m.id) === String(memberId));
 
-      // Process chamaa payments report — calculate cumulative unpaid amount
-      // For each month the member hasn't paid, the contribution amount accumulates.
-      // This makes the negative figure grow over time if they keep missing payments.
+      // Process chamaa payments report — determine paid/unpaid for current month
+      // Response: { details: [{ id, hasActiveChamaa, paid, isLate, amount, slots, status }] }
       if (chamaaRes.status === 'fulfilled') {
         const details   = chamaaRes.value.data.details || [];
         const memberIdN = parseInt(memberId);
         const memberRow = details.find(d => Number(d.id) === memberIdN);
 
         if (!memberRow || !memberRow.hasActiveChamaa) {
-          setChamaaUnpaid(null); // not in chamaa — hide row
+          // Member not in any active chamaa cycle
+          setChamaaUnpaid(null);
         } else if (memberRow.paid) {
-          setChamaaUnpaid(0); // paid this month
+          // Paid this month — show amount paid (positive)
+          setChamaaUnpaid(0);
         } else {
-          // Unpaid: accumulate per month missed
-          // unpaidMonths comes from the report (how many consecutive months unpaid)
-          // Fall back to 1 if not provided (at minimum current month)
-          const contribution  = Number(memberRow.contributionAmount || memberRow.contribution || 2030);
-          const unpaidMonths  = Number(memberRow.unpaidMonths || memberRow.monthsMissed || 1);
-          setChamaaUnpaid(contribution * unpaidMonths);
+          // Not paid — calculate how many months overdue × contribution per slot
+          // slots[] each have the cycle's expected contribution
+          // Use the report month to count months since cycle started
+          const slots        = memberRow.slots || [];
+          const CONTRIBUTION = 2030; // default per slot per month
+          const totalSlots   = slots.length || 1;
+
+          // 1 missed month per slot for the current report month.
+          // Each subsequent month this runs, the accumulation grows automatically.
+          const totalUnpaid = totalSlots * CONTRIBUTION;
+
+          setChamaaUnpaid(totalUnpaid);
         }
       } else {
         setChamaaUnpaid(null);
@@ -321,13 +328,26 @@ const MemberTransactions = () => {
                     </div>
                   ))}
 
-                  {/* Chamaa unpaid — shows negative cumulative amount, hidden when paid or not in chamaa */}
-                  {chamaaUnpaid !== null && chamaaUnpaid > 0 && (
+                  {/* Chamaa this month — shows for all chamaa members */}
+                  {chamaaUnpaid !== null && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
                       <span style={{ fontSize: '12px', color: '#666' }}>Chamaa</span>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#c62828' }}>
-                        -{formatCurrency(chamaaUnpaid)}
-                      </span>
+                      {chamaaUnpaid === 0 ? (
+                        // Paid — show green "Paid"
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontSize: '12px', fontWeight: 700,
+                          padding: '2px 10px', borderRadius: '10px',
+                          background: '#e8f5e9', color: '#2e7d32',
+                        }}>
+                          Paid
+                        </span>
+                      ) : (
+                        // Unpaid — show negative amount in red
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#c62828' }}>
+                          -{formatCurrency(chamaaUnpaid)}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
