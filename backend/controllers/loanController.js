@@ -6,6 +6,32 @@ const { sendEmail }  = require('../services/emailService');
 const emailTemplates = require('../services/emailTemplates');
 const { countAcceptedActiveGuarantees } = require('./guarantorController');
 
+// ─── Check mutual guarantor conflict ────────────────────────────
+// Returns true if proposedGuarantorId is currently guaranteeing a loan
+// for memberId — which would create a mutual guarantee (A guarantees B,
+// B guarantees A), which is not allowed.
+const hasMutualGuaranteeConflict = async (memberId, proposedGuarantorId) => {
+  // Check: does proposedGuarantor already have memberId as their guarantor?
+  // i.e. is memberId guaranteeing any active/pending loan for proposedGuarantorId?
+  const conflict = await LoanGuarantor.findOne({
+    where: {
+      guarantorId:    memberId,             // memberId is the guarantor
+      approvalStatus: { [Op.in]: ['pending', 'accepted', 'admin_override'] },
+    },
+    include: [{
+      model: Loan,
+      as:    'loan',
+      where: {
+        memberId:       proposedGuarantorId, // of proposedGuarantor's loan
+        approvalStatus: { [Op.in]: ['pending', 'approved'] },
+        status:         { [Op.notIn]: ['paid', 'rejected', 'topped_up'] },
+      },
+      required: true,
+    }],
+  });
+  return !!conflict;
+};
+
 const LOAN_TIERS = [
   { minAmount: 0,      maxAmount: 19999,    name: 'Tier 1', durations: [{ months: 1, interestRate: 7 }] },
   { minAmount: 20000,  maxAmount: 49999,    name: 'Tier 2', durations: [{ months: 1, interestRate: 7 }, { months: 2, interestRate: 8.5 }] },
@@ -321,6 +347,14 @@ const applyForLoan = async (req, res) => {
         const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
         if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES) return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });
       } catch (countError) { console.error('Error counting guarantees:', countError); }
+      // Mutual guarantee check: if the applicant is already guaranteeing a loan
+      // for this proposed guarantor, block it (A guarantees B ↔ B guarantees A)
+      const isMutual = await hasMutualGuaranteeConflict(memberId, gId);
+      if (isMutual) {
+        return res.status(400).json({
+          message: `${guarantor.firstName} ${guarantor.lastName} cannot guarantee your loan because you are already guaranteeing one of their loans.`,
+        });
+      }
     }
     const loan = await Loan.create({ memberId, amount: Math.round(Number(amount)), interestRate, durationMonths, disbursementDate: new Date(), dueDate: new Date(), remainingBalance: totalRepayment, status: 'pending', approvalStatus: 'pending', transactionFee: txFee });
     const { createNotification } = require('./notificationController');
@@ -745,6 +779,13 @@ const requestTopUp = async (req, res) => {
       const guarantor = await Member.findOne({ where: { id: gId, isActive: true } }); if (!guarantor) return res.status(400).json({ message: `Guarantor ID ${gId} not found or inactive` });
       const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
       if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES) return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });
+      // Mutual guarantee check
+      const isMutual = await hasMutualGuaranteeConflict(memberId, gId);
+      if (isMutual) {
+        return res.status(400).json({
+          message: `${guarantor.firstName} ${guarantor.lastName} cannot guarantee your loan because you are already guaranteeing one of their loans.`,
+        });
+      }
     }
     const topUpLoan = await Loan.create({ memberId, amount: newTotalAmount, originalLoanId: activeLoan.id, topUpAmount: newTotalAmount, previousBalance: currentBalance, amountDisbursed, durationMonths, interestRate, transactionFee: txFee, totalRepayment: newTotalRepayment, remainingBalance: newTotalRepayment, approvalStatus: 'pending', status: 'pending', loanType: 'top_up', disbursementDate: new Date(), dueDate: new Date() });
     activeLoan.status = 'topped_up'; activeLoan.toppedUpBy = topUpLoan.id; await activeLoan.save();
@@ -775,6 +816,47 @@ const getMaxLoan = async (req, res) => {
     if (Statutory) { try { const record = await Statutory.findOne({ where: { memberId, year: new Date().getFullYear() }, attributes: ['statutoryFee'] }); statutoryFee = record ? Math.round(Number(record.statutoryFee)) : 0; } catch (e) {} }
     return res.json({ totalSavings, statutoryFee, maxLoan });
   } catch (error) { console.error('Get max loan error:', error); return res.status(500).json({ message: 'Failed to calculate max loan' }); }
+};
+
+// ─── GET /loans/check-mutual-guarantor ───────────────────────────
+// Returns list of member IDs that cannot be guarantors for memberId
+// because memberId is already guaranteeing their loan.
+// Used by the frontend to disable those members in the selector.
+const getMutualGuarantorConflicts = async (req, res) => {
+  const { memberId } = req.params;
+  try {
+    // Find all loans where memberId is a guarantor (active/pending)
+    const guarantorRecords = await LoanGuarantor.findAll({
+      where: {
+        guarantorId:    memberId,
+        approvalStatus: { [Op.in]: ['pending', 'accepted', 'admin_override'] },
+      },
+      include: [{
+        model: Loan,
+        as:    'loan',
+        where: {
+          approvalStatus: { [Op.in]: ['pending', 'approved'] },
+          status:         { [Op.notIn]: ['paid', 'rejected', 'topped_up'] },
+        },
+        required: true,
+        include:  [{ model: Member, as: 'member', attributes: ['id', 'firstName', 'lastName'] }],
+      }],
+    });
+
+    // The conflicted members are the borrowers of those loans
+    const conflicts = guarantorRecords.map(g => ({
+      memberId:   g.loan.memberId,
+      memberName: g.loan.member
+        ? `${g.loan.member.firstName} ${g.loan.member.lastName}`
+        : `Member #${g.loan.memberId}`,
+      reason: 'You are already guaranteeing their loan',
+    }));
+
+    return res.json({ conflicts, conflictedMemberIds: conflicts.map(c => c.memberId) });
+  } catch (error) {
+    console.error('Get mutual guarantor conflicts error:', error);
+    return res.status(500).json({ message: 'Failed to check conflicts', error: error.message });
+  }
 };
 
 // ─── GET /loans/arrears-stats ────────────────────────────────────
@@ -859,5 +941,7 @@ module.exports = {
   processDefaultLoan, recordGuarantorPayment, notifyMemberArrears, notifyMemberDefault,
   notifyGuarantorLiability, checkLoanEligibility, requestTopUp, getMaxLoan,
   getArrearsStats,
+  hasMutualGuaranteeConflict,
+  getMutualGuarantorConflicts,
   MAX_ACTIVE_GUARANTEES, LOAN_TIERS, OFFICE_GUARANTOR_ID, OFFICE_GUARANTOR_NAME,
 };

@@ -13,6 +13,7 @@ router.get ('/eligibility/:memberId',          loanController.checkLoanEligibili
 router.get ('/max-loan/:memberId',             loanController.getMaxLoan);
 router.get ('/guaranteed/:memberId',           loanController.getGuaranteedLoans);
 router.get ('/:id/guarantor-status',           loanController.getLoanGuarantorStatus);
+router.get('/check-mutual-guarantor/:memberId', authenticateToken, loanController.getMutualGuarantorConflicts);
 router.get ('/',                               loanController.getAllLoans);
 router.get ('/:id',                            loanController.getLoanById);
 
