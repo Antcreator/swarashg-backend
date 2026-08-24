@@ -87,6 +87,7 @@ export const loansAPI = {
     api.post(`/loans/guarantor-requests/${guarantorId}/respond`, { response, reason }),
   getLoanGuarantorStatus:    (loanId)                        => api.get(`/loans/${loanId}/guarantor-status`),
   replaceGuarantor:          (loanId, data)                  => api.post(`/loans/${loanId}/replace-guarantor`, data),
+  getMutualGuarantorConflicts: (memberId)                    => api.get(`/loans/check-mutual-guarantor/${memberId}`),
   checkEligibility:          (memberId)                      => api.get(`/loans/eligibility/${memberId}`),
   requestTopUp:              (topUpData)                     => api.post('/loans/top-up', topUpData),
   getMaxLoan:                (memberId)                      => api.get(`/loans/max-loan/${memberId}`),
