@@ -419,6 +419,31 @@ const loanRejected = (member, loan) => ({
   `, { accentColor: T.red, badgeLabel: 'Loan Rejected' }),
 });
 
+// ─────────────────────────────────────────────────────────────
+//  Top-up rejection — distinct from a regular loan rejection
+//  because the member already has an active loan that reverted
+//  from 'topped_up' back to 'active'/'arrears' when this top-up
+//  was declined. This template clarifies that the original loan
+//  is untouched and still needs to be repaid on its own terms.
+// ─────────────────────────────────────────────────────────────
+const loanTopUpRejected = (member, topUpLoan, originalLoan) => ({
+  subject: `Top-Up Request Rejected`,
+  html: layout(`
+    ${greeting(member.firstName)}
+    ${para(`Your request to top up your loan to <strong style="color:${T.ink}">${fmt(topUpLoan.amount)}</strong> has been <strong style="color:${T.red}">rejected</strong>.`)}
+    ${dataTable([
+      ['Requested Top-Up Amount', fmt(topUpLoan.amount)],
+      ['Reason',                  topUpLoan.rejectionReason || 'Not specified'],
+    ], { accentColor: T.red, bgColor: T.redBg, borderColor: T.redBorder })}
+    ${alert(
+      'Your Original Loan Remains Active',
+      `Your original loan was not affected by this rejection. It remains ${originalLoan.status === 'arrears' ? 'in <strong>arrears</strong>' : '<strong>active</strong>'} with a remaining balance of ${fmt(originalLoan.remainingBalance)}, due on ${fd(originalLoan.dueDate)}.`,
+      { color: T.blue, bg: T.blueBg, border: T.blueBorder, icon: 'ℹ️' }
+    )}
+    ${cta('Please continue making payments on your original loan as scheduled. Contact the administrator for more information about this decision.')}
+  `, { accentColor: T.red, badgeLabel: 'Top-Up Rejected' }),
+});
+
 const loanPaymentRecorded = (member, payment, loan) => {
   const fullyPaid = loan.remainingBalance <= 0;
   return {
@@ -621,6 +646,7 @@ module.exports = {
   loanApplied,
   loanApproved,
   loanRejected,
+  loanTopUpRejected,
   loanPaymentRecorded,
   loanArrears,
   loanDefault,

@@ -449,6 +449,22 @@ const rejectLoan = async (req, res) => {
     if (loan.approvalStatus !== 'pending') return res.status(400).json({ message: `Loan already ${loan.approvalStatus}` });
     loan.approvalStatus = 'rejected'; loan.status = 'rejected'; loan.approvedBy = adminUserId; loan.approvedAt = new Date(); loan.rejectionReason = reason || 'No reason provided';
     await loan.save();
+
+    // If this was a top-up request, the original loan was flipped to 'topped_up'
+    // status at request time (see requestTopUp). Since the top-up never got
+    // approved, restore the original loan so it isn't left stranded in limbo
+    // (which would also make checkLoanEligibility wrongly report canApply: true).
+    if (loan.loanType === 'top_up' && loan.originalLoanId) {
+      const originalLoan = await Loan.findByPk(loan.originalLoanId);
+      if (originalLoan && originalLoan.status === 'topped_up') {
+        // Recompute active vs arrears from the due date; updateLoanStatus will
+        // correct penalty/balance details on the next status-sync pass regardless.
+        originalLoan.status = new Date() > new Date(originalLoan.dueDate) ? 'arrears' : 'active';
+        originalLoan.toppedUpBy = null;
+        await originalLoan.save();
+      }
+    }
+
     const memberWithEmail = await getMemberWithEmail(loan.memberId);
     if (memberWithEmail?.user?.email) { try { sendEmail({ to: memberWithEmail.user.email, ...emailTemplates.loanRejected(memberWithEmail, loan.toJSON()) }); } catch (emailErr) { console.error('Failed to send loan rejection email:', emailErr.message); } }
     return res.json({ message: `Loan rejected for ${loan.member.firstName} ${loan.member.lastName}.`, loan });
