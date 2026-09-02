@@ -63,6 +63,30 @@ const getLiabilityPerGuarantor = (amount, interestRate, transactionFee) => {
   return (totalRepayment - oneShare) / n;
 };
 
+// ─── Count active/pending guarantees for a member ────────────────
+// Returns the number of loans (active, arrears, or pending) for which
+// this member is currently a guarantor with status 'pending' or 'accepted'.
+// Used by loanController (applyForLoan / requestTopUp) to enforce the
+// MAX_ACTIVE_GUARANTEES cap before letting someone be added as a guarantor.
+//
+// Mirrors the inline logic already used in getEligibleGuarantors /
+// checkGuarantorEligibility below — kept as a standalone export so other
+// controllers (loanController.js) can reuse it without duplicating the query.
+const countAcceptedActiveGuarantees = async (memberId) => {
+  return await LoanGuarantor.count({
+    where: {
+      guarantorId:    memberId,
+      approvalStatus: { [Op.in]: ['pending', 'accepted'] },
+    },
+    include: [{
+      model:    Loan,
+      as:       'loan',
+      where:    { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
+      required: true,
+    }],
+  });
+};
+
 // ─── GET /guarantors/eligible ────────────────────────────────────
 const getEligibleGuarantors = async (req, res) => {
   const { loanAmount, excludeMemberId } = req.query;
@@ -92,18 +116,7 @@ const getEligibleGuarantors = async (req, res) => {
         ) || 0;
 
         // Count pending + accepted guarantees across active/arrears/pending loans
-        const activeGuaranteeCount = await LoanGuarantor.count({
-          where: {
-            guarantorId:    member.id,
-            approvalStatus: { [Op.in]: ['pending', 'accepted'] },
-          },
-          include: [{
-            model:    Loan,
-            as:       'loan',
-            where:    { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
-            required: true,
-          }],
-        });
+        const activeGuaranteeCount = await countAcceptedActiveGuarantees(member.id);
 
         // Fetch accepted guarantees to calculate existing liabilities
         let activeGuarantees = [];
@@ -207,18 +220,7 @@ const checkGuarantorEligibility = async (req, res) => {
     ) || 0;
 
     // Count pending + accepted guarantees across active/arrears/pending loans
-    const activeGuaranteeCount = await LoanGuarantor.count({
-      where: {
-        guarantorId:    Number(guarantorId),
-        approvalStatus: { [Op.in]: ['pending', 'accepted'] },
-      },
-      include: [{
-        model:    Loan,
-        as:       'loan',
-        where:    { status: { [Op.in]: ['active', 'arrears', 'pending'] } },
-        required: true,
-      }],
-    });
+    const activeGuaranteeCount = await countAcceptedActiveGuarantees(Number(guarantorId));
 
     let activeGuarantees = [];
     try {
@@ -290,4 +292,9 @@ const checkGuarantorEligibility = async (req, res) => {
   }
 };
 
-module.exports = { getEligibleGuarantors, checkGuarantorEligibility, MAX_ACTIVE_GUARANTEES };
+module.exports = {
+  getEligibleGuarantors,
+  checkGuarantorEligibility,
+  countAcceptedActiveGuarantees,
+  MAX_ACTIVE_GUARANTEES,
+};

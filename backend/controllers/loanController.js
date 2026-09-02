@@ -777,8 +777,14 @@ const requestTopUp = async (req, res) => {
       if (Number(gId) === Number(memberId)) return res.status(400).json({ message: 'You cannot guarantee yourself' });
       if (Number(gId) === OFFICE_GUARANTOR_ID) continue;
       const guarantor = await Member.findOne({ where: { id: gId, isActive: true } }); if (!guarantor) return res.status(400).json({ message: `Guarantor ID ${gId} not found or inactive` });
-      const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
-      if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES) return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });
+      // NOTE: wrapped in try/catch (mirrors applyForLoan) so a failure in this
+      // helper degrades to "skip the cap check" instead of 500ing the whole
+      // top-up request. The underlying bug (countAcceptedActiveGuarantees was
+      // missing from guarantorController.js's exports) is now fixed there too.
+      try {
+        const activeGuaranteeCount = await countAcceptedActiveGuarantees(gId);
+        if (activeGuaranteeCount >= MAX_ACTIVE_GUARANTEES) return res.status(400).json({ message: `${guarantor.firstName} ${guarantor.lastName} has already guaranteed ${MAX_ACTIVE_GUARANTEES} active loans` });
+      } catch (countError) { console.error('Error counting guarantees:', countError); }
       // Mutual guarantee check
       const isMutual = await hasMutualGuaranteeConflict(memberId, gId);
       if (isMutual) {
