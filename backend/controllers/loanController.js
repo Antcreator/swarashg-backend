@@ -88,6 +88,14 @@ const getRequiredGuarantors = (amount) => Number(amount) < 80000 ? 3 : 5;
 const formatCurrency = (amt) =>
   new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(amt || 0);
 
+// ── Extract numeric ID from a loan id that may be formatted as "LN016" ────────
+// loan.id could be the raw integer (16) or a formatted string ("LN016").
+// Always returns the integer for use in foreign keys / referenceId columns.
+const getLoanNumericId = (id) => {
+  const n = Number(String(id).replace(/\D/g, ''));
+  return isNaN(n) ? id : n;
+};
+
 // ─── Update loan status ──────────────────────────────────────────
 // Arrears penalty = 5% × REMAINING PRINCIPAL per month.
 //
@@ -161,7 +169,7 @@ const updateLoanStatus = async (loan) => {
 
     try {
       const existingFine = await Fine.findOne({
-        where: { memberId: loan.memberId, fineType: 'loan_arrears', month: currentMonth, year: currentYear, referenceId: parseInt(loan.id) },
+        where: { memberId: loan.memberId, fineType: 'loan_arrears', month: currentMonth, year: currentYear, referenceId: getLoanNumericId(loan.id) },
       });
 
       if (!existingFine) {
@@ -172,7 +180,7 @@ const updateLoanStatus = async (loan) => {
           month:       currentMonth,
           year:        currentYear,
           isPaid:      false,
-          referenceId: parseInt(loan.id),
+          referenceId: getLoanNumericId(loan.id),
           notes: `Arrears penalty: 5% of balance ${formatCurrency(baseBalance)} ` +
                  `(Loan #${loan.id}, month ${monthsOverdue} of arrears) ` +
                  `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear}`,
@@ -204,7 +212,7 @@ const updateLoanStatus = async (loan) => {
 const clearMemberSavingsForDefault = async (memberId, loanId) => {
   try {
     const totalSavings = await Savings.sum('amount', { where: { memberId, isPaid: true } }) || 0;
-    await Fine.create({ memberId, fineType: 'loan_default', amount: Math.round(totalSavings), referenceId: parseInt(loanId), notes: `All savings cleared due to loan default (Loan ID: ${loanId})` });
+    await Fine.create({ memberId, fineType: 'loan_default', amount: Math.round(totalSavings), referenceId: getLoanNumericId(loanId), notes: `All savings cleared due to loan default (Loan ID: ${loanId})` });
     await Savings.update({ isPaid: false, notes: sequelize.fn('CONCAT', sequelize.col('notes'), ` - Cleared due to loan default (Loan ID: ${loanId})`) }, { where: { memberId, isPaid: true } });
   } catch (error) { console.error('Error clearing savings for default:', error); }
 };
