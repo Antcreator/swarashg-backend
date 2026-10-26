@@ -153,9 +153,9 @@ const updateLoanStatus = async (loan) => {
     //   Loan 40,000 → pays 5,000 → balance 35,000 → penalty 1,750 → total 36,750
     //   Then pays 10,000 → balance 26,750 → penalty 1,338 → total 28,088
     const monthlyRate    = 0.05;
-    const monthlyPenalty = Math.round(baseBalance * monthlyRate); // on current balance
     const monthsOverdue  = Math.ceil(daysPastDue / 30);
-    const totalPenalty   = Math.round(baseBalance * monthlyRate);  // 1 month penalty on current balance
+    const monthlyPenalty = Math.round(baseBalance * monthlyRate); // 5% of current balance per month
+    const totalPenalty   = Math.round(baseBalance * monthlyRate * monthsOverdue); // × months overdue
 
     loan.penaltyInterest  = totalPenalty;
     loan.remainingBalance = Math.round(baseBalance + totalPenalty);
@@ -899,7 +899,7 @@ const getArrearsStats = async (req, res) => {
       // ── PENALTY = 5% × CURRENT OUTSTANDING BALANCE ──────────────
       // Recalculates each time based on balance after latest payment.
       const monthlyPenalty  = Math.round(baseLoanBalance * 0.05);
-      const penaltyInterest = Math.round(baseLoanBalance * 0.05); // 1 month on current balance
+      const penaltyInterest = Math.round(baseLoanBalance * 0.05 * cappedMonths); // × months overdue
 
       totalPenalty += penaltyInterest;
 

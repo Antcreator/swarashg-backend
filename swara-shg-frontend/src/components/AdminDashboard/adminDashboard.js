@@ -26,7 +26,13 @@ const calcArrearsPenalty = (loan) => {
   const amountPaid   = Number(loan.amountPaid || 0);
   const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
   const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
-  return Math.round(baseLoanBalance * 0.05); // 5% of current balance
+  const now     = new Date();
+  const dueDate = new Date(loan.dueDate);
+  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
+  const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 1;
+  return Math.round(baseLoanBalance * 0.05 * months); // 5% × balance × months overdue
 };
 
 // Outstanding = totalRepayment + live arrears penalty
