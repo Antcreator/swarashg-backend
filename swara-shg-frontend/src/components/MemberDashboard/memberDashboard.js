@@ -336,8 +336,9 @@ const MemberDashboard = () => {
         }
 
         const cappedMonths    = Math.min(overdueMonths, 3);
-        const monthlyPenalty  = Math.round(principal * 0.05);
-        const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+        // Penalty = 5% × current outstanding balance
+        const monthlyPenalty  = Math.round(baseLoanBalance * 0.05);
+        const penaltyInterest = Math.round(baseLoanBalance * 0.05);
 
         setActiveLoan({
           ...overdueLoan,
@@ -555,19 +556,9 @@ const MemberDashboard = () => {
 
           {/* Arrears fine small card — only shown when in arrears/default */}
           {activeLoan && (activeLoan.status === 'arrears' || activeLoan.status === 'default') && (() => {
-            const principal      = Number(activeLoan.amount || 0);
-            const cappedMonths   = Math.min(
-              (() => {
-                if (!activeLoan.dueDate) return 0;
-                const now     = new Date();
-                const dueDate = new Date(activeLoan.dueDate);
-                const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-                const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-                const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-                return days > 0 ? Math.ceil(days / 30) : 0;
-              })(), 3
-            );
-            const penaltyInterest = Math.round(principal * 0.05 * cappedMonths);
+            // Use pre-calculated values from fetchActiveLoan (already in activeLoan object)
+            const penaltyInterest = activeLoan.penaltyInterest || 0;
+            const cappedMonths    = activeLoan.cappedMonths    || 0;
             return penaltyInterest > 0 ? (
               <div
                 className="stat-card small-card"

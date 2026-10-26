@@ -32,20 +32,7 @@ const Defaulters = () => {
         const totalRepayment  = originalPrincipal + totalInterest;
         const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
 
-        // ── Remaining principal ───────────────────────────────────
-        // Payments go to interest first, then principal.
-        // Examples (principal 100k, interest 20k):
-        //   Pays 0:   principalPaid = 0,  remainingPrincipal = 100k
-        //   Pays 10k: principalPaid = 0,  remainingPrincipal = 100k (10k < 20k interest)
-        //   Pays 40k: principalPaid = 20k, remainingPrincipal = 80k
-        //   Pays 64k: principalPaid = 44k, remainingPrincipal = 56k
-        const principalPaid      = Math.max(0, amountPaid - totalInterest);
-        const remainingPrincipal = Math.max(0, originalPrincipal - principalPaid);
-
         // ── Days / months overdue ─────────────────────────────────
-        // Compare date-only (strip time) so a loan due today is 0 days
-        // overdue and a loan due yesterday is 1 day overdue regardless
-        // of what time of day the admin is viewing the page.
         const dueDate = loan.dueDate ? new Date(loan.dueDate) : null;
         let overdueDays   = 0;
         let overdueMonths = 0;
@@ -55,21 +42,18 @@ const Defaulters = () => {
           const todayMs = Date.UTC(now.getFullYear(),     now.getMonth(),     now.getDate());
           const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
           overdueDays   = Math.max(0, Math.floor((todayMs - dueMs) / (1000 * 60 * 60 * 24)));
-          // Ceiling so day 1 = 1 month, day 31 = 2 months, etc.
           overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
         }
 
-        // Cap months at 3 for the arrears window; default loans still
-        // show actual months so admins can see how long they've been overdue
         const cappedMonths = loan.status === 'default'
           ? Math.max(overdueMonths, 3)
           : Math.min(overdueMonths, 3);
 
-        // ── Penalty: 5% per month on REMAINING PRINCIPAL ─────────
-        // Matches loanController.js exactly.
-        // Penalty is on remaining principal, not original principal.
-        const monthlyPenalty  = Math.round(remainingPrincipal * 0.05);
-        const penaltyInterest = Math.round(remainingPrincipal * 0.05 * cappedMonths);
+        // ── Penalty = 5% × current outstanding balance ──────────
+        // Recalculates after each payment. Balance goes down → penalty goes down.
+        // Example: 40k loan, pays 5k → balance 35k → penalty 1,750 → total 36,750
+        const monthlyPenalty  = Math.round(baseLoanBalance * 0.05);
+        const penaltyInterest = Math.round(baseLoanBalance * 0.05 * cappedMonths);
         const totalDue        = baseLoanBalance + penaltyInterest;
 
         return {
@@ -81,9 +65,6 @@ const Defaulters = () => {
           overdueMonths,
           cappedMonths,
           originalPrincipal,
-          remainingPrincipal,
-          principalPaid,
-          totalInterest,
           totalRepayment,
           amountPaid,
           baseLoanBalance,
@@ -195,7 +176,7 @@ const Defaulters = () => {
         {/* Summary cards */}
         <div className="summary-cards">
           <div className="summary-card danger">
-            <h3>Total</h3>
+            <h3>Total Defaulters</h3>
             <p className="count">{defaulters.length}</p>
           </div>
           <div className="summary-card danger">

@@ -85,27 +85,21 @@ const getAdminDisplayName = () => {
 
 // ── Arrears penalty: 5% × remaining principal × months overdue ───────────────
 // Payments clear interest first, then principal.
-// Matches loanController.js and Loans.jsx outstanding card exactly.
+// Penalty = 5% × current outstanding balance (recalculates after each payment).
+// Example: 40k loan, pays 5k → balance 35k → penalty 1,750 → total 36,750
+//          then pays 10k → balance 26,750 → penalty 1,338 → total 28,088
 const calcArrearsPenalty = (loan) => {
   if (loan.status !== 'arrears' && loan.status !== 'default') return 0;
   if (!loan.dueDate) return 0;
 
-  const principal      = Number(loan.amount || 0);
-  const interestRate   = Number(loan.interestRate || 0);
-  const txFee          = Number(loan.transactionFee ?? 108);
-  const amountPaid     = Number(loan.amountPaid || 0);
-  const totalInterest  = Math.round(principal * interestRate / 100) + txFee;
-  const principalPaid  = Math.max(0, amountPaid - totalInterest);
-  const remainingPrincipal = Math.max(0, principal - principalPaid);
+  const principal       = Number(loan.amount || 0);
+  const interestRate    = Number(loan.interestRate || 0);
+  const txFee           = Number(loan.transactionFee ?? 108);
+  const amountPaid      = Number(loan.amountPaid || 0);
+  const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
+  const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
 
-  const now     = new Date();
-  const dueDate = new Date(loan.dueDate);
-  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-  const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-  const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
-
-  return Math.round(remainingPrincipal * 0.05 * months);
+  return Math.round(baseLoanBalance * 0.05); // 5% of current balance
 };
 
 // ── Outstanding amount per loan — matches the "Total Outstanding" card ────────
@@ -390,7 +384,7 @@ const InvestmentPage = () => {
       <h1>Investment Records — ${year}</h1>
       <p style="color:#666;margin:0 0 14px">Generated: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} · Grand Total: ${fmtNum(grandTotal)}</p>
       <table><thead><tr>${theadCells}</tr></thead><tbody>${tbodyRows}${totalRow}</tbody></table>
-      <script>window.onload=()=>{window.print();}<script>
+      <script>window.onload=()=>{window.print();}</script>
     </body></html>`);
     win.document.close();
   };
