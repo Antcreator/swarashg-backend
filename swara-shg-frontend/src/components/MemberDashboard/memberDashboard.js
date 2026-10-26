@@ -53,9 +53,7 @@ const ArrearsBanner = ({ activeLoan }) => {
   } = activeLoan;
 
   const amountPaid = Number(activeLoan.amountPaid || 0);
-
-  const principal = Number(activeLoan.amount || 0);
-  const isDefault = activeLoan.status === 'default';
+  const isDefault  = activeLoan.status === 'default';
 
   const fc = (v) => new Intl.NumberFormat('en-KE', {
     style: 'currency', currency: 'KES', minimumFractionDigits: 0,
@@ -115,7 +113,7 @@ const ArrearsBanner = ({ activeLoan }) => {
             {fc(monthlyPenalty)}
           </div>
           <div style={{ fontSize:'10px', color:'#aaa', marginTop:'2px' }}>
-            5% of {fc(principal)}
+            5% of {fc(baseLoanBalance)}
           </div>
         </div>
 
@@ -301,9 +299,10 @@ const MemberDashboard = () => {
 
   // ── Fetch the member's active/arrears/default loan ─────────────
   // The loan data already includes dueDate, amount, amountPaid etc.
-  // so we can calculate the real-time penalty here without a
-  // separate API call — same formula as loanController.js and
-  // Defaulters.jsx: 5% × principal × months overdue (capped at 3).
+  // Fetch the member's active/arrears/default loan and calculate
+  // the real-time penalty: 5% × current outstanding balance.
+  // Uses remainingBalance from the API (already accounts for payments)
+  // rather than recalculating, to stay in sync with the admin side.
   const fetchActiveLoan = async () => {
     try {
       const res   = await loansAPI.getAll({ memberId: id });
@@ -316,13 +315,20 @@ const MemberDashboard = () => {
       );
 
       if (overdueLoan) {
-        // Enrich with real-time penalty calculation
         const principal    = Number(overdueLoan.amount || 0);
         const interestRate = Number(overdueLoan.interestRate || 0);
         const txFee        = Number(overdueLoan.transactionFee ?? TRANSACTION_FEE);
         const amountPaid   = Number(overdueLoan.amountPaid || 0);
         const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
-        const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
+
+        // baseLoanBalance = what's owed BEFORE adding penalty
+        // Use remainingBalance from API if available (it's authoritative),
+        // otherwise calculate from totalRepayment - amountPaid.
+        // Strip out any existing penaltyInterest so we don't double-count.
+        const existingPenalty = Number(overdueLoan.penaltyInterest || 0);
+        const baseLoanBalance = overdueLoan.remainingBalance != null
+          ? Math.max(0, Number(overdueLoan.remainingBalance) - existingPenalty)
+          : Math.max(0, totalRepayment - amountPaid);
 
         let overdueDays   = 0;
         let overdueMonths = 0;
@@ -335,10 +341,11 @@ const MemberDashboard = () => {
           overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
         }
 
-        const cappedMonths    = Math.min(overdueMonths, 3);
-        // Penalty = 5% × current outstanding balance
+        const cappedMonths = Math.min(overdueMonths, 3);
+
+        // Penalty = 5% × baseLoanBalance (current balance without penalty)
         const monthlyPenalty  = Math.round(baseLoanBalance * 0.05);
-        const penaltyInterest = Math.round(baseLoanBalance * 0.05);
+        const penaltyInterest = Math.round(baseLoanBalance * 0.05 * cappedMonths);
 
         setActiveLoan({
           ...overdueLoan,
