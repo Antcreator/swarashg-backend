@@ -321,43 +321,66 @@ const MemberTransactions = () => {
             )}
           </div>
 
-          {/* Filtered results count */}
-          {memberSearch.trim() && (
-            <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-              {members.filter(m =>
+          {/* Search results list — shown when typing */}
+          {memberSearch.trim() ? (
+            (() => {
+              const results = members.filter(m =>
                 `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
                 (m.phone || '').includes(memberSearch)
-              ).length} result(s) found
-            </p>
-          )}
-
-          {/* Member select dropdown */}
-          <div className="member-selector" style={{ margin: 0 }}>
-            <label>Select Member:</label>
-            <select
-              onChange={(e) => { fetchMemberTransactions(e.target.value); setMemberSearch(''); }}
-              value={selectedMember?.id || ''}
-            >
-              <option value="">-- Select a Member --</option>
-              {members
-                .filter(m =>
-                  !memberSearch.trim() ||
-                  `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
-                  (m.phone || '').includes(memberSearch)
-                )
-                .map(m => (
+              );
+              return results.length === 0 ? (
+                <p style={{ fontSize: '13px', color: '#c62828', margin: '0', padding: '10px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  ⚠ No members found for "{memberSearch}"
+                </p>
+              ) : (
+                <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', overflow: 'hidden', maxHeight: '240px', overflowY: 'auto' }}>
+                  <p style={{ fontSize: '11px', color: '#888', padding: '6px 12px', margin: 0, background: '#f9f9f9', borderBottom: '1px solid #eee' }}>
+                    {results.length} result{results.length !== 1 ? 's' : ''} — click to select
+                  </p>
+                  {results.map((m, i) => (
+                    <div
+                      key={m.id}
+                      onClick={() => { fetchMemberTransactions(m.id); setMemberSearch(''); }}
+                      style={{
+                        padding: '10px 14px', cursor: 'pointer',
+                        background: selectedMember?.id === m.id ? '#e3f2fd' : i % 2 === 0 ? 'white' : '#fafafa',
+                        borderBottom: '1px solid #f0f0f0',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f0f7ff'}
+                      onMouseLeave={e => e.currentTarget.style.background = selectedMember?.id === m.id ? '#e3f2fd' : i % 2 === 0 ? 'white' : '#fafafa'}
+                    >
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e' }}>
+                          {m.firstName} {m.lastName}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>{m.phone || '—'}</div>
+                      </div>
+                      {selectedMember?.id === m.id && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#1565c0', background: '#e3f2fd', padding: '2px 8px', borderRadius: '10px' }}>
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()
+          ) : (
+            /* Default dropdown when not searching */
+            <div className="member-selector" style={{ margin: 0 }}>
+              <label>Select Member:</label>
+              <select
+                onChange={(e) => fetchMemberTransactions(e.target.value)}
+                value={selectedMember?.id || ''}
+              >
+                <option value="">-- Select a Member --</option>
+                {members.map(m => (
                   <option key={m.id} value={m.id}>{m.firstName} {m.lastName} - {m.phone}</option>
                 ))}
-            </select>
-          </div>
-
-          {memberSearch.trim() && members.filter(m =>
-            `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
-            (m.phone || '').includes(memberSearch)
-          ).length === 0 && (
-            <p style={{ fontSize: '12px', color: '#c62828', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              ⚠ No members found for "{memberSearch}"
-            </p>
+              </select>
+            </div>
           )}
         </div>
 
