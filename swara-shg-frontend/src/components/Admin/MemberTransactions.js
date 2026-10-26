@@ -286,59 +286,77 @@ const MemberTransactions = () => {
           <p>View complete transaction history for any member</p>
         </div>
 
-        <div className="member-selector">
-          <label>Select Member:</label>
-          {/* Search input to filter the member dropdown */}
+        {/* ── Member Search + Select ── */}
+        <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#555', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Search Member
+          </label>
+
+          {/* Search input */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            background: 'white', border: '1.5px solid #e0e0e0',
-            borderRadius: '8px', padding: '8px 12px',
-            marginBottom: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: '#f8f9fa', border: '2px solid #e0e0e0',
+            borderRadius: '10px', padding: '10px 14px',
+            marginBottom: '12px', transition: 'border-color 0.2s',
           }}>
-            <Search size={14} color="#888" style={{ flexShrink: 0 }} />
+            <Search size={16} color="#1976d2" style={{ flexShrink: 0 }} />
             <input
               type="text"
-              placeholder="Search member by name or phone…"
+              placeholder="Type name or phone number to search…"
               value={memberSearch}
               onChange={e => setMemberSearch(e.target.value)}
               style={{
                 flex: 1, border: 'none', outline: 'none',
-                fontSize: '13px', background: 'transparent', color: '#1a1a2e',
+                fontSize: '14px', background: 'transparent',
+                color: '#1a1a2e', fontWeight: 500,
               }}
               autoComplete="off"
             />
             {memberSearch && (
-              <button onClick={() => setMemberSearch('')}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                <X size={13} color="#aaa" />
+              <button
+                onClick={() => setMemberSearch('')}
+                style={{ background: '#e0e0e0', border: 'none', cursor: 'pointer', padding: '3px 6px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', color: '#555', fontWeight: 600 }}>
+                <X size={11} /> Clear
               </button>
             )}
           </div>
-          <select
-            onChange={(e) => { fetchMemberTransactions(e.target.value); setMemberSearch(''); }}
-            value={selectedMember?.id || ''}
-            size={memberSearch ? Math.min(members.filter(m =>
-              `${m.firstName} ${m.lastName} ${m.phone}`.toLowerCase().includes(memberSearch.toLowerCase())
-            ).length + 1, 8) : 1}
-            style={{ width: '100%' }}
-          >
-            <option value="">-- Select a Member --</option>
-            {members
-              .filter(m =>
-                !memberSearch.trim() ||
+
+          {/* Filtered results count */}
+          {memberSearch.trim() && (
+            <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+              {members.filter(m =>
                 `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
                 (m.phone || '').includes(memberSearch)
-              )
-              .map(m => (
-                <option key={m.id} value={m.id}>{m.firstName} {m.lastName} - {m.phone}</option>
-              ))}
-          </select>
-          {memberSearch && members.filter(m =>
+              ).length} result(s) found
+            </p>
+          )}
+
+          {/* Member select dropdown */}
+          <div className="member-selector" style={{ margin: 0 }}>
+            <label>Select Member:</label>
+            <select
+              onChange={(e) => { fetchMemberTransactions(e.target.value); setMemberSearch(''); }}
+              value={selectedMember?.id || ''}
+            >
+              <option value="">-- Select a Member --</option>
+              {members
+                .filter(m =>
+                  !memberSearch.trim() ||
+                  `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
+                  (m.phone || '').includes(memberSearch)
+                )
+                .map(m => (
+                  <option key={m.id} value={m.id}>{m.firstName} {m.lastName} - {m.phone}</option>
+                ))}
+            </select>
+          </div>
+
+          {memberSearch.trim() && members.filter(m =>
             `${m.firstName} ${m.lastName}`.toLowerCase().includes(memberSearch.toLowerCase()) ||
             (m.phone || '').includes(memberSearch)
           ).length === 0 && (
-            <p style={{ fontSize: '12px', color: '#c62828', margin: '4px 0 0' }}>
-              No members found for "{memberSearch}"
+            <p style={{ fontSize: '12px', color: '#c62828', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              ⚠ No members found for "{memberSearch}"
             </p>
           )}
         </div>
