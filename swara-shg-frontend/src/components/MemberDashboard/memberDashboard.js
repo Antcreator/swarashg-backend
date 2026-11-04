@@ -268,12 +268,24 @@ const MemberDashboard = () => {
     } catch { /* silent */ }
   };
 
+  // AGM fee paid this year — this member's own contributions from the admin
+  // AGM Fees records (manual + deposit-sourced). Member-scoped endpoint, so no
+  // other member's data is returned. Falls back to approved-deposit AGM amounts
+  // only if the endpoint isn't deployed yet.
   const fetchAgmFee = async () => {
     try {
-      const res    = await agmFeeAPI.getAll(CURRENT_YEAR);
-      const record = (res.data.members || []).find(m => String(m.id) === String(id));
-      setAgmFeePaid(Number(record?.totalThisYear || 0));
-    } catch { setAgmFeePaid(0); }
+      const res = await agmFeeAPI.getByMember(id, CURRENT_YEAR);
+      setAgmFeePaid(Number(res.data?.totalThisYear || 0));
+    } catch {
+      try {
+        const res = await depositsAPI.getSummary(id);
+        const total = (res.data.deposits || [])
+          .filter(d => d.depositStatus === 'distributed' &&
+                       new Date(d.createdAt).getFullYear() === CURRENT_YEAR)
+          .reduce((sum, d) => sum + Number(d.agmFeeAmount || 0), 0);
+        setAgmFeePaid(total);
+      } catch { setAgmFeePaid(0); }
+    }
   };
 
   const fetchMemberSeedCapital = async () => {

@@ -75,6 +75,57 @@ const getAllAgmFees = async (req, res) => {
   }
 };
 
+// ─── GET /agm-fees/member/:memberId ─────────────────────────────
+// Member-safe: returns ONLY this member's AGM contributions (manual +
+// deposit-sourced, i.e. exactly what the admin AGM Fees page shows for them).
+// Admins/staff may view any member; a member may only view their own record.
+const getMemberAgmFees = async (req, res) => {
+  try {
+    const memberId = Number(req.params.memberId);
+    const year     = Number(req.query.year) || new Date().getFullYear();
+    if (!memberId) return res.status(400).json({ message: 'Invalid memberId' });
+
+    const requester = await User.findByPk(req.user.id, {
+      include: [{ model: Member, as: 'member', attributes: ['id'] }],
+    });
+    if (!requester) return res.status(401).json({ message: 'Unauthorized' });
+
+    const isPrivileged = ['admin', 'staff'].includes(requester.role);
+    if (!isPrivileged && Number(requester.member?.id) !== memberId) {
+      return res.status(403).json({ message: 'You can only view your own AGM contributions' });
+    }
+
+    const contributions = await AgmFee.findAll({
+      where: { memberId },
+      order: [['createdAt', 'DESC']],
+    });
+
+    const totalAgmFee   = contributions.reduce((s, c) => s + Number(c.amount), 0);
+    const totalThisYear = contributions
+      .filter(c => Number(c.year) === year)
+      .reduce((s, c) => s + Number(c.amount), 0);
+
+    return res.json({
+      memberId,
+      year,
+      totalThisYear,
+      totalAgmFee,
+      contributionCount: contributions.length,
+      contributions: contributions.map(c => ({
+        id:        c.id,
+        amount:    Number(c.amount),
+        year:      c.year,
+        source:    c.source,
+        notes:     c.notes,
+        createdAt: c.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Get member AGM fees error:', error);
+    return res.status(500).json({ message: 'Failed to fetch AGM contributions', error: error.message });
+  }
+};
+
 // ─── Helper: recalculate total agm_fees for a member+year and sync to statutory ─
 const syncAgmFeeToStatutory = async (memberId, year) => {
   try {
@@ -169,4 +220,7 @@ const recordAgmFeeFromDeposit = async ({ memberId, amount, depositId, year, reco
   await syncAgmFeeToStatutory(memberId, targetYear);
 };
 
-module.exports = { getAgmFeeStats, getAllAgmFees, createAgmFee, deleteAgmFee, recordAgmFeeFromDeposit };
+module.exports = {
+  getAgmFeeStats, getAllAgmFees, getMemberAgmFees,
+  createAgmFee, deleteAgmFee, recordAgmFeeFromDeposit,
+};
