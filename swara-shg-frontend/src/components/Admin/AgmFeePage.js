@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { agmFeeAPI, membersAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
+import AgmBulkDeduction from '../Admin/Agmbulkdeduction';
 import {
   ClipboardList, Calendar, Users, Receipt, CreditCard,
-  PenLine, Trash2, CheckCircle, XCircle, Save, ScrollText,
+  PenLine, Trash2, CheckCircle, XCircle, Save, ScrollText, PiggyBank,
 } from 'lucide-react';
 
 const fmt = (amount) =>
@@ -69,8 +70,11 @@ const AgmFeePage = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this AGM fee record?')) return;
+  const handleDelete = async (id, source) => {
+    const msg = source === 'savings'
+      ? "Delete this AGM fee? The amount will be returned to the member's savings."
+      : 'Delete this AGM fee record?';
+    if (!window.confirm(msg)) return;
     setDeleting(id);
     try {
       await agmFeeAPI.delete(id);
@@ -99,6 +103,12 @@ const AgmFeePage = () => {
       return {
         bg: '#fff8e1', color: '#e65100',
         icon: <ScrollText size={11} />, label: 'Statutory Adj.',
+      };
+    }
+    if (source === 'savings') {
+      return {
+        bg: '#e8f5e9', color: '#2e7d32',
+        icon: <PiggyBank size={11} />, label: 'From Savings',
       };
     }
     return {
@@ -161,6 +171,11 @@ const AgmFeePage = () => {
               <button style={s.btnPrimary} onClick={() => setShowModal(true)}>
                 <ClipboardList size={14} /> Add AGM Fee
               </button>
+            )}
+            {/* December bulk action: deduct the outstanding AGM fee from savings.
+                Current year only, so the wrong year can't be deducted by mistake. */}
+            {!isStaff && year === currentYear && (
+              <AgmBulkDeduction year={year} onDone={fetchData} />
             )}
           </div>
         </div>
@@ -242,8 +257,10 @@ const AgmFeePage = () => {
                                   <tbody>
                                     {m.contributions.map((c, ci) => {
                                       const badge = sourceBadge(c.source);
-                                      // statutory_override rows can only be removed by editing the Statutory page
-                                      const isDeletable = !isStaff && c.source === 'manual';
+                                      // manual and savings-deducted records can be deleted here
+                                      // (deleting a savings one returns the money to the member's savings).
+                                      // statutory_override rows can only be removed by editing the Statutory page.
+                                      const isDeletable = !isStaff && (c.source === 'manual' || c.source === 'savings');
                                       const isSystemRow = c.source === 'statutory_override';
 
                                       return (
@@ -270,7 +287,7 @@ const AgmFeePage = () => {
                                               {isDeletable && (
                                                 <button
                                                   style={{ ...s.btnDelete, opacity: deleting === c.id ? 0.6 : 1 }}
-                                                  onClick={() => handleDelete(c.id)}
+                                                  onClick={() => handleDelete(c.id, c.source)}
                                                   disabled={deleting === c.id}
                                                 >
                                                   {deleting === c.id ? '...' : <><Trash2 size={11} /> Delete</>}

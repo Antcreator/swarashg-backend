@@ -164,8 +164,8 @@ export const agmFeeAPI = {
   getStats: (year) => api.get('/agm-fees/stats', { params: { year } }),
   getAll:   (year) => api.get('/agm-fees',        { params: { year } }),
   getByMember: (memberId, year) => api.get(`/agm-fees/member/${memberId}`, { params: { year } }),
-  create:   (data) => api.post('/agm-fees', data),
   bulkDeductFromSavings: (year, confirm = false) => api.post('/agm-fees/bulk-deduct-from-savings', { year, confirm }),
+  create:   (data) => api.post('/agm-fees', data),
   delete:   (id)   => api.delete(`/agm-fees/${id}`),
 };
 

@@ -24,7 +24,7 @@ const AgmFee = sequelize.define('AgmFee', {
   // manually sets a different agmFee total on the Statutory page. It should never
   // be directly created or deleted by the user.
   source: {
-    type: DataTypes.ENUM('deposit', 'manual', 'statutory_override'),
+    type: DataTypes.ENUM('deposit', 'manual', 'statutory_override', 'savings'),
     defaultValue: 'manual',
   },
   depositId: {
