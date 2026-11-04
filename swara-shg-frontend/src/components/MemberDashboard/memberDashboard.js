@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { membersAPI, loansAPI, depositsAPI, statutoryAPI, savingsAPI, finesAPI, seedCapitalAPI } from '../../Service/Api';
+import { membersAPI, loansAPI, depositsAPI, statutoryAPI, savingsAPI, finesAPI, seedCapitalAPI, agmFeeAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import MyLoans from '../Member/MyLoans';
 import DepositCard from './DepositCard';
 import './memberDashboard.css';
 import {
-  Coins, ClipboardList, AlertTriangle, Sprout, Package,
+  Coins, ClipboardList, AlertTriangle, Sprout, Package, Landmark,
   Handshake, FileText, Eye, EyeOff, Banknote, CalendarDays,
 } from 'lucide-react';
 
@@ -172,6 +172,7 @@ const MemberDashboard = () => {
   const [guaranteedLoansData, setGuaranteedLoansData] = useState([]);
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
   const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
+  const [agmFeePaid, setAgmFeePaid]                   = useState(0);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
   // ── Active loan in arrears/default for the banner ─────────────
@@ -206,6 +207,7 @@ const MemberDashboard = () => {
     fetchYearlySavings();
     fetchYearlyFines();
     fetchMemberSeedCapital();
+    fetchAgmFee();
     fetchActiveLoan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -264,6 +266,14 @@ const MemberDashboard = () => {
         });
       }
     } catch { /* silent */ }
+  };
+
+  const fetchAgmFee = async () => {
+    try {
+      const res    = await agmFeeAPI.getAll(CURRENT_YEAR);
+      const record = (res.data.members || []).find(m => String(m.id) === String(id));
+      setAgmFeePaid(Number(record?.totalThisYear || 0));
+    } catch { setAgmFeePaid(0); }
   };
 
   const fetchMemberSeedCapital = async () => {
@@ -547,6 +557,22 @@ const MemberDashboard = () => {
               <span className="small-value" style={{ color: '#2e7d32' }}>
                 {fc(memberSeedCapital)}
               </span>
+            </div>
+          </div>
+
+          {/* AGM Fee */}
+          <div className="stat-card small-card">
+            <span className="small-icon" style={{ background: '#ede7f6', color: '#7b1fa2' }}>
+              <Landmark size={18} />
+            </span>
+            <div className="small-body">
+              <span className="small-label">
+                AGM Fee <YearBadge />
+              </span>
+              <span className="small-value" style={{ color: '#7b1fa2' }}>
+                {fc(agmFeePaid)}
+              </span>
+              <span className="small-sub">Paid in {CURRENT_YEAR}</span>
             </div>
           </div>
 
