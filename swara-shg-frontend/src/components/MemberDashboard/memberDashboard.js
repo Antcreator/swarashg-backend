@@ -13,6 +13,7 @@ import {
 const CURRENT_YEAR = new Date().getFullYear();
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TRANSACTION_FEE = 108;
+const AGM_ANNUAL_FEE_DEFAULT = 2000;
 const ONE_SHARE_DIVISOR = 3;
 
 // ── Eye toggle button ─────────────────────────────────────────────
@@ -173,6 +174,7 @@ const MemberDashboard = () => {
   const [depositSummary, setDepositSummary]           = useState({ othersTotal: 0, seedCapitalTotal: 0 });
   const [memberSeedCapital, setMemberSeedCapital]     = useState(0);
   const [agmFeePaid, setAgmFeePaid]                   = useState(0);
+  const [agmAnnualFee, setAgmAnnualFee]               = useState(AGM_ANNUAL_FEE_DEFAULT);
   const [statutory, setStatutory]                     = useState({ statutoryFee: 0, guarantorDeduction: 0, other: 0 });
 
   // ── Active loan in arrears/default for the banner ─────────────
@@ -276,6 +278,7 @@ const MemberDashboard = () => {
     try {
       const res = await agmFeeAPI.getByMember(id, CURRENT_YEAR);
       setAgmFeePaid(Number(res.data?.totalThisYear || 0));
+      if (res.data?.annualFee) setAgmAnnualFee(Number(res.data.annualFee));
     } catch {
       try {
         const res = await depositsAPI.getSummary(id);
@@ -584,7 +587,11 @@ const MemberDashboard = () => {
               <span className="small-value" style={{ color: '#7b1fa2' }}>
                 {fc(agmFeePaid)}
               </span>
-              <span className="small-sub">Paid in {CURRENT_YEAR}</span>
+              <span className="small-sub" style={{ color: agmFeePaid >= agmAnnualFee ? '#2e7d32' : '#e65100', fontWeight: 600 }}>
+                {agmFeePaid >= agmAnnualFee
+                  ? `Fully paid ✓ (${fc(agmAnnualFee)})`
+                  : `${fc(Math.max(0, agmAnnualFee - agmFeePaid))} outstanding of ${fc(agmAnnualFee)}`}
+              </span>
             </div>
           </div>
 

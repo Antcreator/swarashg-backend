@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const {
   Deposit, Member, Loan, SeedCapital, Savings, LoanPayment, User, Fine,
-  ChamaaParticipant, ChamaaCycle, ChamaaContribution,
+  ChamaaParticipant, ChamaaCycle, ChamaaContribution, AgmFee,
   sequelize,
 } = require('../models');
 const { recordAgmFeeFromDeposit } = require('./agmFeeController');
@@ -9,6 +9,7 @@ const { sendEmail }    = require('../services/emailService');
 const emailTemplates   = require('../services/emailTemplates');
 
 const CHAMAA_AMOUNT = 2030; // Fixed contribution per slot per month
+const AGM_FEE_ANNUAL = 2000; // Annual AGM fee per member (keep in sync with agmFeeController)
 
 // ─── Helper: get member email ────────────────────────────────────
 const getMemberEmail = async (memberId) => {
@@ -103,6 +104,26 @@ const createDeposit = async (req, res) => {
     const chamaaSlotIds = Array.isArray(distribution.chamaaSlotIds)
       ? distribution.chamaaSlotIds.map(Number).filter(Boolean)
       : [];
+
+    // ── AGM fee validation ────────────────────────────────────────
+    // A member can't allocate more AGM than they still owe this year
+    // (already-recorded AGM + AGM sitting in other pending deposits count).
+    const agmRequested = Number(distribution.agmFee || 0);
+    if (agmRequested > 0) {
+      const agmYear   = new Date().getFullYear();
+      const agmPaid   = Number(await AgmFee.sum('amount', { where: { memberId, year: agmYear } }) || 0);
+      const agmQueued = Number(await Deposit.sum('agmFeeAmount', {
+        where: { memberId, depositStatus: 'pending_confirmation' },
+      }) || 0);
+      const agmOutstanding = Math.max(0, AGM_FEE_ANNUAL - agmPaid - agmQueued);
+      if (agmRequested > agmOutstanding) {
+        return res.status(400).json({
+          message: agmOutstanding === 0
+            ? `Your ${agmYear} AGM fee of KES ${AGM_FEE_ANNUAL} is already settled or pending approval.`
+            : `AGM fee cannot exceed the outstanding KES ${agmOutstanding} (annual fee KES ${AGM_FEE_ANNUAL}).`,
+        });
+      }
+    }
 
     // ── Chamaa validations ────────────────────────────────────────
     if (chamaaAmount > 0) {

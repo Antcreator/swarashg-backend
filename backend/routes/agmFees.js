@@ -3,6 +3,7 @@ const router  = express.Router();
 const { authenticateToken, requireAdmin, requireAdminOnly } = require('../middleware/auth');
 const {
   getAgmFeeStats, getAllAgmFees, getMemberAgmFees, createAgmFee, deleteAgmFee,
+  bulkDeductFromSavings,
 } = require('../controllers/agmFeeController');
 
 router.get('/stats',  authenticateToken, requireAdmin,     getAgmFeeStats);
@@ -13,6 +14,9 @@ router.get('/',       authenticateToken, requireAdmin,     getAllAgmFees);
 router.get('/member/:memberId', authenticateToken, getMemberAgmFees);
 
 router.post('/',      authenticateToken, requireAdminOnly, createAgmFee);
+
+// December bulk action: preview (confirm:false) or run (confirm:true)
+router.post('/bulk-deduct-from-savings', authenticateToken, requireAdminOnly, bulkDeductFromSavings);
 router.delete('/:id', authenticateToken, requireAdminOnly, deleteAgmFee);
 
 module.exports = router;
