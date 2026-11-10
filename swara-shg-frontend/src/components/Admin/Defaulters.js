@@ -4,6 +4,28 @@ import { loansAPI } from '../../Service/Api';
 import Navbar from '../Navbar/navbar';
 import './Defaulters.css';
 
+// ── Arrears penalty months: anniversary-based, not calendar-month ─────────────
+// Month 1 runs from the day AFTER the due date to the same day of the next month,
+// month 2 to the same day the month after, and so on. Loan due 12 Sep:
+//   13 Sep – 12 Oct = month 1 · 13 Oct – 12 Nov = month 2 · 13 Nov – 12 Dec = month 3
+// Returns 0 while the loan is not overdue yet (paying on the due date is on time).
+const calcArrearsMonths = (dueDateValue) => {
+  if (!dueDateValue) return 0;
+  const now   = new Date();
+  const due   = new Date(dueDateValue);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dy = due.getFullYear(), dm = due.getMonth(), dd = due.getDate();
+  // Same day-of-month as the due date, clamped for short months (31 Aug → 30 Sep)
+  const anniversary = (k) => {
+    const daysInMonth = new Date(Date.UTC(dy, dm + k + 1, 0)).getUTCDate();
+    return Date.UTC(dy, dm + k, Math.min(dd, daysInMonth));
+  };
+  if (today <= anniversary(0)) return 0;
+  let n = 1;
+  while (n < 12 && today > anniversary(n)) n++;
+  return n;
+};
+
 const Defaulters = () => {
   const [defaulters, setDefaulters] = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -42,7 +64,7 @@ const Defaulters = () => {
           const todayMs = Date.UTC(now.getFullYear(),     now.getMonth(),     now.getDate());
           const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
           overdueDays   = Math.max(0, Math.floor((todayMs - dueMs) / (1000 * 60 * 60 * 24)));
-          overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
+          overdueMonths = calcArrearsMonths(loan.dueDate);
         }
 
         const cappedMonths = loan.status === 'default'

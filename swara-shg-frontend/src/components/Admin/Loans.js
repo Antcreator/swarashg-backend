@@ -14,6 +14,28 @@ import {
 
 const TRANSACTION_FEE = 108;
 
+// ── Arrears penalty months: anniversary-based, not calendar-month ─────────────
+// Month 1 runs from the day AFTER the due date to the same day of the next month,
+// month 2 to the same day the month after, and so on. Loan due 12 Sep:
+//   13 Sep – 12 Oct = month 1 · 13 Oct – 12 Nov = month 2 · 13 Nov – 12 Dec = month 3
+// Returns 0 while the loan is not overdue yet (paying on the due date is on time).
+const calcArrearsMonths = (dueDateValue) => {
+  if (!dueDateValue) return 0;
+  const now   = new Date();
+  const due   = new Date(dueDateValue);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dy = due.getFullYear(), dm = due.getMonth(), dd = due.getDate();
+  // Same day-of-month as the due date, clamped for short months (31 Aug → 30 Sep)
+  const anniversary = (k) => {
+    const daysInMonth = new Date(Date.UTC(dy, dm + k + 1, 0)).getUTCDate();
+    return Date.UTC(dy, dm + k, Math.min(dd, daysInMonth));
+  };
+  if (today <= anniversary(0)) return 0;
+  let n = 1;
+  while (n < 12 && today > anniversary(n)) n++;
+  return n;
+};
+
 const Loans = () => {
   const isStaff  = useIsStaff();
   const location = useLocation();
@@ -229,13 +251,8 @@ const Loans = () => {
     const totalRepayment  = Math.round(principal + (principal * interestRate / 100) + txFee);
     const baseLoanBalance = Math.max(0, totalRepayment - amountPaid);
 
-    // Calculate months overdue (capped at 3)
-    const now     = new Date();
-    const dueDate = new Date(loan.dueDate);
-    const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-    const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-    const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 1;
+    // Penalty months run due-day to due-day (capped at 3); at least 1 once in arrears
+    const months  = Math.max(1, Math.min(calcArrearsMonths(loan.dueDate), 3));
 
     return Math.round(baseLoanBalance * 0.05 * months); // 5% × balance × months overdue
   };

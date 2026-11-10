@@ -96,6 +96,35 @@ const getLoanNumericId = (id) => {
   return isNaN(n) ? id : n;
 };
 
+// ── Arrears penalty months: anniversary-based, in Kenya time ─────────────────
+// Month 1 runs from the day AFTER the due date to the same day of the next month,
+// month 2 to the same day the month after, etc. (due 12 Sep → 13 Sep–12 Oct is
+// month 1, 13 Oct–12 Nov is month 2). months = 0 while not overdue yet.
+// periodStart = month/year in which the CURRENT penalty month began (keys the fine).
+const nairobiDateParts = (d) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d);
+  const get = (t) => Number(parts.find(p => p.type === t).value);
+  return { y: get('year'), m: get('month') - 1, d: get('day') };
+};
+
+const calcArrearsPeriod = (dueDateValue, nowValue = new Date()) => {
+  const due   = nairobiDateParts(new Date(dueDateValue));
+  const now   = nairobiDateParts(nowValue);
+  const today = Date.UTC(now.y, now.m, now.d);
+  // Same day-of-month as the due date, clamped for short months (31 Aug → 30 Sep)
+  const anniversary = (k) => {
+    const daysInMonth = new Date(Date.UTC(due.y, due.m + k + 1, 0)).getUTCDate();
+    return Date.UTC(due.y, due.m + k, Math.min(due.d, daysInMonth));
+  };
+  if (today <= anniversary(0)) return { months: 0, periodStart: null };
+  let n = 1;
+  while (n < 12 && today > anniversary(n)) n++;
+  const start = new Date(anniversary(n - 1) + 86400000); // day after the previous due-day
+  return { months: n, periodStart: { month: start.getUTCMonth() + 1, year: start.getUTCFullYear() } };
+};
+
 // ─── Update loan status ──────────────────────────────────────────
 // Arrears penalty = 5% × REMAINING PRINCIPAL per month.
 //
@@ -122,7 +151,9 @@ const updateLoanStatus = async (loan) => {
     await loan.save(); return loan;
   }
 
-  if (now <= dueDate) {
+  const arrearsPeriod = calcArrearsPeriod(loan.dueDate, now);
+
+  if (arrearsPeriod.months === 0) {
     if (loan.status !== 'paid') {
       loan.status = 'active'; loan.penaltyInterest = 0; loan.isOverdue = false;
       await loan.save();
@@ -153,7 +184,7 @@ const updateLoanStatus = async (loan) => {
     //   Loan 40,000 → pays 5,000 → balance 35,000 → penalty 1,750 → total 36,750
     //   Then pays 10,000 → balance 26,750 → penalty 1,338 → total 28,088
     const monthlyRate    = 0.05;
-    const monthsOverdue  = Math.ceil(daysPastDue / 30);
+    const monthsOverdue  = Math.min(arrearsPeriod.months, 3); // due-day to due-day, capped at 3
     const monthlyPenalty = Math.round(baseBalance * monthlyRate); // 5% of current balance per month
     const totalPenalty   = Math.round(baseBalance * monthlyRate * monthsOverdue); // × months overdue
 
@@ -162,10 +193,13 @@ const updateLoanStatus = async (loan) => {
     loan.arrearsMonths    = monthsOverdue;
     await loan.save();
 
-    // ── Fine record: one per calendar month, updates when balance changes ──
-    // Fine reflects the current month's penalty based on latest balance.
-    const currentMonth = now.getMonth() + 1;
-    const currentYear  = now.getFullYear();
+    // ── Fine record: one per penalty month, updates when balance changes ──
+    // Keyed by the month/year in which the current penalty month began, so a loan
+    // due on the 12th is fined from the 13th, not from the 1st of the next month.
+    const currentMonth = arrearsPeriod.periodStart.month;
+    const currentYear  = arrearsPeriod.periodStart.year;
+    const periodLabel  = new Date(Date.UTC(currentYear, currentMonth - 1, 1))
+      .toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
     try {
       const existingFine = await Fine.findOne({
@@ -183,7 +217,7 @@ const updateLoanStatus = async (loan) => {
           referenceId: getLoanNumericId(loan.id),
           notes: `Arrears penalty: 5% of balance ${formatCurrency(baseBalance)} ` +
                  `(Loan #${loan.id}, month ${monthsOverdue} of arrears) ` +
-                 `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear}`,
+                 `for ${periodLabel}`,
         });
         console.log(`[Loan ${loan.id}] Arrears fine KES ${monthlyPenalty} (5% × ${baseBalance} balance) created for ${currentMonth}/${currentYear}`);
       } else if (Number(existingFine.amount) !== monthlyPenalty) {
@@ -191,7 +225,7 @@ const updateLoanStatus = async (loan) => {
         existingFine.amount = monthlyPenalty;
         existingFine.notes  = `Arrears penalty: 5% of balance ${formatCurrency(baseBalance)} ` +
                               `(Loan #${loan.id}, month ${monthsOverdue} of arrears) ` +
-                              `for ${now.toLocaleString('default', { month: 'long' })} ${currentYear} [updated after payment]`;
+                              `for ${periodLabel} [updated after payment]`;
         await existingFine.save();
         console.log(`[Loan ${loan.id}] Arrears fine updated to KES ${monthlyPenalty} (5% × ${baseBalance}) for ${currentMonth}/${currentYear}`);
       }
@@ -898,7 +932,7 @@ const getArrearsStats = async (req, res) => {
         const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
         const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
         overdueDays   = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-        overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
+        overdueMonths = calcArrearsPeriod(loan.dueDate, now).months;
       }
 
       const cappedMonths = Math.min(overdueMonths, 3);
