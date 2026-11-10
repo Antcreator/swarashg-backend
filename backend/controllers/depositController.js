@@ -715,8 +715,8 @@ const getDeposits = async (req, res) => {
       include: [
         { model: Member, as: 'member',          attributes: ['id', 'firstName', 'lastName'] },
         { model: Loan,   as: 'loan',            attributes: ['id', 'amount', 'remainingBalance'] },
-        { model: User,   as: 'confirmer',       attributes: ['id', 'email'] },
-        { model: User,   as: 'depositApprover', attributes: ['id', 'email'] },
+        { model: User,   as: 'confirmer',       attributes: ['id', 'email', 'firstName', 'lastName'] },
+        { model: User,   as: 'depositApprover', attributes: ['id', 'email', 'firstName', 'lastName'] },
       ],
       order: [['createdAt', 'DESC']],
     });

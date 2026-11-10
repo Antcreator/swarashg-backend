@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { membersAPI, loansAPI, depositsAPI, finesAPI, seedCapitalAPI, agmFeeAPI, registrationFeeAPI, savingsAPI, investmentAPI, chamaaAPI } from '../../Service/Api';
 import { useIsStaff } from '../Protected Route/Protectedroute';
 import Navbar from '../Navbar/navbar';
@@ -8,7 +8,7 @@ import {
   Calendar, Eye, Users, Sprout, PiggyBank, FileText,
   Banknote, CreditCard, AlertTriangle, Bell, ClipboardList,
   ScrollText, FilePen, TrendingUp, KeyRound, UserPlus,
-  Wallet, FileBarChart, RefreshCw, TrendingDown, Clock,
+  Wallet, FileBarChart, RefreshCw, TrendingDown, Clock, History,
 } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -63,6 +63,7 @@ const calcLoanOutstanding = (loan) => {
 const AdminDashboard = () => {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isStaff = useIsStaff();
+  const navigate = useNavigate();
 
   const [stats, setStats] = useState({
     totalMembers:       0,
@@ -389,6 +390,20 @@ const AdminDashboard = () => {
               <span className="stat-link">
                 {stats.pendingDeposits > 0 ? 'Review & Approve →' : 'View All →'}
               </span>
+              {/* Small shortcut to the full deposit history (all deposits by date) */}
+              <button
+                type="button"
+                title="See every deposit by date, its distribution and who approved it"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate('/admin/deposit-history'); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  marginTop: 8, padding: '3px 10px', fontSize: 11, fontWeight: 700,
+                  color: '#1565c0', background: '#e3f2fd', border: '1px solid #90caf9',
+                  borderRadius: 12, cursor: 'pointer',
+                }}
+              >
+                <History size={11} /> Deposit history
+              </button>
             </div>
             {stats.pendingDeposits > 0 && <div className="notification-badge">{stats.pendingDeposits}</div>}
           </Link>

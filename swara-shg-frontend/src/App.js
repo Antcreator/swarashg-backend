@@ -26,6 +26,7 @@ import MyLoanApplications from './components/Member/MyLoanApplications';
 import InvestmentPage from './components/Admin/InvestmentPage';
 import RegistrationFeePage from './components/Admin/RegistrationFeePage';
 import WithdrawalsPage from './components/Admin/WithdrawalsPage';
+import DepositHistory from './components/Admin/DepositHistory';
 
 import './App.css';
 
@@ -126,6 +127,7 @@ function App() {
           <Route path="/admin/loans"                     element={<ProtectedRoute requireAdmin={true}><Loans /></ProtectedRoute>} />
           <Route path="/admin/chamaa"                    element={<ProtectedRoute requireAdmin={true}><Chamaa /></ProtectedRoute>} />
           <Route path="/admin/deposits"                  element={<ProtectedRoute requireAdmin={true}><PendingDeposits /></ProtectedRoute>} />
+          <Route path="/admin/deposit-history"           element={<ProtectedRoute requireAdmin={true}><DepositHistory /></ProtectedRoute>} />
           <Route path="/admin/reports"                   element={<ProtectedRoute requireAdmin={true}><Reports /></ProtectedRoute>} />
           <Route path="/admin/monthly-savings"           element={<ProtectedRoute requireAdmin={true}><MonthlySavingsReport /></ProtectedRoute>} />
           <Route path="/admin/defaulters"                element={<ProtectedRoute requireAdmin={true}><Defaulters /></ProtectedRoute>} />
