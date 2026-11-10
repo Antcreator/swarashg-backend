@@ -763,6 +763,13 @@ const requestTopUp = async (req, res) => {
     const currentBalance = Math.round(Number(activeLoan.remainingBalance));
     if (Number(topUpAmount) <= currentBalance) return res.status(400).json({ message: `Top-up amount must be greater than your current balance of ${formatCurrency(currentBalance)}.` });
     const newTotalAmount = Math.round(Number(topUpAmount)); const amountDisbursed = Math.round(newTotalAmount - currentBalance);
+    // ── Loan limit: a member may top up as many times as they like, as long as the
+    // new total loan stays within their limit — the same rule as a new loan.
+    const topUpSavings = await Savings.sum('amount', { where: { memberId, isPaid: true } }) || 0;
+    const topUpMaxLoan = await calculateMaxLoan(topUpSavings, memberId);
+    if (newTotalAmount > topUpMaxLoan) {
+      return res.status(400).json({ message: `Top-up exceeds your loan limit. Your savings: ${Math.round(topUpSavings).toLocaleString()}. Maximum loan: ${topUpMaxLoan.toLocaleString()}.` });
+    }
     const tier = getLoanTier(newTotalAmount); if (!tier) return res.status(400).json({ message: 'Invalid loan amount for top-up' });
     const durationOption = tier.durations.find(d => d.months === Number(durationMonths));
     if (!durationOption) return res.status(400).json({ message: `For amount ${newTotalAmount}, only these durations are allowed: ${tier.durations.map(d => `${d.months} month(s)`).join(', ')}` });

@@ -13,6 +13,28 @@ import {
 const CURRENT_YEAR = new Date().getFullYear();
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TRANSACTION_FEE = 108;
+
+// ── Arrears penalty months: anniversary-based, not calendar-month ─────────────
+// Month 1 runs from the day AFTER the due date to the same day of the next month,
+// month 2 to the same day the month after, and so on. Loan due 12 Sep:
+//   13 Sep – 12 Oct = month 1 · 13 Oct – 12 Nov = month 2 · 13 Nov – 12 Dec = month 3
+// Returns 0 while the loan is not overdue yet (paying on the due date is on time).
+const calcArrearsMonths = (dueDateValue) => {
+  if (!dueDateValue) return 0;
+  const now   = new Date();
+  const due   = new Date(dueDateValue);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dy = due.getFullYear(), dm = due.getMonth(), dd = due.getDate();
+  // Same day-of-month as the due date, clamped for short months (31 Aug → 30 Sep)
+  const anniversary = (k) => {
+    const daysInMonth = new Date(Date.UTC(dy, dm + k + 1, 0)).getUTCDate();
+    return Date.UTC(dy, dm + k, Math.min(dd, daysInMonth));
+  };
+  if (today <= anniversary(0)) return 0;
+  let n = 1;
+  while (n < 12 && today > anniversary(n)) n++;
+  return n;
+};
 const AGM_ANNUAL_FEE_DEFAULT = 2000;
 const ONE_SHARE_DIVISOR = 3;
 
@@ -315,7 +337,9 @@ const MemberDashboard = () => {
   const fetchYearlyFines = async () => {
     try {
       const res = await finesAPI.getAll({ memberId: id, isPaid: 'false', year: CURRENT_YEAR });
-      setYearlyFines(res.data.fines || []);
+      // Arrears penalties are already inside the loan balance, so they are not
+      // listed again as pending fines on the member's dashboard (admins still see them).
+      setYearlyFines((res.data.fines || []).filter(f => f.fineType !== 'loan_arrears'));
     } catch (err) {
       console.error('Failed to fetch yearly fines:', err);
       setYearlyFines([]);
@@ -363,7 +387,7 @@ const MemberDashboard = () => {
           const todayMs = Date.UTC(now.getFullYear(),     now.getMonth(),     now.getDate());
           const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
           overdueDays   = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-          overdueMonths = overdueDays > 0 ? Math.ceil(overdueDays / 30) : 0;
+          overdueMonths = calcArrearsMonths(overdueLoan.dueDate);
         }
 
         const cappedMonths = Math.min(overdueMonths, 3);
@@ -714,16 +738,17 @@ const MemberDashboard = () => {
                   <tbody>
                     {loans.map(loan => {
                       const isOverdue = loan.status === 'arrears' || loan.status === 'default';
-                      const principal = Number(loan.amount || 0);
                       let penalty = 0;
                       if (isOverdue && loan.dueDate) {
-                        const now     = new Date();
-                        const dueDate = new Date(loan.dueDate);
-                        const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-                        const dueMs   = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-                        const days    = Math.max(0, Math.floor((todayMs - dueMs) / 86400000));
-                        const months  = days > 0 ? Math.min(Math.ceil(days / 30), 3) : 0;
-                        penalty       = Math.round(principal * 0.05 * months);
+                        // Same rule as the admin side: 5% × current balance × penalty months
+                        const principal      = Number(loan.amount || 0);
+                        const interestRate   = Number(loan.interestRate || 0);
+                        const txFee          = Number(loan.transactionFee ?? TRANSACTION_FEE);
+                        const paid           = Number(loan.total_paid ?? loan.amountPaid ?? 0);
+                        const totalRepayment = Math.round(principal + (principal * interestRate / 100) + txFee);
+                        const balanceBefore  = Math.max(0, totalRepayment - paid);
+                        const months         = Math.min(calcArrearsMonths(loan.dueDate), 3);
+                        penalty              = Math.round(balanceBefore * 0.05 * months);
                       }
                       return (
                         <tr key={loan.id}>
